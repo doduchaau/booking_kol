@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Booking KOL CRM</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            width: 380px;
+            background-color: #f8fafc;
+            color: #0f172a;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background-color: #ffffff;
+            padding: 12px 16px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .header-logo {
+            width: 30px;
+            height: 30px;
+            background: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 15px;
+            box-shadow: 0 2px 4px rgba(79, 70, 229, 0.2);
+        }
+
+        .header-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #1e1b4b;
+        }
+
+        .header-subtitle {
+            font-size: 11px;
+            color: #64748b;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #cbd5e1;
+        }
+
+        .status-dot.connected {
+            background-color: #10b981;
+            box-shadow: 0 0 0 2px #d1fae5;
+        }
+
+        .status-dot.error {
+            background-color: #f43f5e;
+            box-shadow: 0 0 0 2px #ffe4e6;
+        }
+
+        .icon-btn {
+            background: none;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 5px;
+            cursor: pointer;
+            color: #64748b;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s ease;
+        }
+
+        .icon-btn:hover {
+            background-color: #f1f5f9;
+            color: #0f172a;
+        }
+
+        /* Container */
+        .content {
+            padding: 14px 16px;
+        }
+
+        /* Settings Card */
+        .settings-card {
+            background-color: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 12px;
+            margin-bottom: 12px;
+        }
+
+        .settings-card.hidden {
+            display: none;
+        }
+
+        .settings-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #334155;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .form-group {
+            margin-bottom: 10px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 11px;
+            font-weight: 600;
+            color: #475569;
+            margin-bottom: 4px;
+        }
+
+        .form-input, .form-select, .form-textarea {
+            width: 100%;
+            padding: 7px 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-size: 12px;
+            background-color: #ffffff;
+            color: #0f172a;
+            outline: none;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .form-input:focus, .form-select:focus, .form-textarea:focus {
+            border-color: #4f46e5;
+            box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
+        }
+
+        .form-textarea {
+            resize: vertical;
+            min-height: 50px;
+        }
+
+        .btn-test {
+            width: 100%;
+            padding: 6px 10px;
+            background-color: #e0e7ff;
+            color: #4338ca;
+            border: none;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .btn-test:hover {
+            background-color: #c7d2fe;
+        }
+
+        .connection-status-msg {
+            font-size: 11px;
+            margin-top: 6px;
+            color: #64748b;
+        }
+
+        /* Profile Hero Card */
+        .profile-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 12px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+        }
+
+        .profile-avatar {
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #e2e8f0;
+            background-color: #f1f5f9;
+        }
+
+        .profile-info {
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .profile-name {
+            font-size: 14px;
+            font-weight: 700;
+            color: #0f172a;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .profile-handle {
+            font-size: 12px;
+            color: #64748b;
+            margin-bottom: 4px;
+        }
+
+        .badge-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+
+        .badge-platform {
+            background-color: #0f172a;
+            color: #ffffff;
+            text-transform: uppercase;
+        }
+
+        .badge-followers {
+            background-color: #e0e7ff;
+            color: #4338ca;
+        }
+
+        /* CRM Alert */
+        .crm-status-box {
+            padding: 8px 10px;
+            border-radius: 8px;
+            font-size: 11px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .crm-status-box.exists {
+            background-color: #fffbeb;
+            border: 1px solid #fde68a;
+            color: #92400e;
+        }
+
+        .crm-status-box.new {
+            background-color: #ecfdf5;
+            border: 1px solid #a7f3d0;
+            color: #065f46;
+        }
+
+        .crm-link {
+            font-weight: 600;
+            text-decoration: underline;
+            color: inherit;
+            cursor: pointer;
+        }
+
+        /* Action Buttons */
+        .btn-save {
+            width: 100%;
+            padding: 10px;
+            background-color: #4f46e5;
+            color: #ffffff;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(79, 70, 229, 0.25);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: background 0.15s, transform 0.05s;
+        }
+
+        .btn-save:hover {
+            background-color: #4338ca;
+        }
+
+        .btn-save:active {
+            transform: scale(0.99);
+        }
+
+        .btn-save:disabled {
+            background-color: #94a3b8;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 30px 16px;
+            background: #ffffff;
+            border-radius: 12px;
+            border: 1px dashed #cbd5e1;
+        }
+
+        .empty-icon {
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
+
+        .empty-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #334155;
+            margin-bottom: 4px;
+        }
+
+        .empty-desc {
+            font-size: 11px;
+            color: #64748b;
+            line-height: 1.5;
+        }
+
+        /* Result Banner */
+        .result-banner {
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 12px;
+            text-align: center;
+        }
+
+        .result-banner.success {
+            background-color: #ecfdf5;
+            border: 1px solid #10b981;
+            color: #065f46;
+        }
+
+        .result-banner.error {
+            background-color: #fff1f2;
+            border: 1px solid #f43f5e;
+            color: #9f1239;
+        }
+
+        .spinner {
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            border-top-color: #ffffff;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <div class="header-brand">
+            <div class="header-logo">K</div>
+            <div>
+                <div class="header-title">Booking KOL CRM</div>
+                <div class="header-subtitle">Tiện ích lưu nhanh Creator</div>
+            </div>
+        </div>
+        <div class="header-actions">
+            <span id="connectionDot" class="status-dot" title="Trạng thái kết nối CRM"></span>
+            <button id="toggleSettingsBtn" class="icon-btn" title="Cài đặt kết nối">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <div class="content">
+        <!-- Settings Panel -->
+        <div id="settingsCard" class="settings-card hidden">
+            <div class="settings-title">
+                <span>Cấu hình kết nối CRM</span>
+                <span id="settingsClose" style="cursor:pointer; color:#94a3b8;">✕</span>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Địa chỉ API Web Tool</label>
+                <input type="text" id="apiUrlInput" class="form-input" placeholder="http://booking_kol.test/api/v1/extension">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Mã API Token cá nhân</label>
+                <input type="password" id="apiTokenInput" class="form-input" placeholder="Dán mã Sanctum token vào đây...">
+            </div>
+            <button id="btnTestConnection" class="btn-test">Kiểm tra kết nối</button>
+            <div id="connectionStatusMsg" class="connection-status-msg"></div>
+        </div>
+
+        <!-- Empty State (Khi không mở trang TikTok/FB/Insta) -->
+        <div id="emptyState" class="empty-state">
+            <div class="empty-icon">📱</div>
+            <div class="empty-title">Chưa phát hiện trang Creator</div>
+            <div class="empty-desc">
+                Hãy mở trang cá nhân của Creator trên <strong>TikTok</strong>, <strong>Facebook</strong> hoặc <strong>Instagram</strong> rồi bấm lại tiện ích này.
+            </div>
+        </div>
+
+        <!-- Form Lưu Creator -->
+        <div id="creatorFormArea" style="display: none;">
+            <!-- Profile Hero -->
+            <div class="profile-card">
+                <img id="creatorAvatar" class="profile-avatar" src="" alt="Avatar">
+                <div class="profile-info">
+                    <div id="creatorNameHeader" class="profile-name">Đang tải...</div>
+                    <div id="creatorHandleHeader" class="profile-handle">@handle</div>
+                    <div class="badge-row">
+                        <span id="platformBadge" class="badge badge-platform">TIKTOK</span>
+                        <span id="followersBadge" class="badge badge-followers">0 followers</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CRM Status Alert -->
+            <div id="crmStatusBox" class="crm-status-box new">
+                <span id="crmStatusText">✨ Hồ sơ mới chưa có trong CRM</span>
+                <a id="crmViewLink" class="crm-link" style="display:none;" target="_blank">Xem trên CRM</a>
+            </div>
+
+            <!-- Edit Details -->
+            <div class="form-group">
+                <label class="form-label">Tên Creator / KOC</label>
+                <input type="text" id="inputName" class="form-input">
+            </div>
+
+            <div style="display: flex; gap: 8px;">
+                <div class="form-group" style="flex: 1;">
+                    <label class="form-label">Số điện thoại</label>
+                    <input type="text" id="inputPhone" class="form-input" placeholder="09xxxxxxxx">
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label class="form-label">Email</label>
+                    <input type="email" id="inputEmail" class="form-input" placeholder="kol@email.com">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Ngành hàng trọng tâm (Niche)</label>
+                <select id="selectNiche" class="form-select">
+                    <option value="general">Chung / Đa ngành</option>
+                    <option value="beauty">Mỹ phẩm & Chăm sóc da</option>
+                    <option value="fashion">Thời trang & Phụ kiện</option>
+                    <option value="mom_baby">Mẹ & Bé</option>
+                    <option value="food">Ăn uống & Review quán</option>
+                    <option value="tech">Công nghệ & Đồ gia dụng</option>
+                    <option value="lifestyle">Đời sống / Vlog</option>
+                    <option value="health">Sức khỏe & Thể thao</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Báo giá tham khảo (VNĐ / Video)</label>
+                <input type="number" id="inputRatePrice" class="form-input" placeholder="Ví dụ: 1500000">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Ghi chú & Trích xuất Bio</label>
+                <textarea id="inputNotes" class="form-textarea" placeholder="Nội dung bio hoặc lưu ý..."></textarea>
+            </div>
+
+            <button id="btnSaveCreator" class="btn-save">
+                <span id="saveBtnText">Lưu vào Booking CRM</span>
+            </button>
+
+            <!-- Result Banner -->
+            <div id="resultBanner" class="result-banner" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>

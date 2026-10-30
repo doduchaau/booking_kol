@@ -1,0 +1,11 @@
+{
+    "name": "Outreach",
+    "alias": "outreach",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\Outreach\\Providers\\OutreachServiceProvider"
+    ],
+    "files": []
+}

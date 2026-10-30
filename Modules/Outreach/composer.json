@@ -1,0 +1,30 @@
+{
+    "name": "nwidart/outreach",
+    "description": "",
+    "authors": [
+        {
+            "name": "Nicolas Widart",
+            "email": "n.widart@gmail.com"
+        }
+    ],
+    "extra": {
+        "laravel": {
+            "providers": [],
+            "aliases": {
+
+            }
+        }
+    },
+    "autoload": {
+        "psr-4": {
+            "Modules\\Outreach\\": "app/",
+            "Modules\\Outreach\\Database\\Factories\\": "database/factories/",
+            "Modules\\Outreach\\Database\\Seeders\\": "database/seeders/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Modules\\Outreach\\Tests\\": "tests/"
+        }
+    }
+}
