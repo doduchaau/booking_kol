@@ -37,6 +37,8 @@ class SettingsController extends Controller
             'ghn_token' => Setting::get('ghn_token', ''),
             'ghn_shop_id' => Setting::get('ghn_shop_id', ''),
             'ghtk_token' => Setting::get('ghtk_token', ''),
+            'groq_api_key' => Setting::get('groq_api_key', ''),
+            'openai_api_key' => Setting::get('openai_api_key', ''),
         ];
 
         // Lấy danh sách nhân sự kèm vai trò
@@ -93,6 +95,8 @@ class SettingsController extends Controller
             'ghn_token' => ['nullable', 'string', 'max:255'],
             'ghn_shop_id' => ['nullable', 'string', 'max:100'],
             'ghtk_token' => ['nullable', 'string', 'max:255'],
+            'groq_api_key' => ['nullable', 'string', 'max:255'],
+            'openai_api_key' => ['nullable', 'string', 'max:255'],
         ]);
 
         // Lưu Zalo OA
@@ -111,7 +115,15 @@ class SettingsController extends Controller
             Setting::set('ghtk_token', $validated['ghtk_token'], 'carrier', true);
         }
 
-        return back()->with('success', 'Đã lưu thông tin cấu hình kết nối Zalo OA và Hãng vận chuyển an toàn.');
+        // Lưu API Key cho Tầng 3 AI Smart Schema Mapper (Groq / OpenAI)
+        if (!empty($validated['groq_api_key']) && !str_contains($validated['groq_api_key'], '••••')) {
+            Setting::set('groq_api_key', $validated['groq_api_key'], 'ai_integration', true);
+        }
+        if (!empty($validated['openai_api_key']) && !str_contains($validated['openai_api_key'], '••••')) {
+            Setting::set('openai_api_key', $validated['openai_api_key'], 'ai_integration', true);
+        }
+
+        return back()->with('success', 'Đã lưu thông tin cấu hình kết nối Zalo OA, Hãng vận chuyển và AI API Keys an toàn.');
     }
 
     /**

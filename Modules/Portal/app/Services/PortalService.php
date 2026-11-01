@@ -68,6 +68,11 @@ class PortalService
      */
     public function confirmReceipt(CampaignCreator $campaignCreator): CampaignCreator
     {
+        $isSent = !is_null($campaignCreator->sample_sent_at) || $campaignCreator->status === PipelineStatusEnum::SAMPLE_SENT;
+        if (!$isSent) {
+            throw new Exception('Sản phẩm mẫu chưa được gửi đi. Vui lòng liên hệ nhân viên phụ trách.');
+        }
+
         $campaignCreator->update([
             'status' => PipelineStatusEnum::SAMPLE_RECEIVED,
             'sample_received_at' => now(),
@@ -81,6 +86,17 @@ class PortalService
      */
     public function submitVideo(CampaignCreator $campaignCreator, array $data): ContentPost
     {
+        $isSent = !is_null($campaignCreator->sample_sent_at) || in_array($campaignCreator->status, [
+            PipelineStatusEnum::SAMPLE_SENT,
+            PipelineStatusEnum::SAMPLE_RECEIVED,
+            PipelineStatusEnum::POSTED,
+            PipelineStatusEnum::COMPLETED,
+        ]);
+
+        if (!$isSent) {
+            throw new Exception('Chưa thể nộp link video khi chưa gửi mẫu sản phẩm.');
+        }
+
         // Tạo bản ghi bài đăng trong content_posts
         $post = ContentPost::create([
             'campaign_creator_id' => $campaignCreator->id,

@@ -26,21 +26,29 @@ class Setting extends Model
      */
     public static function get(string $key, mixed $default = null): mixed
     {
-        $setting = static::where('key', $key)->first();
-        if (!$setting || $setting->value === null) {
-            return $default;
-        }
-
-        if ($setting->is_encrypted) {
-            try {
-                return Crypt::decryptString($setting->value);
-            } catch (\Exception $e) {
-                Log::warning("Không thể giải mã cấu hình [{$key}]: " . $e->getMessage());
+        try {
+            if (!\Illuminate\Support\Facades\Schema::hasTable('settings')) {
                 return $default;
             }
-        }
 
-        return $setting->value;
+            $setting = static::where('key', $key)->first();
+            if (!$setting || $setting->value === null) {
+                return $default;
+            }
+
+            if ($setting->is_encrypted) {
+                try {
+                    return Crypt::decryptString($setting->value);
+                } catch (\Exception $e) {
+                    Log::warning("Không thể giải mã cấu hình [{$key}]: " . $e->getMessage());
+                    return $default;
+                }
+            }
+
+            return $setting->value;
+        } catch (\Throwable $e) {
+            return $default;
+        }
     }
 
     /**

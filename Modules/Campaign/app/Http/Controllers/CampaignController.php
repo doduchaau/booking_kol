@@ -5,6 +5,8 @@ namespace Modules\Campaign\Http\Controllers;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use Carbon\Carbon;
+use Exception;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -21,6 +23,7 @@ use Modules\Campaign\Services\CampaignService;
 use Modules\Campaign\Services\PipelineService;
 use Modules\Content\Models\ContentPost;
 use Modules\Creator\Models\Creator;
+use Modules\Creator\Services\CreatorNormalizationService;
 
 class CampaignController extends Controller
 {
@@ -318,25 +321,98 @@ class CampaignController extends Controller
 
     /**
      * Xác nhận gửi mẫu cho KOC trong chiến dịch (tinh giản - không quản lý vận đơn)
+     * Hỗ trợ cập nhật nhanh địa chỉ nhận hàng nếu KOC chưa có trong hồ sơ
      */
-    public function addShipment(Request $request, int $id, int $pivotId): RedirectResponse
+    public function addShipment(Request $request, int $id, int $pivotId): RedirectResponse|JsonResponse
     {
         $validated = $request->validate([
             'notes' => ['nullable', 'string', 'max:500'],
             'shipped_at' => ['nullable', 'date'],
+            'shipping_address' => ['nullable', 'string', 'max:255'],
+            'city_province' => ['nullable', 'string', 'max:100'],
+            'district' => ['nullable', 'string', 'max:100'],
+            'ward' => ['nullable', 'string', 'max:100'],
+            'phone' => ['nullable', 'string', 'max:20'],
         ]);
 
         $campaignCreator = CampaignCreator::where('campaign_id', $id)->with('creator')->findOrFail($pivotId);
+        $creator = $campaignCreator->creator;
 
-        $shippedAt = !empty($validated['shipped_at']) ? Carbon::parse($validated['shipped_at']) : now();
+        // Phân quyền: Staff chỉ được sửa KOC mình được phân công
+        $currentUser = auth()->user();
+        if ($currentUser && $currentUser->hasRole('Staff') && !$currentUser->hasAnyRole(['Admin', 'Leader'])) {
+            if ($campaignCreator->assigned_to !== null && $campaignCreator->assigned_to !== $currentUser->id) {
+                $msg = 'Bạn chỉ được xác nhận gửi mẫu cho KOC mà mình được phân công.';
+                return $request->wantsJson()
+                    ? response()->json(['success' => false, 'message' => $msg], 403)
+                    : back()->withErrors(['error' => $msg]);
+            }
+        }
 
-        $campaignCreator->update([
-            'status' => PipelineStatusEnum::SAMPLE_SENT,
-            'sample_sent_at' => $campaignCreator->sample_sent_at ?? $shippedAt,
-            'notes' => $validated['notes'] ?? $campaignCreator->notes,
-        ]);
+        // Nếu nhân viên có nhập nhanh địa chỉ giao hàng tại modal, lưu ngay vào hồ sơ Creator
+        if ($request->filled('shipping_address')) {
+            $creatorData = [
+                'shipping_address' => trim($request->input('shipping_address')),
+            ];
 
-        return back()->with('success', "Đã xác nhận gửi mẫu thành công cho KOC {$campaignCreator->creator->name}.");
+            if ($request->filled('city_province')) {
+                $creatorData['city_province'] = trim($request->input('city_province'));
+            }
+            if ($request->filled('district')) {
+                $creatorData['district'] = trim($request->input('district'));
+            }
+            if ($request->filled('ward')) {
+                $creatorData['ward'] = trim($request->input('ward'));
+            }
+            if ($request->filled('phone')) {
+                $creatorData['phone'] = CreatorNormalizationService::normalizePhone($request->input('phone'));
+            }
+
+            $creator->update($creatorData);
+
+            // Cập nhật mốc thời gian chốt địa chỉ nếu đang ở các trạng thái trước đó
+            if (in_array($campaignCreator->status, [PipelineStatusEnum::NEW, PipelineStatusEnum::CONTACTED, PipelineStatusEnum::AGREED])) {
+                $campaignCreator->update([
+                    'status' => PipelineStatusEnum::ADDRESS_CONFIRMED,
+                    'address_confirmed_at' => $campaignCreator->address_confirmed_at ?? now(),
+                ]);
+            }
+        }
+
+        try {
+            // Chuyển sang sample_sent thông qua PipelineService với đầy đủ ràng buộc kiểm tra địa chỉ
+            $this->pipelineService->updateCreatorStatus(
+                campaignCreator: $campaignCreator,
+                newStatus: PipelineStatusEnum::SAMPLE_SENT,
+                notes: $validated['notes'] ?? null
+            );
+
+            if (!empty($validated['shipped_at'])) {
+                $campaignCreator->update([
+                    'sample_sent_at' => Carbon::parse($validated['shipped_at']),
+                ]);
+            }
+
+            $msg = "Đã xác nhận gửi mẫu thành công cho KOC {$creator->name}.";
+
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => $msg,
+                ]);
+            }
+
+            return back()->with('success', $msg);
+        } catch (Exception $e) {
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 422);
+            }
+
+            return back()->withErrors(['error' => $e->getMessage()]);
+        }
     }
 
     /**
@@ -353,6 +429,20 @@ class CampaignController extends Controller
 
         $campaignCreator = CampaignCreator::where('campaign_id', $id)->with('creator')->findOrFail($pivotId);
 
+        // KIỂM TRA RÀNG BUỘC: Không thể lên video khi chưa gửi mẫu
+        $isSent = !empty($campaignCreator->sample_sent_at) || in_array($campaignCreator->status, [
+            PipelineStatusEnum::SAMPLE_SENT,
+            PipelineStatusEnum::SAMPLE_RECEIVED,
+            PipelineStatusEnum::POSTED,
+            PipelineStatusEnum::COMPLETED,
+        ]);
+
+        if (!$isSent) {
+            return back()->withErrors([
+                'error' => "Không thể thêm video cho KOC {$campaignCreator->creator->name} vì chưa gửi mẫu sản phẩm.",
+            ]);
+        }
+
         $postedAt = !empty($validated['posted_at'])
             ? Carbon::parse($validated['posted_at'])
             : now();
@@ -366,19 +456,12 @@ class CampaignController extends Controller
             'status' => 'approved',
         ]);
 
-        // Tự động chuyển pipeline sang "posted" nếu chưa lên video
+        // Tự động chuyển pipeline sang "posted" nếu đang ở sample_sent hoặc sample_received
         if (in_array($campaignCreator->status, [
-            PipelineStatusEnum::NEW,
-            PipelineStatusEnum::CONTACTED,
-            PipelineStatusEnum::AGREED,
-            PipelineStatusEnum::ADDRESS_CONFIRMED,
             PipelineStatusEnum::SAMPLE_SENT,
             PipelineStatusEnum::SAMPLE_RECEIVED,
         ])) {
-            $campaignCreator->update([
-                'status' => PipelineStatusEnum::POSTED,
-                'posted_at' => $campaignCreator->posted_at ?? $postedAt,
-            ]);
+            $this->pipelineService->updateCreatorStatus($campaignCreator, PipelineStatusEnum::POSTED);
         }
 
         return back()->with('success', "Đã ghi nhận thêm video mới cho KOC {$campaignCreator->creator->name}.");

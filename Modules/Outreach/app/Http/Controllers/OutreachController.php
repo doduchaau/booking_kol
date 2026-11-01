@@ -16,11 +16,13 @@ use Modules\Outreach\Models\OptOut;
 use Modules\Outreach\Models\OutreachMessage;
 use Modules\Outreach\Models\OutreachTemplate;
 use Modules\Outreach\Services\OutreachService;
+use Modules\Outreach\Services\QuickFollowupService;
 
 class OutreachController extends Controller
 {
     public function __construct(
-        protected OutreachService $outreachService
+        protected OutreachService $outreachService,
+        protected QuickFollowupService $quickFollowupService
     ) {}
 
     /**
@@ -84,8 +86,17 @@ class OutreachController extends Controller
             }])
             ->get();
 
+        $templateTypes = [
+            ['key' => 'custom', 'label' => 'Mẫu tin nhắn tùy biến chung'],
+            ['key' => 'remind_deadline', 'label' => 'Nhắc Zalo 1-Chạm: Đôn đốc Hạn nộp Video'],
+            ['key' => 'remind_receipt', 'label' => 'Nhắc Zalo 1-Chạm: Nhắc Xác Nhận Đã Nhận Mẫu'],
+            ['key' => 'brief_outreach', 'label' => 'Nhắc Zalo 1-Chạm: Gửi Brief & Chào Mời'],
+            ['key' => 'shipping_notice', 'label' => 'Nhắc Zalo 1-Chạm: Báo Đã Chuyển Đơn Cho Kho'],
+        ];
+
         return Inertia::render('Outreach/Index', [
             'templates' => $templates,
+            'templateTypes' => $templateTypes,
             'messages' => $messages,
             'optOuts' => $optOuts,
             'groupInvites' => $groupInvites,
@@ -101,6 +112,7 @@ class OutreachController extends Controller
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:150'],
+            'type' => ['nullable', 'string', 'max:50'],
             'channel' => ['required', 'in:zalo_personal,zalo_oa,email,direct_message'],
             'subject' => ['nullable', 'string', 'max:200'],
             'content_template' => ['required', 'string'],
@@ -112,6 +124,7 @@ class OutreachController extends Controller
 
         OutreachTemplate::create([
             'name' => $validated['name'],
+            'type' => $validated['type'] ?? 'custom',
             'channel' => $validated['channel'],
             'subject' => $validated['subject'] ?? null,
             'content_template' => $validated['content_template'],
@@ -130,6 +143,7 @@ class OutreachController extends Controller
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:150'],
+            'type' => ['nullable', 'string', 'max:50'],
             'channel' => ['required', 'in:zalo_personal,zalo_oa,email,direct_message'],
             'subject' => ['nullable', 'string', 'max:200'],
             'content_template' => ['required', 'string'],
@@ -278,5 +292,45 @@ class OutreachController extends Controller
         ]);
 
         return back()->with('success', 'Đã cập nhật trạng thái nhóm Zalo.');
+    }
+
+    /**
+     * Lấy các mẫu tin nhắn nhắc nhở Zalo thông minh theo ngữ cảnh KOC
+     */
+    public function quickFollowupPreview(int $id): JsonResponse
+    {
+        $campaignCreator = CampaignCreator::with(['creator', 'campaign', 'assignee'])->findOrFail($id);
+
+        $data = $this->quickFollowupService->generateTemplates($campaignCreator, auth()->user());
+
+        return response()->json($data);
+    }
+
+    /**
+     * Ghi nhận việc gửi tin nhắn nhắc nhở Zalo vào lịch sử tương tác
+     */
+    public function quickFollowupLog(Request $request, int $id): JsonResponse
+    {
+        $request->validate([
+            'content' => ['required', 'string'],
+        ]);
+
+        $campaignCreator = CampaignCreator::findOrFail($id);
+
+        $message = $this->quickFollowupService->logFollowupMessage(
+            $campaignCreator,
+            $request->input('content'),
+            auth()->id()
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Đã lưu lịch sử tương tác Zalo thành công.',
+            'data' => [
+                'id' => $message->id,
+                'sent_at' => $message->sent_at?->format('d/m/Y H:i'),
+                'pipeline_status' => $campaignCreator->status?->value ?? $campaignCreator->status,
+            ],
+        ]);
     }
 }

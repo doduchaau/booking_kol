@@ -89,6 +89,122 @@ class PipelineConstraintTest extends TestCase
     }
 
     /**
+     * Ràng buộc: Không được chuyển sang sample_received nếu chưa gửi mẫu
+     */
+    public function test_cannot_transition_to_sample_received_without_sample_sent(): void
+    {
+        $creator = Creator::create([
+            'name' => 'KOC Chưa Gửi Mẫu',
+            'phone' => '0912345688',
+            'niche' => 'beauty',
+            'tier' => CreatorTierEnum::NANO,
+            'trust_score' => 100,
+            'shipping_address' => '123 Đường Test, Quận 1',
+        ]);
+
+        $cc = CampaignCreator::create([
+            'campaign_id' => $this->campaign->id,
+            'creator_id' => $creator->id,
+            'status' => PipelineStatusEnum::ADDRESS_CONFIRMED,
+        ]);
+
+        $this->expectException(Exception::class);
+        $this->expectExceptionMessage("chưa gửi mẫu cho KOC");
+
+        $this->pipelineService->updateCreatorStatus($cc, PipelineStatusEnum::SAMPLE_RECEIVED);
+    }
+
+    /**
+     * Ràng buộc: Không được chuyển sang posted nếu chưa gửi mẫu
+     */
+    public function test_cannot_transition_to_posted_without_sample_sent(): void
+    {
+        $creator = Creator::create([
+            'name' => 'KOC Lên Video Sớm',
+            'phone' => '0912345689',
+            'niche' => 'beauty',
+            'tier' => CreatorTierEnum::NANO,
+            'trust_score' => 100,
+            'shipping_address' => '123 Đường Test, Quận 1',
+        ]);
+
+        $cc = CampaignCreator::create([
+            'campaign_id' => $this->campaign->id,
+            'creator_id' => $creator->id,
+            'status' => PipelineStatusEnum::AGREED,
+        ]);
+
+        $this->expectException(Exception::class);
+        $this->expectExceptionMessage("chưa gửi mẫu cho KOC");
+
+        $this->pipelineService->updateCreatorStatus($cc, PipelineStatusEnum::POSTED);
+    }
+
+    /**
+     * Ràng buộc: Không được chuyển sang posted nếu đã nhận mẫu nhưng chưa có link video
+     */
+    public function test_cannot_transition_to_posted_without_video_link(): void
+    {
+        $creator = Creator::create([
+            'name' => 'KOC Chưa Có Link Video',
+            'phone' => '0912345690',
+            'niche' => 'beauty',
+            'tier' => CreatorTierEnum::NANO,
+            'trust_score' => 100,
+            'shipping_address' => '123 Đường Test, Quận 1',
+        ]);
+
+        $cc = CampaignCreator::create([
+            'campaign_id' => $this->campaign->id,
+            'creator_id' => $creator->id,
+            'status' => PipelineStatusEnum::SAMPLE_RECEIVED,
+            'sample_sent_at' => now()->subDays(3),
+            'sample_received_at' => now()->subDay(),
+        ]);
+
+        $this->expectException(Exception::class);
+        $this->expectExceptionMessage("chưa có link video nghiệm thu");
+
+        $this->pipelineService->updateCreatorStatus($cc, PipelineStatusEnum::POSTED);
+    }
+
+    /**
+     * Chuyển sang posted thành công khi đã có bài đăng trong content_posts
+     */
+    public function test_can_transition_to_posted_when_has_content_post(): void
+    {
+        $creator = Creator::create([
+            'name' => 'KOC Đã Có Link Video',
+            'phone' => '0912345691',
+            'niche' => 'beauty',
+            'tier' => CreatorTierEnum::NANO,
+            'trust_score' => 100,
+            'shipping_address' => '123 Đường Test, Quận 1',
+        ]);
+
+        $cc = CampaignCreator::create([
+            'campaign_id' => $this->campaign->id,
+            'creator_id' => $creator->id,
+            'status' => PipelineStatusEnum::SAMPLE_RECEIVED,
+            'sample_sent_at' => now()->subDays(3),
+            'sample_received_at' => now()->subDay(),
+        ]);
+
+        \Modules\Content\Models\ContentPost::create([
+            'campaign_creator_id' => $cc->id,
+            'platform' => 'tiktok',
+            'post_url' => 'https://www.tiktok.com/@creator/video/999999999',
+            'posted_at' => now(),
+            'status' => 'approved',
+        ]);
+
+        $updated = $this->pipelineService->updateCreatorStatus($cc, PipelineStatusEnum::POSTED);
+
+        $this->assertEquals(PipelineStatusEnum::POSTED, $updated->status);
+        $this->assertNotNull($updated->posted_at);
+    }
+
+    /**
      * Ràng buộc 2: Chuyển sang no_show (Bom hàng) tự động trừ 30 điểm và đưa vào Blacklist nếu < 40 điểm
      */
     public function test_no_show_deducts_trust_score_and_blacklists_if_below_40(): void

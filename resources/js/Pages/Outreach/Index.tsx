@@ -29,6 +29,8 @@ import {
     User,
     Sparkles,
     AtSign,
+    Zap,
+    FolderKanban,
 } from 'lucide-react';
 import PageHeader from '@/Components/Common/PageHeader';
 import Button from '@/Components/Common/Button';
@@ -42,6 +44,7 @@ import EmptyState from '@/Components/Common/EmptyState';
 interface Template {
     id: number;
     name: string;
+    type?: string | null;
     channel: string;
     subject?: string | null;
     content_template: string;
@@ -135,6 +138,7 @@ interface PaginatedData<T> {
 
 interface OutreachIndexProps {
     templates: Template[];
+    templateTypes?: Array<{ key: string; label: string }>;
     messages: PaginatedData<MessageItem>;
     optOuts: PaginatedData<OptOutItem>;
     groupInvites: PaginatedData<GroupInviteItem>;
@@ -149,6 +153,7 @@ interface OutreachIndexProps {
 
 export default function OutreachIndex({
     templates,
+    templateTypes,
     messages,
     optOuts,
     groupInvites,
@@ -156,10 +161,11 @@ export default function OutreachIndex({
     campaigns,
 }: OutreachIndexProps) {
     const [activeTab, setActiveTab] = useState<'templates' | 'messages' | 'optouts' | 'groups'>('templates');
+    const [templateCategoryFilter, setTemplateCategoryFilter] = useState<'all' | 'quick' | 'custom'>('all');
 
     // State cho Modal Dùng Mẫu & Mở Zalo (Split Workspace Layout)
     const [isActionModalOpen, setIsActionModalOpen] = useState(false);
-    const [selectedCampaignId, setSelectedCampaignId] = useState<number | 'all'>('all');
+    const [selectedCampaignId, setSelectedCampaignId] = useState<number | ''>('');
     const [selectedPivotId, setSelectedPivotId] = useState<number | ''>('');
     const [selectedTemplateId, setSelectedTemplateId] = useState<number | ''>(templates[0]?.id || '');
     const [searchKocQuery, setSearchKocQuery] = useState('');
@@ -186,6 +192,7 @@ export default function OutreachIndex({
 
     const templateForm = useForm({
         name: '',
+        type: 'custom',
         channel: 'zalo_personal',
         subject: '',
         content_template: '',
@@ -200,20 +207,10 @@ export default function OutreachIndex({
         reason: 'KOC từ chối nhận tin tiếp cận',
     });
 
-    // Gom toàn bộ KOC theo chiến dịch được chọn (hoặc tất cả chiến dịch)
+    // Gom KOC theo chiến dịch được chọn. Bắt buộc người dùng phải chọn chiến dịch trước (ẩn hết KOC khi chưa chọn).
     const allAvailableCreators = useMemo(() => {
-        if (selectedCampaignId === 'all') {
-            const list: Array<CampaignCreatorOption & { campaign_name: string; campaign_product: string }> = [];
-            campaigns.forEach((camp) => {
-                camp.campaign_creators.forEach((cc) => {
-                    list.push({
-                        ...cc,
-                        campaign_name: camp.name,
-                        campaign_product: camp.product_name,
-                    });
-                });
-            });
-            return list;
+        if (!selectedCampaignId) {
+            return [];
         }
 
         const camp = campaigns.find((c) => c.id === Number(selectedCampaignId));
@@ -224,6 +221,30 @@ export default function OutreachIndex({
             campaign_product: camp.product_name,
         }));
     }, [selectedCampaignId, campaigns]);
+
+    // Xử lý khi người dùng chọn chiến dịch trong modal
+    const handleCampaignChange = (campaignId: number | '') => {
+        setSelectedCampaignId(campaignId);
+        setSendSuccess(false);
+        setSearchKocQuery('');
+        if (!campaignId) {
+            setSelectedPivotId('');
+            setRenderedText('');
+            setZaloDeepLink(null);
+            setPortalLink(null);
+            return;
+        }
+
+        const camp = campaigns.find((c) => c.id === Number(campaignId));
+        if (camp && camp.campaign_creators.length > 0) {
+            setSelectedPivotId(camp.campaign_creators[0].id);
+        } else {
+            setSelectedPivotId('');
+            setRenderedText('');
+            setZaloDeepLink(null);
+            setPortalLink(null);
+        }
+    };
 
     // Lọc KOC ưu tiên theo @handle mạng xã hội, Tên, Số điện thoại và Trạng thái
     const filteredKocs = useMemo(() => {
@@ -472,6 +493,7 @@ export default function OutreachIndex({
         templateForm.reset();
         templateForm.setData({
             name: '',
+            type: 'custom',
             channel: 'zalo_personal',
             subject: '',
             content_template: '',
@@ -484,6 +506,7 @@ export default function OutreachIndex({
         setEditingTemplate(tmpl);
         templateForm.setData({
             name: tmpl.name,
+            type: tmpl.type || 'custom',
             channel: tmpl.channel,
             subject: tmpl.subject || '',
             content_template: tmpl.content_template,
@@ -491,6 +514,40 @@ export default function OutreachIndex({
         });
         setIsTemplateModalOpen(true);
     };
+
+    // Chèn biến nhanh vào nội dung mẫu
+    const insertVariableTag = (tag: string) => {
+        const current = templateForm.data.content_template || '';
+        templateForm.setData('content_template', current ? `${current} ${tag}` : tag);
+    };
+
+    const variableChips = [
+        { tag: '{creator_name}', desc: 'Tên KOC' },
+        { tag: '{handle}', desc: '@handle MXH' },
+        { tag: '{staff_name}', desc: 'Tên nhân viên' },
+        { tag: '{campaign_name}', desc: 'Tên chiến dịch' },
+        { tag: '{product_name}', desc: 'Tên sản phẩm' },
+        { tag: '{portal_link}', desc: 'Link Portal KOC' },
+        { tag: '{deadline_text}', desc: 'Hạn nộp video' },
+        { tag: '{sent_date_text}', desc: 'Ngày gửi mẫu' },
+        { tag: '{hashtags}', desc: 'Hashtag' },
+        { tag: '{discount_code}', desc: 'Mã giảm giá' },
+        { tag: '{rate}', desc: 'Mức thù lao' },
+    ];
+
+    const filteredTemplates = useMemo(() => {
+        if (templateCategoryFilter === 'quick') {
+            return templates.filter((t) => t.type && t.type !== 'custom');
+        }
+        if (templateCategoryFilter === 'custom') {
+            return templates.filter((t) => !t.type || t.type === 'custom');
+        }
+        return templates;
+    }, [templates, templateCategoryFilter]);
+
+    const quickTemplatesCount = useMemo(() => {
+        return templates.filter((t) => t.type && t.type !== 'custom').length;
+    }, [templates]);
 
     const handleSaveTemplate = (e: React.FormEvent) => {
         e.preventDefault();
@@ -554,10 +611,11 @@ export default function OutreachIndex({
                             variant="primary"
                             iconLeft={<Send className="h-4 w-4" />}
                             onClick={() => {
+                                setSelectedCampaignId('');
+                                setSelectedPivotId('');
+                                setRenderedText('');
+                                setSendSuccess(false);
                                 setIsActionModalOpen(true);
-                                if (!selectedPivotId && filteredKocs.length > 0) {
-                                    setSelectedPivotId(filteredKocs[0].id);
-                                }
                             }}
                         >
                             Dùng Mẫu & Mở Zalo
@@ -686,29 +744,86 @@ export default function OutreachIndex({
             {/* TAB 1: MẪU TIN NHẮN */}
             {activeTab === 'templates' && (
                 <div>
+                    {/* Thanh lọc loại mẫu tin & Gợi ý */}
+                    <div className="mb-5 flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-semibold text-slate-500 mr-1">Bộ lọc:</span>
+                            <button
+                                type="button"
+                                onClick={() => setTemplateCategoryFilter('all')}
+                                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                                    templateCategoryFilter === 'all'
+                                        ? 'bg-primary-600 text-white shadow-xs'
+                                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                }`}
+                            >
+                                Tất cả mẫu ({templates.length})
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setTemplateCategoryFilter('quick')}
+                                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                                    templateCategoryFilter === 'quick'
+                                        ? 'bg-amber-600 text-white shadow-xs'
+                                        : 'bg-amber-50 text-amber-800 border border-amber-200/80 hover:bg-amber-100'
+                                }`}
+                            >
+                                <Zap className="h-3.5 w-3.5 text-amber-500" />
+                                Nhắc Zalo 1-Chạm ({quickTemplatesCount})
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setTemplateCategoryFilter('custom')}
+                                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                                    templateCategoryFilter === 'custom'
+                                        ? 'bg-primary-600 text-white shadow-xs'
+                                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                }`}
+                            >
+                                Mẫu tiếp cận khác ({templates.length - quickTemplatesCount})
+                            </button>
+                        </div>
+
+                        <div className="text-xs text-slate-500 flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100">
+                            <Sparkles className="h-4 w-4 text-amber-500 shrink-0" />
+                            <span>Các mẫu "Nhắc Zalo 1-Chạm" được đồng bộ trực tiếp vào nút Nhắc việc trên Kanban & Workspace.</span>
+                        </div>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                        {templates.map((tmpl) => (
+                        {filteredTemplates.map((tmpl) => (
                             <div
                                 key={tmpl.id}
-                                className="flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md transition-shadow"
+                                className={`flex flex-col justify-between rounded-xl border bg-white p-5 shadow-sm hover:shadow-md transition-shadow ${
+                                    tmpl.type && tmpl.type !== 'custom' ? 'border-amber-200/80 ring-1 ring-amber-100' : 'border-slate-200'
+                                }`}
                             >
                                 <div>
                                     <div className="flex items-center justify-between mb-3">
-                                        <Badge
-                                            variant={
-                                                tmpl.channel === 'zalo_personal'
-                                                    ? 'primary'
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <Badge
+                                                variant={
+                                                    tmpl.channel === 'zalo_personal'
+                                                        ? 'primary'
+                                                        : tmpl.channel === 'zalo_oa'
+                                                        ? 'success'
+                                                        : 'info'
+                                                }
+                                            >
+                                                {tmpl.channel === 'zalo_personal'
+                                                    ? 'Zalo Cá Nhân (Bán tự động)'
                                                     : tmpl.channel === 'zalo_oa'
-                                                    ? 'success'
-                                                    : 'info'
-                                            }
-                                        >
-                                            {tmpl.channel === 'zalo_personal'
-                                                ? 'Zalo Cá Nhân (Bán tự động)'
-                                                : tmpl.channel === 'zalo_oa'
-                                                ? 'Zalo OA (ZNS)'
-                                                : tmpl.channel}
-                                        </Badge>
+                                                    ? 'Zalo OA (ZNS)'
+                                                    : tmpl.channel}
+                                            </Badge>
+
+                                            {tmpl.type && tmpl.type !== 'custom' && (
+                                                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-800 border border-amber-200">
+                                                    <Zap className="h-3 w-3 text-amber-600" />
+                                                    Nhắc Zalo 1-Chạm
+                                                </span>
+                                            )}
+                                        </div>
                                         <span
                                             className={`inline-block h-2.5 w-2.5 rounded-full ${
                                                 tmpl.is_active ? 'bg-emerald-500' : 'bg-slate-300'
@@ -749,10 +864,11 @@ export default function OutreachIndex({
                                         iconLeft={<Send className="h-3.5 w-3.5" />}
                                         onClick={() => {
                                             setSelectedTemplateId(tmpl.id);
+                                            setSelectedCampaignId('');
+                                            setSelectedPivotId('');
+                                            setRenderedText('');
+                                            setSendSuccess(false);
                                             setIsActionModalOpen(true);
-                                            if (filteredKocs.length > 0) {
-                                                setSelectedPivotId(filteredKocs[0].id);
-                                            }
                                         }}
                                     >
                                         Dùng Mẫu Này
@@ -1073,18 +1189,24 @@ export default function OutreachIndex({
                                 {/* Hàng 1: Bộ lọc chiến dịch & Trạng thái */}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                                     <div>
-                                        <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
-                                            Chiến Dịch
+                                        <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-700 mb-1 flex items-center gap-1">
+                                            <span>Chiến Dịch</span>
+                                            <span className="text-rose-500 font-bold">*</span>
+                                            <span className="text-[10px] text-slate-400 font-normal lowercase">(bắt buộc chọn trước)</span>
                                         </label>
                                         <select
                                             value={selectedCampaignId}
                                             onChange={(e) => {
-                                                const val = e.target.value === 'all' ? 'all' : Number(e.target.value);
-                                                setSelectedCampaignId(val);
+                                                const val = e.target.value ? Number(e.target.value) : '';
+                                                handleCampaignChange(val);
                                             }}
-                                            className="w-full rounded-lg border-slate-300 text-xs focus:border-primary-500 focus:ring-primary-500 py-2"
+                                            className={`w-full rounded-xl text-xs py-2.5 font-medium transition-all shadow-2xs ${
+                                                !selectedCampaignId
+                                                    ? 'border-amber-400 bg-amber-50/70 text-amber-900 focus:border-amber-500 focus:ring-amber-500 ring-2 ring-amber-400/20 font-bold'
+                                                    : 'border-slate-300 focus:border-primary-500 focus:ring-primary-500'
+                                            }`}
                                         >
-                                            <option value="all">Tất cả chiến dịch ({allAvailableCreators.length} KOC)</option>
+                                            <option value="">-- Vui lòng chọn chiến dịch trước --</option>
                                             {campaigns.map((c) => (
                                                 <option key={c.id} value={c.id}>
                                                     {c.name} ({c.campaign_creators.length} KOC)
@@ -1099,8 +1221,9 @@ export default function OutreachIndex({
                                         </label>
                                         <select
                                             value={statusFilter}
+                                            disabled={!selectedCampaignId}
                                             onChange={(e) => setStatusFilter(e.target.value as any)}
-                                            className="w-full rounded-lg border-slate-300 text-xs focus:border-primary-500 focus:ring-primary-500 py-2"
+                                            className="w-full rounded-xl border-slate-300 text-xs focus:border-primary-500 focus:ring-primary-500 py-2.5 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                                         >
                                             <option value="all">Tất cả trạng thái</option>
                                             <option value="new">Mới thêm (Chưa liên hệ)</option>
@@ -1118,7 +1241,7 @@ export default function OutreachIndex({
                                             Tìm Kiếm KOC Theo @Handle, Tên Hoặc Số Điện Thoại
                                         </label>
                                         <span className="text-[11px] text-slate-400 font-medium">
-                                            {filteredKocs.length} kết quả
+                                            {selectedCampaignId ? `${filteredKocs.length} kết quả` : 'Chờ chọn chiến dịch'}
                                         </span>
                                     </div>
                                     <div className="relative">
@@ -1126,9 +1249,14 @@ export default function OutreachIndex({
                                         <input
                                             type="text"
                                             value={searchKocQuery}
+                                            disabled={!selectedCampaignId}
                                             onChange={(e) => setSearchKocQuery(e.target.value)}
-                                            placeholder="Nhập @handle (vd: @thuthao, @linhbui...), tên KOC hoặc SĐT..."
-                                            className="w-full pl-10 pr-9 py-2.5 rounded-xl border-slate-300 text-sm focus:border-primary-500 focus:ring-primary-500 shadow-2xs"
+                                            placeholder={
+                                                !selectedCampaignId
+                                                    ? 'Vui lòng chọn chiến dịch phía trên trước để tìm kiếm KOC...'
+                                                    : 'Nhập @handle (vd: @thuthao, @linhbui...), tên KOC hoặc SĐT...'
+                                            }
+                                            className="w-full pl-10 pr-9 py-2.5 rounded-xl border-slate-300 text-sm focus:border-primary-500 focus:ring-primary-500 shadow-2xs disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                                         />
                                         {searchKocQuery && (
                                             <button
@@ -1158,10 +1286,38 @@ export default function OutreachIndex({
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-100">
-                                                {filteredKocs.length === 0 ? (
+                                                {!selectedCampaignId ? (
                                                     <tr>
-                                                        <td colSpan={4} className="py-12 text-center text-slate-400">
-                                                            Không tìm thấy KOC nào khớp với từ khóa tìm kiếm.
+                                                        <td colSpan={4} className="py-20 text-center">
+                                                            <div className="flex flex-col items-center justify-center max-w-sm mx-auto px-4">
+                                                                <div className="h-14 w-14 rounded-2xl bg-amber-100/70 text-amber-700 flex items-center justify-center mb-3 border border-amber-200 shadow-2xs">
+                                                                    <FolderKanban className="h-7 w-7 text-amber-600" />
+                                                                </div>
+                                                                <span className="font-bold text-slate-800 text-sm">
+                                                                    Vui lòng chọn chiến dịch trước
+                                                                </span>
+                                                                <p className="mt-1.5 text-xs text-slate-500 leading-relaxed">
+                                                                    Danh sách KOC được ẩn để đảm bảo bạn tiếp cận đúng Creator thuộc chiến dịch tương ứng. Hãy chọn một chiến dịch ở menu phía trên để hiển thị danh sách.
+                                                                </p>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ) : filteredKocs.length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan={4} className="py-16 text-center">
+                                                            <div className="flex flex-col items-center justify-center max-w-xs mx-auto px-4">
+                                                                <div className="h-12 w-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mb-3">
+                                                                    <Users className="h-6 w-6" />
+                                                                </div>
+                                                                <span className="font-bold text-slate-700 text-sm">
+                                                                    Không tìm thấy KOC nào
+                                                                </span>
+                                                                <p className="mt-1 text-xs text-slate-500">
+                                                                    {searchKocQuery
+                                                                        ? 'Không có KOC nào khớp với từ khóa tìm kiếm.'
+                                                                        : 'Chiến dịch này chưa được thêm KOC nào hoặc không có KOC ở trạng thái đã chọn.'}
+                                                                </p>
+                                                            </div>
                                                         </td>
                                                     </tr>
                                                 ) : (
@@ -1258,7 +1414,16 @@ export default function OutreachIndex({
                             {/* Dòng tóm tắt phía dưới bảng */}
                             <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
                                 <span>
-                                    Hiển thị <strong>{filteredKocs.length}</strong> / {allAvailableCreators.length} KOC
+                                    {!selectedCampaignId ? (
+                                        <span className="text-amber-700 font-semibold flex items-center gap-1">
+                                            <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
+                                            Chưa chọn chiến dịch
+                                        </span>
+                                    ) : (
+                                        <>
+                                            Hiển thị <strong>{filteredKocs.length}</strong> / {allAvailableCreators.length} KOC
+                                        </>
+                                    )}
                                 </span>
                                 {selectedKoc && (
                                     <span className="text-primary-700 font-semibold truncate max-w-[320px]">
@@ -1357,9 +1522,13 @@ export default function OutreachIndex({
                                         </div>
                                     </div>
                                 ) : (
-                                    <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-amber-800 text-xs flex items-center gap-2">
+                                    <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-amber-800 text-xs flex items-center gap-2.5">
                                         <AlertCircle className="h-5 w-5 shrink-0 text-amber-600" />
-                                        <span>Vui lòng chọn 1 KOC ở bảng bên trái để xem trước và cá nhân hóa tin nhắn.</span>
+                                        <span>
+                                            {!selectedCampaignId
+                                                ? 'Vui lòng chọn chiến dịch ở cột bên trái trước để hiển thị danh sách KOC.'
+                                                : 'Vui lòng chọn 1 KOC ở bảng bên trái để xem trước và cá nhân hóa tin nhắn.'}
+                                        </span>
                                     </div>
                                 )}
 
@@ -1391,7 +1560,13 @@ export default function OutreachIndex({
                                         onChange={(e) => setRenderedText(e.target.value)}
                                         rows={13}
                                         className="w-full rounded-xl border-slate-300 text-xs font-mono text-slate-800 focus:border-primary-500 focus:ring-primary-500 leading-relaxed shadow-2xs p-3.5"
-                                        placeholder="Chọn KOC và mẫu tin để tự động tạo nội dung..."
+                                        placeholder={
+                                            !selectedCampaignId
+                                                ? 'Vui lòng chọn chiến dịch và KOC ở cột bên trái để tự động tạo nội dung...'
+                                                : !selectedPivotId
+                                                ? 'Vui lòng chọn KOC để xem trước nội dung tin nhắn...'
+                                                : 'Chọn KOC và mẫu tin để tự động tạo nội dung...'
+                                        }
                                     />
 
                                     {/* Thanh công cụ phụ: Nút Copy nhanh & Biến */}
@@ -1517,23 +1692,51 @@ export default function OutreachIndex({
                             <TextInput
                                 value={templateForm.data.name}
                                 onChange={(e) => templateForm.setData('name', e.target.value)}
-                                placeholder="Ví dụ: Mời hợp tác KOC Beauty trải nghiệm sản phẩm"
+                                placeholder="Ví dụ: Nhắc Zalo: Đôn đốc Hạn nộp Video"
                                 required
                             />
                         </FormField>
 
-                        <FormField label="Kênh tiếp cận" error={templateForm.errors.channel} required>
-                            <select
-                                value={templateForm.data.channel}
-                                onChange={(e) => templateForm.setData('channel', e.target.value)}
-                                className="w-full rounded-lg border-slate-300 text-sm focus:border-primary-500 focus:ring-primary-500"
-                            >
-                                <option value="zalo_personal">Zalo Cá Nhân (Bán tự động qua link zalo.me)</option>
-                                <option value="zalo_oa">Zalo Official Account (ZNS)</option>
-                                <option value="email">Email</option>
-                                <option value="direct_message">Tin nhắn trực tiếp (Direct Message)</option>
-                            </select>
-                        </FormField>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <FormField label="Phân loại mẫu tin (Mục đích)" error={templateForm.errors.type}>
+                                <select
+                                    value={templateForm.data.type || 'custom'}
+                                    onChange={(e) => templateForm.setData('type', e.target.value)}
+                                    className="w-full rounded-lg border-slate-300 text-sm focus:border-primary-500 focus:ring-primary-500 font-medium"
+                                >
+                                    <option value="custom">Mẫu tiếp cận tùy biến chung</option>
+                                    <option value="remind_deadline">⚡ Nhắc Zalo 1-Chạm: Đôn đốc Hạn nộp Video</option>
+                                    <option value="remind_receipt">⚡ Nhắc Zalo 1-Chạm: Nhắc Xác Nhận Đã Nhận Mẫu</option>
+                                    <option value="brief_outreach">⚡ Nhắc Zalo 1-Chạm: Gửi Brief & Chào Mời</option>
+                                    <option value="shipping_notice">⚡ Nhắc Zalo 1-Chạm: Báo Đã Gửi Mẫu Cho Kho</option>
+                                </select>
+                            </FormField>
+
+                            <FormField label="Kênh tiếp cận" error={templateForm.errors.channel} required>
+                                <select
+                                    value={templateForm.data.channel}
+                                    onChange={(e) => templateForm.setData('channel', e.target.value)}
+                                    className="w-full rounded-lg border-slate-300 text-sm focus:border-primary-500 focus:ring-primary-500"
+                                >
+                                    <option value="zalo_personal">Zalo Cá Nhân (Bán tự động qua link zalo.me)</option>
+                                    <option value="zalo_oa">Zalo Official Account (ZNS)</option>
+                                    <option value="email">Email</option>
+                                    <option value="direct_message">Tin nhắn trực tiếp (Direct Message)</option>
+                                </select>
+                            </FormField>
+                        </div>
+
+                        {templateForm.data.type && templateForm.data.type !== 'custom' && (
+                            <div className="rounded-xl bg-amber-50/90 p-3.5 text-xs text-amber-900 border border-amber-200/80 flex items-start gap-2.5">
+                                <Zap className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                                <div>
+                                    <span className="font-bold">Đồng bộ Nhắc Việc Zalo 1-Chạm:</span>
+                                    <p className="mt-0.5 text-amber-800 leading-relaxed">
+                                        Nội dung mẫu này sẽ được tải trực tiếp khi nhân viên bấm nút <strong>"Nhắc Zalo"</strong> trên Kanban, Bàn làm việc Booking và Ma trận KOC.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
 
                         <FormField label="Tiêu đề (nếu có)" error={templateForm.errors.subject}>
                             <TextInput
@@ -1548,24 +1751,47 @@ export default function OutreachIndex({
                             error={templateForm.errors.content_template}
                             required
                         >
+                            <div className="mb-2">
+                                <span className="text-[11px] font-semibold text-slate-500 block mb-1">
+                                    Bấm vào biến bên dưới để chèn nhanh vào nội dung:
+                                </span>
+                                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-2 bg-slate-50 rounded-lg border border-slate-200">
+                                    {variableChips.map((chip) => (
+                                        <button
+                                            key={chip.tag}
+                                            type="button"
+                                            onClick={() => insertVariableTag(chip.tag)}
+                                            className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-0.5 text-[11px] font-mono text-primary-700 border border-slate-200 hover:border-primary-400 hover:bg-primary-50 transition-colors shadow-2xs"
+                                            title={chip.desc}
+                                        >
+                                            <span className="font-bold">{chip.tag}</span>
+                                            <span className="text-[10px] text-slate-400">({chip.desc})</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
                             <Textarea
                                 value={templateForm.data.content_template}
                                 onChange={(e) => templateForm.setData('content_template', e.target.value)}
-                                rows={6}
+                                rows={7}
                                 placeholder="Chào bạn {creator_name}, mình từ nhãn hàng..."
                                 required
                             />
                         </FormField>
 
                         <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600 border border-slate-200">
-                            <span className="font-bold text-slate-800">Các biến được hỗ trợ:</span>
-                            <ul className="list-disc list-inside mt-1 space-y-0.5 font-mono text-[11px] text-primary-700">
-                                <li>{'{creator_name}'}: Tên của KOC</li>
-                                <li>{'{product_name}'}: Tên sản phẩm trong chiến dịch</li>
-                                <li>{'{campaign_name}'}: Tên chiến dịch</li>
-                                <li>{'{rate}'}: Mức thù lao dự kiến</li>
-                                <li>{'{portal_link}'}: Link cổng xác nhận KOC (không cần đăng nhập)</li>
-                            </ul>
+                            <span className="font-bold text-slate-800">Các biến ngữ cảnh thông minh:</span>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 mt-1 text-[11px] font-mono text-slate-700">
+                                <div><span className="text-primary-700 font-bold">{'{creator_name}'}</span>: Tên của KOC</div>
+                                <div><span className="text-primary-700 font-bold">{'{staff_name}'}</span>: Tên nhân viên phụ trách</div>
+                                <div><span className="text-primary-700 font-bold">{'{product_name}'}</span>: Sản phẩm chiến dịch</div>
+                                <div><span className="text-primary-700 font-bold">{'{campaign_name}'}</span>: Tên chiến dịch</div>
+                                <div><span className="text-primary-700 font-bold">{'{portal_link}'}</span>: Link Cổng Portal KOC</div>
+                                <div><span className="text-primary-700 font-bold">{'{deadline_text}'}</span>: Đếm ngược deadline</div>
+                                <div><span className="text-primary-700 font-bold">{'{sent_date_text}'}</span>: Ngày gửi hàng</div>
+                                <div><span className="text-primary-700 font-bold">{'{hashtags}'}</span>: Hashtag chiến dịch</div>
+                            </div>
                         </div>
                     </div>
 

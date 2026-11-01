@@ -64,6 +64,14 @@ interface ContentPostMetric {
     gmv_amount: string | number;
 }
 
+interface ContentPostBenchmark {
+    average_channel_views: number;
+    current_views: number;
+    ratio: number;
+    status: 'viral' | 'exceeded' | 'expected' | 'below' | 'underperforming';
+    label: string;
+}
+
 interface ContentPost {
     id: number;
     campaign_creator_id: number;
@@ -80,6 +88,7 @@ interface ContentPost {
     last_synced_at?: string;
     campaign_creator?: CampaignCreator;
     latest_metric?: ContentPostMetric;
+    benchmark?: ContentPostBenchmark;
 }
 
 interface Props {
@@ -456,6 +465,27 @@ export default function Index({ posts, filters, campaigns, stats }: Props) {
                                             {post.comments_count.toLocaleString('vi-VN')}
                                         </span>
                                     </div>
+                                    {post.benchmark && (
+                                        <div className="pt-0.5">
+                                            <span
+                                                title={`Lượt xem hiện tại: ${post.views_count.toLocaleString('vi-VN')} / Trung bình kênh: ${post.benchmark.average_channel_views.toLocaleString('vi-VN')}`}
+                                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                                                    post.benchmark.status === 'viral'
+                                                        ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                                        : post.benchmark.status === 'exceeded'
+                                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                        : post.benchmark.status === 'expected'
+                                                        ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                                        : post.benchmark.status === 'below'
+                                                        ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                                        : 'bg-rose-50 text-rose-700 border-rose-200'
+                                                }`}
+                                            >
+                                                <TrendingUp className="h-3 w-3" />
+                                                {post.benchmark.label}
+                                            </span>
+                                        </div>
+                                    )}
                                     {post.last_synced_at && (
                                         <div className="text-[11px] text-slate-400">
                                             Đồng bộ: {new Date(post.last_synced_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {new Date(post.last_synced_at).toLocaleDateString('vi-VN')}
@@ -603,8 +633,11 @@ export default function Index({ posts, filters, campaigns, stats }: Props) {
                                         </ResponsiveContainer>
                                     </div>
 
-                                    <div className="p-3 rounded-lg bg-indigo-50/60 border border-indigo-100 flex items-center justify-between text-xs text-slate-600">
+                                    <div className="p-3 rounded-lg bg-indigo-50/60 border border-indigo-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
                                         <span>Lượt xem hiện tại: <strong className="text-slate-900">{chartModalPost.views_count.toLocaleString('vi-VN')}</strong></span>
+                                        {chartModalPost.benchmark && (
+                                            <span>Đánh giá phong độ: <strong className="text-indigo-700">{chartModalPost.benchmark.label}</strong> (TB kênh: {chartModalPost.benchmark.average_channel_views.toLocaleString('vi-VN')})</span>
+                                        )}
                                         <span>Tổng GMV ghi nhận: <strong className="text-emerald-700">{formatCurrency(chartModalPost.gmv_amount)}</strong></span>
                                     </div>
                                 </div>

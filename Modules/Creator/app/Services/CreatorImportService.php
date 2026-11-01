@@ -121,10 +121,15 @@ class CreatorImportService
             ];
         }
 
-        // Nếu là format chuyên biệt Kalodata/FastMoss được chọn rõ ràng
-        if (in_array(strtolower($format), ['kalodata', 'fastmoss'], true)) {
-            $headers = array_map(fn ($h) => trim(mb_strtolower((string) $h)), $rawRows[0] ?? []);
-            $connector = ConnectorFactory::make($format, $headers);
+        // Nếu là format chuyên biệt Kalodata/FastMoss được chọn rõ ràng hoặc tự động nhận diện từ Header
+        $firstRowHeaders = array_map(fn ($h) => trim(mb_strtolower((string) $h)), $rawRows[0] ?? []);
+        $detectedConnector = ConnectorFactory::make($format, $firstRowHeaders);
+        $isSpecialized = ($detectedConnector instanceof \Modules\Creator\Connectors\KalodataExportConnector
+            || $detectedConnector instanceof \Modules\Creator\Connectors\FastMossExportConnector);
+
+        if ($isSpecialized) {
+            $headers = $firstRowHeaders;
+            $connector = $detectedConnector;
             $rowsData = [];
             for ($i = 1; $i < count($rawRows); $i++) {
                 $row = $rawRows[$i] ?? [];
@@ -608,7 +613,8 @@ class CreatorImportService
                     return $creator;
                 });
 
-                if ($autoEnrich && !empty($handle) && ($followers === 0 || ($parsed['average_views'] ?? 0) === 0)) {
+                // Với file export chuyên biệt (Kalodata/FastMoss), chỉ kích hoạt Queue nếu dòng dữ liệu thật sự thiếu followers
+                if ($autoEnrich && !empty($handle) && $followers === 0) {
                     SyncCreatorMetricsJob::dispatch(
                         $handle,
                         $platform,
@@ -680,6 +686,26 @@ class CreatorImportService
                 ]);
             }
 
+            $existingAccount = CreatorAccount::where('creator_id', $creator->id)
+                ->where('platform', $platformVal)
+                ->where('handle', $handle)
+                ->first();
+
+            $newFollowers = max((int) ($transformed['followers_count'] ?? 0), 0);
+            if ($existingAccount && $existingAccount->followers_count > 0 && in_array($existingAccount->data_source, ['fastmoss', 'kalodata', 'smart_import'])) {
+                $newFollowers = $existingAccount->followers_count;
+            }
+
+            $newGmv = (int) ($transformed['gmv_estimate'] ?? 0);
+            if ($newGmv === 0 && $existingAccount && $existingAccount->gmv_estimate > 0) {
+                $newGmv = $existingAccount->gmv_estimate;
+            }
+
+            $dataSource = $transformed['data_source'] ?? 'automated_sync';
+            if ($existingAccount && in_array($existingAccount->data_source, ['fastmoss', 'kalodata', 'smart_import'])) {
+                $dataSource = $existingAccount->data_source;
+            }
+
             $account = CreatorAccount::updateOrCreate(
                 [
                     'creator_id' => $creator->id,
@@ -688,7 +714,7 @@ class CreatorImportService
                 ],
                 [
                     'url' => $transformed['url'] ?? "https://{$platformVal}.com/@{$handle}",
-                    'followers_count' => max((int) ($transformed['followers_count'] ?? 0), 0),
+                    'followers_count' => $newFollowers,
                     'average_views' => (int) ($metrics['avg_views'] ?? ($transformed['average_views'] ?? 0)),
                     'average_likes' => (int) ($metrics['avg_likes'] ?? ($transformed['average_likes'] ?? 0)),
                     'average_comments' => (int) ($metrics['avg_comments'] ?? ($transformed['average_comments'] ?? 0)),
@@ -696,9 +722,9 @@ class CreatorImportService
                     'engagement_rate' => (float) ($metrics['engagement_rate'] ?? ($transformed['engagement_rate'] ?? 0.0)),
                     'view_engagement_rate' => (float) ($metrics['view_engagement_rate'] ?? ($transformed['view_engagement_rate'] ?? 0.0)),
                     'posts_sample_count' => (int) ($transformed['posts_sample_count'] ?? 0),
-                    'gmv_estimate' => (int) ($transformed['gmv_estimate'] ?? 0),
+                    'gmv_estimate' => $newGmv,
                     'raw_metrics' => $transformed['raw_metrics'] ?? null,
-                    'data_source' => $transformed['data_source'] ?? 'automated_sync',
+                    'data_source' => $dataSource,
                     'last_metrics_updated_at' => now(),
                     'last_synced_at' => now(),
                     'sync_status' => 'success',

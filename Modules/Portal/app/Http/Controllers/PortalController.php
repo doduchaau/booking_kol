@@ -32,6 +32,29 @@ class PortalController extends Controller
                     'product_sku' => $campaignCreator->campaign->product_sku,
                     'sample_requirement' => $campaignCreator->campaign->sample_requirement,
                     'content_guidelines' => $campaignCreator->campaign->content_guidelines,
+                    'key_messages' => $campaignCreator->campaign->key_messages,
+                    'hashtags' => $campaignCreator->campaign->hashtags,
+                    'dos_and_donts' => $campaignCreator->campaign->dos_and_donts,
+                    'discount_code' => $campaignCreator->campaign->discount_code,
+                    'affiliate_link' => $campaignCreator->campaign->affiliate_link,
+                    'content_guidelines_file_url' => $campaignCreator->campaign->content_guidelines_file_url,
+                    'content_guidelines_file_name' => $campaignCreator->campaign->content_guidelines_file_name,
+                    'sample_requirement_file_url' => $campaignCreator->campaign->sample_requirement_file_url,
+                    'sample_requirement_file_name' => $campaignCreator->campaign->sample_requirement_file_name,
+                    'files' => array_values(array_filter([
+                        $campaignCreator->campaign->content_guidelines_file_url ? [
+                            'type' => 'guideline',
+                            'title' => 'Tài liệu Kịch bản & Hướng dẫn Nội dung',
+                            'file_name' => $campaignCreator->campaign->content_guidelines_file_name ?: 'Tai_lieu_kich_ban',
+                            'url' => $campaignCreator->campaign->content_guidelines_file_url,
+                        ] : null,
+                        $campaignCreator->campaign->sample_requirement_file_url ? [
+                            'type' => 'sample',
+                            'title' => 'Tài liệu Quy định & Danh mục Sản phẩm Mẫu',
+                            'file_name' => $campaignCreator->campaign->sample_requirement_file_name ?: 'Quy_dinh_mau_san_pham',
+                            'url' => $campaignCreator->campaign->sample_requirement_file_url,
+                        ] : null,
+                    ])),
                 ],
                 'creator' => [
                     'id' => $campaignCreator->creator->id,
@@ -44,6 +67,7 @@ class PortalController extends Controller
                 'pipeline' => [
                     'status' => $campaignCreator->status->value,
                     'status_label' => $campaignCreator->status->label(),
+                    'sample_sent_at' => $campaignCreator->sample_sent_at?->format('d/m/Y'),
                     'sample_received_at' => $campaignCreator->sample_received_at?->format('d/m/Y'),
                     'posted_at' => $campaignCreator->posted_at?->format('d/m/Y H:i'),
                 ],

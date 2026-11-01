@@ -18,6 +18,7 @@ import {
     Lock,
     UserCheck,
     Info,
+    Sparkles,
 } from 'lucide-react';
 import PageHeader from '@/Components/Common/PageHeader';
 import Button from '@/Components/Common/Button';
@@ -41,6 +42,8 @@ export interface SettingsData {
     ghn_token: string;
     ghn_shop_id: string;
     ghtk_token: string;
+    groq_api_key?: string;
+    openai_api_key?: string;
 }
 
 export interface SettingsIndexProps {
@@ -62,6 +65,8 @@ export default function SettingsIndex({
     const [showZaloSecret, setShowZaloSecret] = useState(false);
     const [showGhnToken, setShowGhnToken] = useState(false);
     const [showGhtkToken, setShowGhtkToken] = useState(false);
+    const [showGroqKey, setShowGroqKey] = useState(false);
+    const [showOpenaiKey, setShowOpenaiKey] = useState(false);
 
     // Form: General Settings
     const generalForm = useForm({
@@ -77,6 +82,8 @@ export default function SettingsIndex({
         ghn_token: settings.ghn_token ? '••••••••••••••••' : '',
         ghn_shop_id: settings.ghn_shop_id || '',
         ghtk_token: settings.ghtk_token ? '••••••••••••••••' : '',
+        groq_api_key: settings.groq_api_key ? '••••••••••••••••' : '',
+        openai_api_key: settings.openai_api_key ? '••••••••••••••••' : '',
     });
 
     // Form: Create User
@@ -609,6 +616,81 @@ export default function SettingsIndex({
                                                     {showGhtkToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                                                 </button>
                                             </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* TẦNG 3 AI SMART SCHEMA MAPPER (GROQ & OPENAI) */}
+                            <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+                                <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="h-10 w-10 rounded-lg bg-indigo-50 flex items-center justify-center text-primary-600">
+                                            <Sparkles className="h-5 w-5" />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-sm font-bold text-slate-900">
+                                                Tầng 3 AI Smart Schema Mapper (Groq & OpenAI)
+                                            </h3>
+                                            <p className="text-xs text-slate-500">
+                                                Cấu hình API Key để kích hoạt AI tự động nhận diện và ánh xạ các cột phức tạp trong file Excel báo giá Agency
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                        Mã hóa AES-256
+                                    </span>
+                                </div>
+                                <div className="p-6 space-y-5">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                                                Groq API Key (Llama 3.1 8B Instant - Khuyến nghị vì tốc độ siêu nhanh & miễn phí)
+                                            </label>
+                                            <div className="relative">
+                                                <input
+                                                    type={showGroqKey ? 'text' : 'password'}
+                                                    placeholder="gsk_..."
+                                                    value={integrationForm.data.groq_api_key}
+                                                    onChange={(e) =>
+                                                        integrationForm.setData('groq_api_key', e.target.value)
+                                                    }
+                                                    className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500 font-mono pr-10"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowGroqKey(!showGroqKey)}
+                                                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
+                                                >
+                                                    {showGroqKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                                </button>
+                                            </div>
+                                            <p className="text-[11px] text-slate-400 mt-1">Lấy key tại console.groq.com/keys</p>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                                                OpenAI API Key (Dự phòng GPT-4o-mini)
+                                            </label>
+                                            <div className="relative">
+                                                <input
+                                                    type={showOpenaiKey ? 'text' : 'password'}
+                                                    placeholder="sk-proj-..."
+                                                    value={integrationForm.data.openai_api_key}
+                                                    onChange={(e) =>
+                                                        integrationForm.setData('openai_api_key', e.target.value)
+                                                    }
+                                                    className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500 font-mono pr-10"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowOpenaiKey(!showOpenaiKey)}
+                                                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
+                                                >
+                                                    {showOpenaiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                                </button>
+                                            </div>
+                                            <p className="text-[11px] text-slate-400 mt-1">Lấy key tại platform.openai.com/api-keys</p>
                                         </div>
                                     </div>
                                 </div>

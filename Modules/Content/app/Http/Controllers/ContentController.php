@@ -25,7 +25,7 @@ class ContentController extends Controller
 
         $query = ContentPost::query()
             ->with([
-                'campaignCreator.creator',
+                'campaignCreator.creator.accounts',
                 'campaignCreator.campaign',
                 'latestMetric',
             ]);

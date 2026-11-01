@@ -289,14 +289,46 @@ class CampaignMatrixEndpointsTest extends TestCase
         $this->assertEquals(15, $campaign->fresh()->video_deadline_days);
     }
 
-    public function test_creator_sample_sent_confirmation(): void
+    public function test_cannot_confirm_sample_sent_when_creator_has_no_shipping_address(): void
     {
         $creator = Creator::create([
-            'name' => 'Creator Sample Sent',
-            'phone' => '0988222333',
+            'name' => 'Creator No Address',
+            'phone' => '0988222331',
             'niche' => 'skincare',
             'tier' => CreatorTierEnum::NANO,
             'trust_score' => 100,
+            'shipping_address' => null, // Chưa có địa chỉ
+        ]);
+
+        $cc = CampaignCreator::create([
+            'campaign_id' => $this->campaign->id,
+            'creator_id' => $creator->id,
+            'status' => PipelineStatusEnum::AGREED,
+        ]);
+
+        $res = $this->actingAs($this->user)
+            ->post(route('campaigns.creators.shipments.store', [
+                'id' => $this->campaign->id,
+                'pivotId' => $cc->id,
+            ]), [
+                'notes' => 'Không điền địa chỉ',
+                'shipped_at' => now()->toDateString(),
+            ]);
+
+        $res->assertSessionHasErrors(['error']);
+        $this->assertEquals(PipelineStatusEnum::AGREED, $cc->fresh()->status);
+        $this->assertNull($cc->fresh()->sample_sent_at);
+    }
+
+    public function test_can_confirm_sample_sent_when_creator_already_has_shipping_address(): void
+    {
+        $creator = Creator::create([
+            'name' => 'Creator With Address',
+            'phone' => '0988222332',
+            'niche' => 'skincare',
+            'tier' => CreatorTierEnum::NANO,
+            'trust_score' => 100,
+            'shipping_address' => '123 Phố Huế, Hai Bà Trưng, Hà Nội',
         ]);
 
         $cc = CampaignCreator::create([
@@ -320,6 +352,76 @@ class CampaignMatrixEndpointsTest extends TestCase
         $this->assertEquals('Gói quà trải nghiệm đợt 1', $cc->fresh()->notes);
     }
 
+    public function test_can_confirm_sample_sent_with_quick_address_input(): void
+    {
+        $creator = Creator::create([
+            'name' => 'Creator Quick Address',
+            'phone' => '0988222333',
+            'niche' => 'skincare',
+            'tier' => CreatorTierEnum::NANO,
+            'trust_score' => 100,
+            'shipping_address' => null, // Ban đầu chưa có địa chỉ
+        ]);
+
+        $cc = CampaignCreator::create([
+            'campaign_id' => $this->campaign->id,
+            'creator_id' => $creator->id,
+            'status' => PipelineStatusEnum::AGREED,
+        ]);
+
+        $res = $this->actingAs($this->user)
+            ->post(route('campaigns.creators.shipments.store', [
+                'id' => $this->campaign->id,
+                'pivotId' => $cc->id,
+            ]), [
+                'shipping_address' => '789 Đường Nguyễn Trãi',
+                'city_province' => 'Hà Nội',
+                'district' => 'Thanh Xuân',
+                'ward' => 'Khương Trung',
+                'notes' => 'Gửi mẫu sau khi nhập nhanh địa chỉ',
+                'shipped_at' => now()->toDateString(),
+            ]);
+
+        $res->assertRedirect();
+        $this->assertEquals(PipelineStatusEnum::SAMPLE_SENT, $cc->fresh()->status);
+        $this->assertNotNull($cc->fresh()->sample_sent_at);
+        $this->assertEquals('789 Đường Nguyễn Trãi', $creator->fresh()->shipping_address);
+        $this->assertEquals('Hà Nội', $creator->fresh()->city_province);
+    }
+
+    public function test_cannot_add_video_before_sample_sent(): void
+    {
+        $creator = Creator::create([
+            'name' => 'Creator No Sample Sent',
+            'phone' => '0988444333',
+            'niche' => 'skincare',
+            'tier' => CreatorTierEnum::NANO,
+            'trust_score' => 100,
+            'shipping_address' => '123 Đường Test, Quận 1',
+        ]);
+
+        $cc = CampaignCreator::create([
+            'campaign_id' => $this->campaign->id,
+            'creator_id' => $creator->id,
+            'status' => PipelineStatusEnum::ADDRESS_CONFIRMED,
+        ]);
+
+        $res = $this->actingAs($this->user)
+            ->post(route('campaigns.creators.videos.store', [
+                'id' => $this->campaign->id,
+                'pivotId' => $cc->id,
+            ]), [
+                'platform' => 'tiktok',
+                'post_url' => 'https://www.tiktok.com/@creator/video/111111111',
+                'video_title' => 'Video Review Part 1',
+                'posted_at' => now()->toDateString(),
+            ]);
+
+        $res->assertSessionHasErrors(['error']);
+        $this->assertEquals(PipelineStatusEnum::ADDRESS_CONFIRMED, $cc->fresh()->status);
+        $this->assertCount(0, $cc->fresh()->contentPosts);
+    }
+
     public function test_creator_can_have_multiple_videos_in_campaign(): void
     {
         $creator = Creator::create([
@@ -328,12 +430,15 @@ class CampaignMatrixEndpointsTest extends TestCase
             'niche' => 'skincare',
             'tier' => CreatorTierEnum::NANO,
             'trust_score' => 100,
+            'shipping_address' => '123 Đường Test, Quận 1',
         ]);
 
         $cc = CampaignCreator::create([
             'campaign_id' => $this->campaign->id,
             'creator_id' => $creator->id,
             'status' => PipelineStatusEnum::SAMPLE_RECEIVED,
+            'sample_sent_at' => now()->subDays(3),
+            'sample_received_at' => now()->subDay(),
         ]);
 
         // Video 1

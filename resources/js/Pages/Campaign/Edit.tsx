@@ -24,6 +24,11 @@ interface Campaign {
     sample_requirement: string | null;
     sample_requirement_file?: string | null;
     sample_requirement_file_url?: string | null;
+    key_messages?: string | null;
+    hashtags?: string | null;
+    dos_and_donts?: string | null;
+    discount_code?: string | null;
+    affiliate_link?: string | null;
     video_deadline_days?: number;
     commission_rate: string | number;
     status: string;
@@ -53,6 +58,11 @@ export default function Edit({ campaign, statuses }: Props) {
         sample_requirement: campaign.sample_requirement || '',
         sample_requirement_file: null as File | null,
         remove_sample_requirement_file: false,
+        key_messages: campaign.key_messages || '',
+        hashtags: campaign.hashtags || '',
+        dos_and_donts: campaign.dos_and_donts || '',
+        discount_code: campaign.discount_code || '',
+        affiliate_link: campaign.affiliate_link || '',
         video_deadline_days: campaign.video_deadline_days || 7,
         commission_rate: campaign.commission_rate ? campaign.commission_rate.toString() : '0',
         status: campaign.status,
@@ -329,6 +339,79 @@ export default function Edit({ campaign, statuses }: Props) {
                                         <p className="text-xs text-rose-600 mt-1">{errors.sample_requirement_file}</p>
                                     )}
                                 </div>
+                            </div>
+                        </div>
+
+                        {/* Khối 3: Brief Hợp Tác & Yêu Cầu Kịch Bản Tương Tác */}
+                        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+                            <h2 className="text-base font-bold text-slate-900 pb-3 border-b border-slate-100 flex items-center gap-2">
+                                <FileText className="h-5 w-5 text-primary-600" />
+                                3. Thông Điệp USP & Brief Dành Cho KOC
+                            </h2>
+
+                            <FormField
+                                label="Thông điệp chính / Điểm nhấn USP sản phẩm"
+                                hint="Những điểm đặc biệt nhất mà KOC phải nhắc trong video review"
+                                error={errors.key_messages}
+                            >
+                                <Textarea
+                                    value={data.key_messages}
+                                    onChange={(e) => setData('key_messages', e.target.value)}
+                                    rows={3}
+                                    placeholder="Ví dụ: 1. Thành phần 100% tự nhiên; 2. Bền màu suốt 8 tiếng không lem; 3. Không chứa chì..."
+                                />
+                            </FormField>
+
+                            <FormField
+                                label="Hashtags bắt buộc"
+                                hint="Cách nhau bằng khoảng trắng hoặc dấu phẩy"
+                                error={errors.hashtags}
+                            >
+                                <TextInput
+                                    value={data.hashtags}
+                                    onChange={(e) => setData('hashtags', e.target.value)}
+                                    placeholder="#SonKemLi #BeautyReview #ReviewMỹPhẩm #BookingKOL"
+                                />
+                            </FormField>
+
+                            <FormField
+                                label="Những việc nên làm & Điều cấm kỵ (Do's & Don'ts)"
+                                hint="Quy định cấm kỵ giúp bảo vệ nhãn hàng khi KOC lên video"
+                                error={errors.dos_and_donts}
+                            >
+                                <Textarea
+                                    value={data.dos_and_donts}
+                                    onChange={(e) => setData('dos_and_donts', e.target.value)}
+                                    rows={3}
+                                    placeholder="Nên làm: Quay cận cảnh chất son trên môi tự nhiên.&#10;Cấm: Không so sánh dìm hàng nhãn hàng khác, không dính logo nhãn hiệu khác..."
+                                />
+                            </FormField>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <FormField
+                                    label="Mã giảm giá độc quyền cho KOC"
+                                    hint="Mã voucher riêng để KOC chia sẻ cho follower"
+                                    error={errors.discount_code}
+                                >
+                                    <TextInput
+                                        value={data.discount_code}
+                                        onChange={(e) => setData('discount_code', e.target.value)}
+                                        placeholder="Ví dụ: BEAUTY20K"
+                                    />
+                                </FormField>
+
+                                <FormField
+                                    label="Link giỏ hàng / Sản phẩm liên kết"
+                                    hint="Link TikTok Shop Showcase hoặc Shopee"
+                                    error={errors.affiliate_link}
+                                >
+                                    <TextInput
+                                        type="url"
+                                        value={data.affiliate_link}
+                                        onChange={(e) => setData('affiliate_link', e.target.value)}
+                                        placeholder="https://..."
+                                    />
+                                </FormField>
                             </div>
                         </div>
                     </div>

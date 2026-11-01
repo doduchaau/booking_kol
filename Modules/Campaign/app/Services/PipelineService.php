@@ -23,8 +23,37 @@ class PipelineService
 
         // RÀNG BUỘC 1: Không thể chuyển sang "sample_sent" (Đã gửi mẫu) nếu chưa có địa chỉ nhận hàng
         if ($newStatus === PipelineStatusEnum::SAMPLE_SENT) {
-            if (empty($creator->shipping_address)) {
+            $shippingAddress = trim($creator->shipping_address ?? '');
+            if ($shippingAddress === '') {
                 throw new Exception("Không thể chuyển sang bước [Đã gửi mẫu] vì Creator {$creator->name} chưa có địa chỉ nhận hàng trong hồ sơ.");
+            }
+        }
+
+        // RÀNG BUỘC 2: Không thể chuyển sang "sample_received" (Đã nhận mẫu) nếu chưa gửi mẫu
+        if ($newStatus === PipelineStatusEnum::SAMPLE_RECEIVED) {
+            $isSent = !is_null($campaignCreator->sample_sent_at) || $campaignCreator->status === PipelineStatusEnum::SAMPLE_SENT;
+            if (!$isSent) {
+                throw new Exception("Không thể chuyển sang bước [Đã nhận mẫu] vì chưa gửi mẫu cho KOC {$creator->name}.");
+            }
+        }
+
+        // RÀNG BUỘC 3: Không thể chuyển sang "posted" (Đã lên video) nếu chưa gửi mẫu hoặc chưa có link video
+        if ($newStatus === PipelineStatusEnum::POSTED) {
+            $isSent = !is_null($campaignCreator->sample_sent_at) || in_array($campaignCreator->status, [
+                PipelineStatusEnum::SAMPLE_SENT,
+                PipelineStatusEnum::SAMPLE_RECEIVED,
+                PipelineStatusEnum::POSTED,
+                PipelineStatusEnum::COMPLETED,
+            ]);
+            if (!$isSent) {
+                throw new Exception("Không thể chuyển sang bước [Đã lên video] vì chưa gửi mẫu cho KOC {$creator->name}.");
+            }
+
+            // Bắt buộc phải có đường link video nghiệm thu trong bảng content_posts
+            $campaignCreator->loadMissing(['contentPosts']);
+            $hasVideo = $campaignCreator->contentPosts && $campaignCreator->contentPosts->count() > 0;
+            if (!$hasVideo) {
+                throw new Exception("Không thể chuyển sang bước [Đã lên video] vì KOC {$creator->name} chưa có link video nghiệm thu. Vui lòng điền link video.");
             }
         }
 

@@ -2,6 +2,7 @@ import React from 'react';
 import { Link, usePage } from '@inertiajs/react';
 import {
     LayoutDashboard,
+    ClipboardList,
     Users,
     FolderKanban,
     Video,
@@ -76,6 +77,13 @@ export default function Sidebar({ isOpenMobile, onCloseMobile }: SidebarProps) {
                     routeName: 'dashboard',
                     fallbackUrl: '/dashboard',
                     icon: LayoutDashboard,
+                },
+                {
+                    label: 'Bàn làm việc Booking',
+                    routeName: 'workspace.index',
+                    fallbackUrl: '/workspace',
+                    icon: ClipboardList,
+                    badge: 'To-Do',
                 },
             ],
         },

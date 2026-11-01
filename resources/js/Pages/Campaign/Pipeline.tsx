@@ -324,9 +324,10 @@ export default function Pipeline({
             {
                 preserveState: true,
                 preserveScroll: true,
-                onError: () => {
+                onError: (errors) => {
                     // Nếu vi phạm điều kiện chuyển bước (VD: chưa có địa chỉ), rollback lại
                     setColumns(previousColumns);
+                    alert(errors.status || errors.error || (typeof errors === 'object' ? Object.values(errors)[0] : '') || 'Không thể chuyển trạng thái do vi phạm ràng buộc nghiệp vụ.');
                 },
             }
         );

@@ -16,6 +16,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/outreach/prepare', [OutreachController::class, 'prepareMessage'])->name('outreach.prepare');
     Route::post('/outreach/send', [OutreachController::class, 'sendMessage'])->name('outreach.send');
 
+    // Nhắc việc 1-chạm Zalo thông minh theo ngữ cảnh
+    Route::get('/outreach/quick-followup/{id}', [OutreachController::class, 'quickFollowupPreview'])->name('outreach.quick-followup.preview');
+    Route::post('/outreach/quick-followup/{id}', [OutreachController::class, 'quickFollowupLog'])->name('outreach.quick-followup.log');
+
     // Quản lý từ chối nhận tin (Opt-out)
     Route::post('/outreach/opt-outs', [OutreachController::class, 'storeOptOut'])->name('outreach.opt-outs.store');
     Route::delete('/outreach/opt-outs/{id}', [OutreachController::class, 'destroyOptOut'])->name('outreach.opt-outs.destroy');

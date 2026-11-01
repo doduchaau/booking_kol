@@ -20,6 +20,7 @@ import Badge, { BadgeVariant } from '@/Components/Common/Badge';
 import FormField from '@/Components/Form/FormField';
 import Select from '@/Components/Form/Select';
 import TextInput from '@/Components/Form/TextInput';
+import CampaignBriefCard from '@/Components/Campaign/CampaignBriefCard';
 import KocMatrixTable, {
     CampaignCreatorPivot,
     Creator,
@@ -49,6 +50,11 @@ interface Campaign {
     content_guidelines_file_url?: string | null;
     sample_requirement_file?: string | null;
     sample_requirement_file_url?: string | null;
+    key_messages?: string | null;
+    hashtags?: string | null;
+    dos_and_donts?: string | null;
+    discount_code?: string | null;
+    affiliate_link?: string | null;
     video_deadline_days?: number;
     commission_rate: string | number;
     status: 'draft' | 'active' | 'completed' | 'paused';
@@ -276,53 +282,72 @@ export default function Show({
 
             {/* TAB GUIDELINES & HƯỚNG DẪN */}
             {activeTab === 'guidelines' && (
-                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-2xs space-y-6">
-                    <div>
-                        <h3 className="text-sm font-bold text-slate-900 mb-2 flex items-center gap-2">
-                            <Sparkles className="h-4 w-4 text-primary-600" />
-                            Hướng Dẫn Kịch Bản & Quy Định Cấm Kỵ
-                        </h3>
-                        <div className="rounded-xl bg-slate-50 p-4 border border-slate-100 text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
-                            {campaign.content_guidelines || 'Chưa thiết lập nội dung văn bản cho kịch bản.'}
-                        </div>
+                <div className="space-y-6">
+                    <CampaignBriefCard
+                        campaign={{
+                            id: campaign.id,
+                            name: campaign.name,
+                            product_name: campaign.product_name,
+                            product_sku: campaign.product_sku,
+                            content_guidelines: campaign.content_guidelines,
+                            content_guidelines_file_url: campaign.content_guidelines_file_url,
+                            sample_requirement: campaign.sample_requirement,
+                            sample_requirement_file_url: campaign.sample_requirement_file_url,
+                            key_messages: campaign.key_messages,
+                            hashtags: campaign.hashtags,
+                            dos_and_donts: campaign.dos_and_donts,
+                            discount_code: campaign.discount_code,
+                            affiliate_link: campaign.affiliate_link,
+                        }}
+                    />
 
-                        {campaign.content_guidelines_file_url && (
-                            <div className="mt-3 flex items-center justify-between p-3.5 rounded-xl bg-primary-50/40 border border-primary-200/60 shadow-2xs">
-                                <div className="flex items-center gap-3 min-w-0">
-                                    <div className="p-2.5 rounded-lg bg-primary-100/70 text-primary-700">
-                                        <Paperclip className="h-4 w-4" />
-                                    </div>
-                                    <div className="min-w-0">
-                                        <p className="text-xs font-bold text-slate-900 truncate">
-                                            Tệp Đính Kèm Kịch Bản & Briefing
-                                        </p>
-                                        <p className="text-[11px] text-slate-500 font-mono truncate">
-                                            {campaign.content_guidelines_file ? campaign.content_guidelines_file.split('/').pop() : 'Tài liệu kịch bản'}
-                                        </p>
-                                    </div>
-                                </div>
-                                <a
-                                    href={campaign.content_guidelines_file_url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    download
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-primary-700 bg-white hover:bg-primary-50 border border-primary-300 rounded-lg shadow-2xs transition-colors shrink-0"
-                                >
-                                    <Download className="h-3.5 w-3.5" />
-                                    <span>Tải File / Mở File</span>
-                                </a>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-2xs space-y-6">
+                        <div>
+                            <h3 className="text-sm font-bold text-slate-900 mb-2 flex items-center gap-2">
+                                <Sparkles className="h-4 w-4 text-primary-600" />
+                                Hướng Dẫn Kịch Bản & Quy Định Cấm Kỵ Chi Tiết
+                            </h3>
+                            <div className="rounded-xl bg-slate-50 p-4 border border-slate-100 text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
+                                {campaign.content_guidelines || 'Chưa thiết lập nội dung văn bản cho kịch bản.'}
                             </div>
-                        )}
-                    </div>
 
-                    <div>
-                        <h3 className="text-sm font-bold text-slate-900 mb-2 flex items-center gap-2">
-                            <Calendar className="h-4 w-4 text-primary-600" />
-                            Quy Định Về Mẫu Sản Phẩm Trải Nghiệm
-                        </h3>
-                        <div className="rounded-xl bg-slate-50 p-4 border border-slate-100 text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
-                            {campaign.sample_requirement || 'Chưa thiết lập quy định mẫu sản phẩm.'}
+                            {campaign.content_guidelines_file_url && (
+                                <div className="mt-3 flex items-center justify-between p-3.5 rounded-xl bg-primary-50/40 border border-primary-200/60 shadow-2xs">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        <div className="p-2.5 rounded-lg bg-primary-100/70 text-primary-700">
+                                            <Paperclip className="h-4 w-4" />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <p className="text-xs font-bold text-slate-900 truncate">
+                                                Tệp Đính Kèm Kịch Bản & Briefing
+                                            </p>
+                                            <p className="text-[11px] text-slate-500 font-mono truncate">
+                                                {campaign.content_guidelines_file ? campaign.content_guidelines_file.split('/').pop() : 'Tài liệu kịch bản'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <a
+                                        href={campaign.content_guidelines_file_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        download
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-primary-700 bg-white hover:bg-primary-50 border border-primary-300 rounded-lg shadow-2xs transition-colors shrink-0"
+                                    >
+                                        <Download className="h-3.5 w-3.5" />
+                                        <span>Tải File / Mở File</span>
+                                    </a>
+                                </div>
+                            )}
                         </div>
+
+                        <div>
+                            <h3 className="text-sm font-bold text-slate-900 mb-2 flex items-center gap-2">
+                                <Calendar className="h-4 w-4 text-primary-600" />
+                                Quy Định Về Mẫu Sản Phẩm Trải Nghiệm
+                            </h3>
+                            <div className="rounded-xl bg-slate-50 p-4 border border-slate-100 text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
+                                {campaign.sample_requirement || 'Chưa thiết lập quy định mẫu sản phẩm.'}
+                            </div>
 
                         {campaign.sample_requirement_file_url && (
                             <div className="mt-3 flex items-center justify-between p-3.5 rounded-xl bg-amber-50/40 border border-amber-200/60 shadow-2xs">
@@ -351,6 +376,7 @@ export default function Show({
                                 </a>
                             </div>
                         )}
+                        </div>
                     </div>
                 </div>
             )}

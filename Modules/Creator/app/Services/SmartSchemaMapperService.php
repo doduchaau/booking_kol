@@ -210,7 +210,11 @@ class SmartSchemaMapperService
         }
 
         // Tầng 3: AI Schema Mapper Fallback (Groq / OpenAI API) nếu còn cột và có API Key
-        if (!empty($unmappedColumns) && (env('GROQ_API_KEY') || env('OPENAI_API_KEY'))) {
+        $hasAiKey = !empty(env('GROQ_API_KEY')) || !empty(env('OPENAI_API_KEY'))
+            || !empty(\Modules\Settings\Models\Setting::get('groq_api_key'))
+            || !empty(\Modules\Settings\Models\Setting::get('openai_api_key'));
+
+        if (!empty($unmappedColumns) && $hasAiKey) {
             $aiMappings = $this->fallbackAiMapper($unmappedColumns, $sampleRows, array_keys($this->dictionary), $mappedFields);
             foreach ($aiMappings as $colIdx => $aiRes) {
                 if (isset($unmappedColumns[$colIdx]) && !empty($aiRes['field'])) {
@@ -442,8 +446,8 @@ class SmartSchemaMapperService
      */
     protected function fallbackAiMapper(array $unmappedColumns, array $sampleRows, array $allowedFields, array $alreadyMapped): array
     {
-        $groqKey = env('GROQ_API_KEY');
-        $openaiKey = env('OPENAI_API_KEY');
+        $groqKey = \Modules\Settings\Models\Setting::get('groq_api_key') ?: env('GROQ_API_KEY');
+        $openaiKey = \Modules\Settings\Models\Setting::get('openai_api_key') ?: env('OPENAI_API_KEY');
 
         if (!$groqKey && !$openaiKey) {
             return [];
@@ -470,7 +474,7 @@ class SmartSchemaMapperService
             . json_encode($columnsPayload, JSON_UNESCAPED_UNICODE) . "\n\n"
             . "Hãy ánh xạ từng cột vào một trong các trường sau nếu phù hợp: " . implode(', ', $availableFields) . ".\n"
             . "Nếu cột không liên quan hoặc không thể đoán chắc, hãy bỏ qua hoặc gán null.\n"
-            . "Trả về định dạng JSON duy nhất dạng mảng: [{\"column_index\": int, \"field\": string|null, \"confidence\": int}]";
+            . "Trả về định dạng JSON object với khóa 'mappings': {\"mappings\": [{\"column_index\": int, \"field\": string|null, \"confidence\": int}]}";
 
         try {
             if ($groqKey) {

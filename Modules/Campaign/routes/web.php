@@ -3,8 +3,12 @@
 use Illuminate\Support\Facades\Route;
 use Modules\Campaign\Http\Controllers\CampaignController;
 use Modules\Campaign\Http\Controllers\PipelineController;
+use Modules\Campaign\Http\Controllers\WorkspaceController;
 
 Route::middleware(['auth', 'verified'])->group(function () {
+    // Bàn làm việc cá nhân của Nhân viên Booking (My Workspace / To-Do)
+    Route::get('/workspace', [WorkspaceController::class, 'index'])->name('workspace.index');
+
     // Quản lý chiến dịch
     Route::get('/campaigns', [CampaignController::class, 'index'])->name('campaigns.index');
     Route::get('/campaigns/create', [CampaignController::class, 'create'])->name('campaigns.create');

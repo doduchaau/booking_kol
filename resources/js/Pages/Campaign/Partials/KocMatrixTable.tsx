@@ -31,9 +31,11 @@ import {
     Share2,
     TrendingUp,
     Plus,
+    MapPin,
 } from 'lucide-react';
 import Badge, { BadgeVariant } from '@/Components/Common/Badge';
 import Button from '@/Components/Common/Button';
+import QuickZaloReminderModal from '@/Components/Outreach/QuickZaloReminderModal';
 
 export interface CreatorAccount {
     id: number;
@@ -75,6 +77,13 @@ export interface ContentPostItem {
     views_count?: number;
     likes_count?: number;
     comments_count?: number;
+    benchmark?: {
+        average_channel_views: number;
+        current_views: number;
+        ratio: number;
+        status: string;
+        label: string;
+    };
 }
 
 export interface CampaignCreatorPivot {
@@ -155,6 +164,7 @@ export default function KocMatrixTable({
     // Chốt hợp tác modal
     const [dealModalItem, setDealModalItem] = useState<CampaignCreatorPivot | null>(null);
     const [dealFee, setDealFee] = useState<string>('0');
+    const [quickZaloPivotId, setQuickZaloPivotId] = useState<number | null>(null);
     const [dealNotes, setDealNotes] = useState<string>('');
 
     // Inline edit fee
@@ -167,6 +177,14 @@ export default function KocMatrixTable({
     const [shipmentDate, setShipmentDate] = useState<string>('');
     const [shipmentSubmitting, setShipmentSubmitting] = useState<boolean>(false);
     const [copiedAddress, setCopiedAddress] = useState<boolean>(false);
+
+    // Form Nhập Nhanh Địa Chỉ nhận hàng ngay tại Modal Gửi Mẫu
+    const [quickAddress, setQuickAddress] = useState<string>('');
+    const [quickCity, setQuickCity] = useState<string>('');
+    const [quickDistrict, setQuickDistrict] = useState<string>('');
+    const [quickWard, setQuickWard] = useState<string>('');
+    const [quickPhone, setQuickPhone] = useState<string>('');
+    const [isEditingAddress, setIsEditingAddress] = useState<boolean>(false);
 
     // Modal Thêm Video (1 KOC nhiều video)
     const [videoModalItem, setVideoModalItem] = useState<CampaignCreatorPivot | null>(null);
@@ -262,6 +280,22 @@ export default function KocMatrixTable({
         });
     }, [items, currentStage, selectedStaffFilter, riskFilter, searchQuery]);
 
+    // Đếm số KOC chưa có địa chỉ trong số các KOC được chọn
+    const bulkMissingAddressCount = useMemo(() => {
+        return selectedIds.filter((id) => {
+            const item = items.find((c) => c.id === id);
+            return !item?.creator?.shipping_address?.trim();
+        }).length;
+    }, [selectedIds, items]);
+
+    // Đếm số KOC chưa gửi mẫu trong số các KOC được chọn
+    const bulkNotSentCount = useMemo(() => {
+        return selectedIds.filter((id) => {
+            const item = items.find((c) => c.id === id);
+            return !item?.sample_sent_at && !['sample_sent', 'sample_received', 'posted', 'completed'].includes(item?.status || '');
+        }).length;
+    }, [selectedIds, items]);
+
     // Chọn / Bỏ chọn dòng
     const handleToggleSelect = (id: number) => {
         setSelectedIds((prev) =>
@@ -287,28 +321,53 @@ export default function KocMatrixTable({
         setTimeout(() => setCopiedToken(null), 2500);
     };
 
-    // Mở Zalo và đề xuất chuyển trạng thái
+    // Mở Zalo thông minh theo ngữ cảnh
     const handleOpenZalo = (item: CampaignCreatorPivot) => {
-        const phone = item.creator?.phone?.replace(/\D/g, '');
-        if (!phone) {
-            alert('KOC này chưa có số điện thoại!');
-            return;
-        }
-
-        window.open(`https://zalo.me/${phone}`, '_blank');
-
-        // Nếu đang ở trạng thái "new", tự động hỏi chuyển sang "contacted"
-        if (item.status === 'new') {
-            setTimeout(() => {
-                if (window.confirm(`Bạn đã mở Zalo của ${item.creator.name}. Chuyển trạng thái sang [Đã liên hệ]?`)) {
-                    handleQuickStatusChange(item.id, 'contacted');
-                }
-            }, 600);
-        }
+        setQuickZaloPivotId(item.id);
     };
 
     // Chuyển trạng thái nhanh 1 dòng
-    const handleQuickStatusChange = (pivotId: number, newStatus: string, notes?: string) => {
+    const handleQuickStatusChange = (itemOrId: CampaignCreatorPivot | number, newStatus: string, notes?: string) => {
+        const item = typeof itemOrId === 'number'
+            ? items.find((c) => c.id === itemOrId)
+            : itemOrId;
+        const pivotId = typeof itemOrId === 'number' ? itemOrId : itemOrId.id;
+
+        // RÀNG BUỘC NGHIỆP VỤ 1: Không thể chuyển sang "sample_sent" nếu chưa có địa chỉ nhận hàng
+        if (newStatus === 'sample_sent') {
+            const hasAddress = Boolean(item?.creator?.shipping_address?.trim());
+            if (!hasAddress) {
+                // Tự động mở Modal Gửi Mẫu kèm Form Nhập Nhanh Địa Chỉ
+                if (item) {
+                    handleOpenShipmentModal(item);
+                }
+                showFeedback(`KOC ${item ? `[${item.creator.name}] ` : ''}chưa có địa chỉ nhận hàng. Vui lòng nhập địa chỉ trước khi xác nhận gửi mẫu.`);
+                return;
+            }
+        }
+
+        // RÀNG BUỘC NGHIỆP VỤ 2: Không thể chuyển sang "sample_received" hoặc "posted" nếu chưa gửi mẫu
+        if (['sample_received', 'posted'].includes(newStatus)) {
+            const isSent = Boolean(item?.sample_sent_at) || ['sample_sent', 'sample_received', 'posted', 'completed'].includes(item?.status || '');
+            if (!isSent) {
+                alert(`Không thể chuyển sang [${STATUS_DEFINITIONS[newStatus]?.label || newStatus}] vì KOC ${item ? `[${item.creator.name}] ` : ''}chưa được gửi mẫu sản phẩm.`);
+                return;
+            }
+        }
+
+        // RÀNG BUỘC NGHIỆP VỤ 3: Không thể chuyển sang "posted" nếu chưa có link video
+        if (newStatus === 'posted') {
+            const hasVideo = Boolean((item?.content_posts && item.content_posts.length > 0) || (item?.contentPosts && item.contentPosts.length > 0));
+            if (!hasVideo) {
+                // Tự động mở Modal Thêm Video để nhân viên điền link
+                if (item) {
+                    handleOpenVideoModal(item);
+                }
+                showFeedback(`KOC ${item ? `[${item.creator.name}] ` : ''}chưa có link video. Vui lòng nhập link video để chuyển sang trạng thái Đã lên video.`);
+                return;
+            }
+        }
+
         router.patch(
             route('pipeline.status.update', pivotId),
             { status: newStatus, notes },
@@ -318,7 +377,7 @@ export default function KocMatrixTable({
                     showFeedback(`Đã chuyển trạng thái sang [${STATUS_DEFINITIONS[newStatus]?.label || newStatus}]`);
                 },
                 onError: (errors) => {
-                    alert(errors.status || 'Có lỗi xảy ra khi cập nhật trạng thái.');
+                    alert(errors.status || errors.error || (typeof errors === 'object' ? Object.values(errors)[0] : '') || 'Có lỗi xảy ra khi cập nhật trạng thái.');
                 },
             }
         );
@@ -467,6 +526,16 @@ export default function KocMatrixTable({
         setShipmentNotes('');
         setShipmentDate(new Date().toISOString().split('T')[0]);
         setCopiedAddress(false);
+
+        // Khởi tạo các giá trị nhập nhanh từ Creator hiện tại
+        setQuickAddress(item.creator?.shipping_address || '');
+        setQuickCity(item.creator?.city_province || '');
+        setQuickDistrict(item.creator?.district || '');
+        setQuickWard(item.creator?.ward || '');
+        setQuickPhone(item.creator?.phone || '');
+
+        // Tự động mở form nhập địa chỉ nếu Creator chưa có địa chỉ
+        setIsEditingAddress(!item.creator?.shipping_address?.trim());
     };
 
     // Sao chép thông tin nhận mẫu gửi cho bộ phận kho
@@ -487,10 +556,16 @@ export default function KocMatrixTable({
         setTimeout(() => setCopiedAddress(false), 2000);
     };
 
-    // Xác nhận gửi mẫu cho KOC (tinh giản: tự động gán mã tham chiếu nội bộ)
+    // Xác nhận gửi mẫu cho KOC (tinh giản: hỗ trợ nhập nhanh địa chỉ giao hàng)
     const handleSubmitShipment = (e: React.FormEvent) => {
         e.preventDefault();
         if (!shipmentModalItem) return;
+
+        const effectiveAddress = (quickAddress.trim() || shipmentModalItem.creator?.shipping_address?.trim() || '');
+        if (!effectiveAddress) {
+            alert('Vui lòng nhập địa chỉ nhận hàng của KOC trước khi xác nhận gửi mẫu.');
+            return;
+        }
 
         setShipmentSubmitting(true);
         router.post(
@@ -498,6 +573,11 @@ export default function KocMatrixTable({
             {
                 notes: shipmentNotes,
                 shipped_at: shipmentDate || undefined,
+                shipping_address: quickAddress.trim() || undefined,
+                city_province: quickCity.trim() || undefined,
+                district: quickDistrict.trim() || undefined,
+                ward: quickWard.trim() || undefined,
+                phone: quickPhone.trim() || undefined,
             },
             {
                 preserveScroll: true,
@@ -508,7 +588,7 @@ export default function KocMatrixTable({
                 },
                 onError: (err) => {
                     setShipmentSubmitting(false);
-                    alert(Object.values(err)[0] || 'Không thể xác nhận gửi mẫu.');
+                    alert(err.error || Object.values(err)[0] || 'Không thể xác nhận gửi mẫu.');
                 },
             }
         );
@@ -516,6 +596,12 @@ export default function KocMatrixTable({
 
     // Mở modal thêm video
     const handleOpenVideoModal = (item: CampaignCreatorPivot) => {
+        const isSent = Boolean(item.sample_sent_at) || ['sample_sent', 'sample_received', 'posted', 'completed'].includes(item.status);
+        if (!isSent) {
+            alert(`Không thể thêm video cho KOC [${item.creator.name}] vì chưa gửi mẫu sản phẩm.`);
+            return;
+        }
+
         setVideoModalItem(item);
         setVideoPlatform('tiktok');
         setVideoUrl('');
@@ -855,15 +941,30 @@ export default function KocMatrixTable({
                                                     <select
                                                         value={item.status}
                                                         onChange={(e) =>
-                                                            handleQuickStatusChange(item.id, e.target.value)
+                                                            handleQuickStatusChange(item, e.target.value)
                                                         }
                                                         className="py-1 pl-2.5 pr-7 text-xs font-semibold rounded-lg border border-slate-200 bg-white text-slate-800 shadow-2xs cursor-pointer focus:ring-2 focus:ring-primary-500 hover:border-slate-300"
                                                     >
-                                                        {Object.entries(STATUS_DEFINITIONS).map(([stKey, stVal]) => (
-                                                            <option key={stKey} value={stKey}>
-                                                                {stVal.label}
-                                                            </option>
-                                                        ))}
+                                                        {Object.entries(STATUS_DEFINITIONS).map(([stKey, stVal]) => {
+                                                            const isMissingAddressForSent = stKey === 'sample_sent' && !item.creator?.shipping_address?.trim();
+                                                            const isSent = Boolean(item.sample_sent_at) || ['sample_sent', 'sample_received', 'posted', 'completed'].includes(item.status);
+                                                            const cannotReceiveOrPostYet = ['sample_received', 'posted'].includes(stKey) && !isSent;
+                                                            const hasVideo = Boolean((item.content_posts && item.content_posts.length > 0) || (item.contentPosts && item.contentPosts.length > 0));
+                                                            const isMissingVideoForPosted = stKey === 'posted' && !hasVideo;
+
+                                                            return (
+                                                                <option
+                                                                    key={stKey}
+                                                                    value={stKey}
+                                                                    disabled={cannotReceiveOrPostYet}
+                                                                >
+                                                                    {stVal.label}
+                                                                    {isMissingAddressForSent ? ' ⚠️ (Thiếu Đ/c)' : ''}
+                                                                    {cannotReceiveOrPostYet ? ' ⛔ (Chưa gửi mẫu)' : ''}
+                                                                    {!cannotReceiveOrPostYet && isMissingVideoForPosted ? ' 🔗 (Cần link video)' : ''}
+                                                                </option>
+                                                            );
+                                                        })}
                                                     </select>
                                                 </div>
                                             </td>
@@ -946,6 +1047,7 @@ export default function KocMatrixTable({
                                                     const posts = item.content_posts || item.contentPosts || [];
                                                     const count = posts.length;
                                                     const latest = count > 0 ? posts[posts.length - 1] : null;
+                                                    const isSent = Boolean(item.sample_sent_at) || ['sample_sent', 'sample_received', 'posted', 'completed'].includes(item.status);
 
                                                     return (
                                                         <div className="flex flex-col gap-1 items-start">
@@ -963,26 +1065,48 @@ export default function KocMatrixTable({
                                                                 ) : (
                                                                     <span className="text-[11px] text-slate-400 italic">Chưa lên</span>
                                                                 )}
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => handleOpenVideoModal(item)}
-                                                                    className="p-1 rounded-md bg-slate-100 hover:bg-purple-100 text-slate-600 hover:text-purple-800 transition-colors"
-                                                                    title="Thêm link video mới"
-                                                                >
-                                                                    <Plus className="h-3 w-3" />
-                                                                </button>
+                                                                {isSent && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleOpenVideoModal(item)}
+                                                                        className="p-1 rounded-md bg-slate-100 hover:bg-purple-100 text-slate-600 hover:text-purple-800 transition-colors"
+                                                                        title="Thêm link video mới"
+                                                                    >
+                                                                        <Plus className="h-3 w-3" />
+                                                                    </button>
+                                                                )}
                                                             </div>
                                                             {latest && latest.post_url && (
-                                                                <a
-                                                                    href={latest.post_url}
-                                                                    target="_blank"
-                                                                    rel="noreferrer"
-                                                                    className="inline-flex items-center gap-0.5 text-[10px] text-primary-600 hover:text-primary-800 font-medium truncate max-w-[120px]"
-                                                                    title={latest.video_title || latest.post_url}
-                                                                >
-                                                                    <span>Xem video</span>
-                                                                    <ExternalLink className="h-2.5 w-2.5" />
-                                                                </a>
+                                                                <div className="flex flex-col gap-0.5 items-start">
+                                                                    <a
+                                                                        href={latest.post_url}
+                                                                        target="_blank"
+                                                                        rel="noreferrer"
+                                                                        className="inline-flex items-center gap-0.5 text-[10px] text-primary-600 hover:text-primary-800 font-medium truncate max-w-[120px]"
+                                                                        title={latest.video_title || latest.post_url}
+                                                                    >
+                                                                        <span>Xem video</span>
+                                                                        <ExternalLink className="h-2.5 w-2.5" />
+                                                                    </a>
+                                                                    {latest.benchmark && (
+                                                                        <span
+                                                                            title={`Lượt xem: ${(latest.views_count || 0).toLocaleString('vi-VN')} / TB kênh: ${latest.benchmark.average_channel_views.toLocaleString('vi-VN')}`}
+                                                                            className={`inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[9px] font-semibold border ${
+                                                                                latest.benchmark.status === 'viral'
+                                                                                    ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                                                                    : latest.benchmark.status === 'exceeded'
+                                                                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                                                    : latest.benchmark.status === 'expected'
+                                                                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                                                                    : latest.benchmark.status === 'below'
+                                                                                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                                                                    : 'bg-rose-50 text-rose-700 border-rose-200'
+                                                                            }`}
+                                                                        >
+                                                                            {latest.benchmark.label}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
                                                             )}
                                                         </div>
                                                     );
@@ -1159,17 +1283,16 @@ export default function KocMatrixTable({
                                                         </button>
                                                     )}
 
-                                                    {/* ĐÃ NHẬN MẪU: Đang làm video -> Bấm Đã Lên Video */}
+                                                    {/* ĐÃ NHẬN MẪU: Đang làm video -> Bấm Điền Link Video để chuyển Đã Lên Video */}
                                                     {item.status === 'sample_received' && (
                                                         <button
                                                             type="button"
-                                                            onClick={() =>
-                                                                handleQuickStatusChange(item.id, 'posted')
-                                                            }
+                                                            onClick={() => handleOpenVideoModal(item)}
                                                             className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold bg-pink-600 text-white hover:bg-pink-700 shadow-2xs transition-all active:scale-95"
+                                                            title="Điền link video để chuyển sang trạng thái Đã lên video"
                                                         >
                                                             <Video className="h-3.5 w-3.5" />
-                                                            <span>Đã Lên Video</span>
+                                                            <span>Điền Link Video</span>
                                                         </button>
                                                     )}
 
@@ -1205,6 +1328,16 @@ export default function KocMatrixTable({
                                                             <span>Khôi phục</span>
                                                         </button>
                                                     )}
+
+                                                    {/* Nút Nhắc Zalo Thông Minh */}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleOpenZalo(item)}
+                                                        className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-blue-600 hover:bg-blue-50/50 shadow-2xs transition-colors"
+                                                        title="Nhắc việc Zalo 1-chạm thông minh"
+                                                    >
+                                                        <MessageCircle className="h-3.5 w-3.5" />
+                                                    </button>
 
                                                     {/* Nút Xóa (cho Mới thêm, Đã liên hệ hoặc Từ chối) */}
                                                     {['new', 'contacted', 'declined'].includes(item.status) && (
@@ -1353,6 +1486,24 @@ export default function KocMatrixTable({
                                 ))}
                             </div>
 
+                            {bulkSelectedStatus === 'sample_sent' && bulkMissingAddressCount > 0 && (
+                                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 leading-relaxed flex items-start gap-2">
+                                    <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                                    <div>
+                                        <strong>Cảnh báo ràng buộc địa chỉ:</strong> Có <strong>{bulkMissingAddressCount}</strong> trong tổng số {selectedIds.length} KOC chưa có địa chỉ nhận hàng. Hệ thống sẽ tự động bỏ qua các KOC này để tránh gửi hàng sai sót.
+                                    </div>
+                                </div>
+                            )}
+
+                            {['sample_received', 'posted'].includes(bulkSelectedStatus) && bulkNotSentCount > 0 && (
+                                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 leading-relaxed flex items-start gap-2">
+                                    <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                                    <div>
+                                        <strong>Cảnh báo ràng buộc gửi mẫu:</strong> Có <strong>{bulkNotSentCount}</strong> trong tổng số {selectedIds.length} KOC chưa được gửi mẫu sản phẩm. Hệ thống sẽ tự động bỏ qua các KOC này vì không thể nhận mẫu hoặc lên video khi chưa gửi mẫu.
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
                                 <Button
                                     variant="secondary"
@@ -1455,145 +1606,293 @@ export default function KocMatrixTable({
             )}
 
             {/* MODAL XÁC NHẬN GỬI MẪU CHO KOC (TINH GIẢN CHO BOOKING) */}
-            {shipmentModalItem && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                    <div
-                        className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs"
-                        onClick={() => setShipmentModalItem(null)}
-                    />
-                    <div className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl border border-slate-100 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
-                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                            <div>
-                                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                                    <Package className="h-5 w-5 text-amber-500" />
-                                    Xác Nhận Đã Gửi Mẫu Cho KOC
-                                </h3>
-                                <p className="text-xs text-slate-500">
-                                    {shipmentModalItem.creator.name} • {shipmentModalItem.creator.phone || 'Chưa có SĐT'}
-                                </p>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => setShipmentModalItem(null)}
-                                className="text-slate-400 hover:text-slate-600"
-                            >
-                                <X className="h-5 w-5" />
-                            </button>
-                        </div>
+            {shipmentModalItem && (() => {
+                const hasOriginalAddress = Boolean(shipmentModalItem.creator?.shipping_address?.trim());
+                const hasQuickAddress = Boolean(quickAddress.trim());
+                const hasValidShippingAddress = hasOriginalAddress || hasQuickAddress;
 
-                        {/* Địa chỉ nhận hàng của KOC & Nút Sao Chép Gửi Kho */}
-                        <div className="mt-4 p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-                            <div className="flex items-center justify-between mb-1.5">
-                                <span className="font-bold text-slate-800 flex items-center gap-1.5">
-                                    <Truck className="h-3.5 w-3.5 text-slate-500" />
-                                    Địa chỉ nhận mẫu của KOC:
-                                </span>
-                                {shipmentModalItem.creator.shipping_address && (
+                return (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                        <div
+                            className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs"
+                            onClick={() => setShipmentModalItem(null)}
+                        />
+                        <div className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl border border-slate-100 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+                            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                                <div>
+                                    <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                        <Package className="h-5 w-5 text-amber-500" />
+                                        Xác Nhận Đã Gửi Mẫu Cho KOC
+                                    </h3>
+                                    <p className="text-xs text-slate-500">
+                                        {shipmentModalItem.creator?.name} • {shipmentModalItem.creator?.phone || quickPhone || 'Chưa có SĐT'}
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setShipmentModalItem(null)}
+                                    className="text-slate-400 hover:text-slate-600"
+                                >
+                                    <X className="h-5 w-5" />
+                                </button>
+                            </div>
+
+                            {/* Cảnh báo nếu KOC chưa có địa chỉ */}
+                            {!hasValidShippingAddress && (
+                                <div className="mt-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-start gap-2.5">
+                                    <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
+                                    <div className="flex-1">
+                                        <div className="font-bold">KOC chưa có địa chỉ nhận hàng trong hồ sơ!</div>
+                                        <div className="mt-0.5 text-rose-700 text-[11px] leading-relaxed">
+                                            Hệ thống <strong>chặn gửi mẫu khi thiếu địa chỉ</strong>. Vui lòng nhập nhanh địa chỉ bên dưới (nếu đã nhận qua chat) hoặc gửi link Portal cho KOC tự điền.
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Hiển thị địa chỉ hiện tại (nếu có và không trong chế độ sửa) */}
+                            {hasOriginalAddress && !isEditingAddress && (
+                                <div className="mt-4 p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                                            <Truck className="h-3.5 w-3.5 text-slate-500" />
+                                            Địa chỉ nhận mẫu của KOC:
+                                        </span>
+                                        <div className="flex items-center gap-1.5">
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsEditingAddress(true)}
+                                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 shadow-2xs"
+                                                title="Sửa hoặc cập nhật địa chỉ mới"
+                                            >
+                                                <Edit3 className="h-3 w-3 text-slate-500" />
+                                                Sửa
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleCopyWarehouseAddress(shipmentModalItem)}
+                                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all shadow-2xs ${copiedAddress
+                                                        ? 'bg-emerald-600 text-white'
+                                                        : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-300'
+                                                    }`}
+                                                title="Chép họ tên, SĐT và địa chỉ để gửi cho bộ phận kho"
+                                            >
+                                                {copiedAddress ? (
+                                                    <>
+                                                        <Check className="h-3 w-3" />
+                                                        <span>Đã sao chép!</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Copy className="h-3 w-3" />
+                                                        <span>Sao chép gửi kho</span>
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <p className="text-slate-700 leading-relaxed font-medium">
+                                        {[
+                                            shipmentModalItem.creator?.shipping_address,
+                                            shipmentModalItem.creator?.ward,
+                                            shipmentModalItem.creator?.district,
+                                            shipmentModalItem.creator?.city_province,
+                                        ]
+                                            .filter(Boolean)
+                                            .join(', ')}
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Form Nhập Nhanh Địa Chỉ (khi chưa có địa chỉ hoặc khi bấm Sửa) */}
+                            {(!hasOriginalAddress || isEditingAddress) && (
+                                <div className="mt-4 p-3.5 rounded-xl bg-indigo-50/60 border border-indigo-200/80 text-xs animate-in fade-in duration-200">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="font-bold text-indigo-950 flex items-center gap-1.5">
+                                            <MapPin className="h-4 w-4 text-indigo-600" />
+                                            Nhập nhanh địa chỉ nhận hàng (Lưu vào hồ sơ KOC):
+                                        </span>
+                                        {hasOriginalAddress && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsEditingAddress(false)}
+                                                className="text-[11px] font-medium text-slate-500 hover:text-slate-700 underline"
+                                            >
+                                                Hủy sửa
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    <div className="space-y-2.5">
+                                        <div>
+                                            <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
+                                                Địa chỉ chi tiết (Số nhà, đường, ngõ, tòa nhà...) <span className="text-rose-500">*</span>
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={quickAddress}
+                                                onChange={(e) => setQuickAddress(e.target.value)}
+                                                placeholder="Ví dụ: 123 Đường Nguyễn Trãi"
+                                                className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500 bg-white"
+                                            />
+                                        </div>
+
+                                        <div className="grid grid-cols-3 gap-2">
+                                            <div>
+                                                <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
+                                                    Tỉnh / TP
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={quickCity}
+                                                    onChange={(e) => setQuickCity(e.target.value)}
+                                                    placeholder="Hà Nội / TP.HCM"
+                                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500 bg-white"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
+                                                    Quận / Huyện
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={quickDistrict}
+                                                    onChange={(e) => setQuickDistrict(e.target.value)}
+                                                    placeholder="Quận Thanh Xuân"
+                                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500 bg-white"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
+                                                    Phường / Xã
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={quickWard}
+                                                    onChange={(e) => setQuickWard(e.target.value)}
+                                                    placeholder="Phường Khương Trung"
+                                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500 bg-white"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
+                                                Số điện thoại nhận hàng
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={quickPhone}
+                                                onChange={(e) => setQuickPhone(e.target.value)}
+                                                placeholder="Ví dụ: 0988123456"
+                                                className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500 bg-white"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Tiện ích Copy Link Portal */}
+                            {shipmentModalItem.portal_token && (
+                                <div className="mt-2.5 flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                                    <span className="text-slate-600 text-[11px]">
+                                        Hoặc gửi link cho KOC tự điền:
+                                    </span>
                                     <button
                                         type="button"
-                                        onClick={() => handleCopyWarehouseAddress(shipmentModalItem)}
-                                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all shadow-2xs ${copiedAddress
+                                        onClick={() => handleCopyPortal(shipmentModalItem.portal_token)}
+                                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all shadow-2xs ${copiedToken === shipmentModalItem.portal_token
                                                 ? 'bg-emerald-600 text-white'
                                                 : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-300'
                                             }`}
-                                        title="Chép họ tên, SĐT và địa chỉ để gửi cho bộ phận kho"
                                     >
-                                        {copiedAddress ? (
+                                        {copiedToken === shipmentModalItem.portal_token ? (
                                             <>
                                                 <Check className="h-3 w-3" />
-                                                <span>Đã sao chép!</span>
+                                                <span>Đã sao chép link Portal!</span>
                                             </>
                                         ) : (
                                             <>
                                                 <Copy className="h-3 w-3" />
-                                                <span>Sao chép gửi kho</span>
+                                                <span>Sao chép link Portal</span>
                                             </>
                                         )}
                                     </button>
-                                )}
-                            </div>
-                            <p className="text-slate-700 leading-relaxed font-medium">
-                                {shipmentModalItem.creator.shipping_address ? (
-                                    [
-                                        shipmentModalItem.creator.shipping_address,
-                                        shipmentModalItem.creator.ward,
-                                        shipmentModalItem.creator.district,
-                                        shipmentModalItem.creator.city_province,
-                                    ]
-                                        .filter(Boolean)
-                                        .join(', ')
-                                ) : (
-                                    <span className="text-rose-600 italic font-semibold">
-                                        Chưa có thông tin địa chỉ giao hàng! Vui lòng gửi link Portal cho bạn KOC cập nhật.
-                                    </span>
-                                )}
-                            </p>
-                        </div>
+                                </div>
+                            )}
 
-                                {/* Trạng thái gửi mẫu hiện tại */}
-                                {shipmentModalItem.sample_sent_at && (
-                                    <div className="mt-4 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">
-                                        <strong>Trạng thái:</strong> Đã gửi mẫu vào ngày {formatDate(shipmentModalItem.sample_sent_at)}.
-                                        {shipmentModalItem.notes && <span className="block mt-0.5 text-slate-600">Ghi chú: {shipmentModalItem.notes}</span>}
+                            {/* Trạng thái gửi mẫu hiện tại */}
+                            {shipmentModalItem.sample_sent_at && (
+                                <div className="mt-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">
+                                    <strong>Trạng thái:</strong> Đã gửi mẫu vào ngày {formatDate(shipmentModalItem.sample_sent_at)}.
+                                    {shipmentModalItem.notes && <span className="block mt-0.5 text-slate-600">Ghi chú: {shipmentModalItem.notes}</span>}
+                                </div>
+                            )}
+
+                            {/* Form xác nhận gửi mẫu tinh giản */}
+                            <form onSubmit={handleSubmitShipment} className="mt-4 space-y-3.5 pt-3 border-t border-slate-100">
+                                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 leading-relaxed">
+                                    💡 <strong>Quy trình tinh gọn:</strong> Nhân viên Booking chỉ cần bấm sao chép thông tin địa chỉ gửi cho kho và xác nhận ngày gửi mẫu. Kho bên ngoài sẽ chịu trách nhiệm đóng gói và vận chuyển.
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                            Ngày gửi mẫu
+                                        </label>
+                                        <input
+                                            type="date"
+                                            value={shipmentDate}
+                                            onChange={(e) => setShipmentDate(e.target.value)}
+                                            className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500"
+                                        />
                                     </div>
-                                )}
 
-                                {/* Form xác nhận gửi mẫu tinh giản */}
-                                <form onSubmit={handleSubmitShipment} className="mt-4 space-y-3.5 pt-3 border-t border-slate-100">
-                                        <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 leading-relaxed">
-                                            💡 <strong>Quy trình tinh gọn:</strong> Nhân viên Booking chỉ cần bấm sao chép thông tin địa chỉ gửi cho kho và xác nhận ngày gửi mẫu. Kho bên ngoài sẽ chịu trách nhiệm đóng gói và vận chuyển.
-                                        </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                            Ghi chú mẫu / sản phẩm gửi
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={shipmentNotes}
+                                            onChange={(e) => setShipmentNotes(e.target.value)}
+                                            placeholder="Ví dụ: 1 Hộp kem + Quà tặng kèm"
+                                            className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500"
+                                        />
+                                    </div>
+                                </div>
 
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <div>
-                                                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                                    Ngày gửi mẫu
-                                                </label>
-                                                <input
-                                                    type="date"
-                                                    value={shipmentDate}
-                                                    onChange={(e) => setShipmentDate(e.target.value)}
-                                                    className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500"
-                                                />
-                                            </div>
-
-                                            <div>
-                                                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                                    Ghi chú mẫu / sản phẩm gửi
-                                                </label>
-                                                <input
-                                                    type="text"
-                                                    value={shipmentNotes}
-                                                    onChange={(e) => setShipmentNotes(e.target.value)}
-                                                    placeholder="Ví dụ: 1 Hộp kem + Quà tặng kèm"
-                                                    className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500"
-                                                />
-                                            </div>
-                                        </div>
-
-                                        <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-                                            <Button
-                                                type="button"
-                                                variant="secondary"
-                                                size="sm"
-                                                onClick={() => setShipmentModalItem(null)}
-                                            >
-                                                Đóng
-                                            </Button>
-                                            <Button
-                                                type="submit"
-                                                variant="primary"
-                                                size="sm"
-                                                loading={shipmentSubmitting}
-                                                iconLeft={<CheckCircle2 className="h-3.5 w-3.5" />}
-                                            >
-                                                Xác Nhận Đã Gửi Mẫu
-                                            </Button>
-                                        </div>
-                                </form>
-                            </div>
-                </div>
-            )}
+                                <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                                    <span className="text-xs text-rose-600 font-medium">
+                                        {!hasValidShippingAddress && '⚠️ Cần có địa chỉ để gửi mẫu'}
+                                    </span>
+                                    <div className="flex items-center gap-2 ml-auto">
+                                        <Button
+                                            type="button"
+                                            variant="secondary"
+                                            size="sm"
+                                            onClick={() => setShipmentModalItem(null)}
+                                        >
+                                            Đóng
+                                        </Button>
+                                        <Button
+                                            type="submit"
+                                            variant="primary"
+                                            size="sm"
+                                            disabled={!hasValidShippingAddress || shipmentSubmitting}
+                                            loading={shipmentSubmitting}
+                                            iconLeft={<CheckCircle2 className="h-3.5 w-3.5" />}
+                                            title={!hasValidShippingAddress ? 'Vui lòng nhập địa chỉ nhận hàng trước khi xác nhận' : undefined}
+                                        >
+                                            Xác Nhận Đã Gửi Mẫu
+                                        </Button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                );
+            })()}
 
                     {/* MODAL QUẢN LÝ & THÊM VIDEO CHO KOC (HỖ TRỢ NHIỀU VIDEO) */}
                     {videoModalItem && (
@@ -1749,13 +2048,21 @@ export default function KocMatrixTable({
                                             loading={videoSubmitting}
                                             iconLeft={<Video className="h-3.5 w-3.5" />}
                                         >
-                                            Lưu Video
+                                            Lưu Link & Đánh Dấu Đã Lên Video
                                         </Button>
                                     </div>
                                 </form>
                             </div>
                         </div>
                     )}
+
+                    {/* Modal Nhắc Zalo Thông Minh 1-Chạm */}
+                    <QuickZaloReminderModal
+                        isOpen={quickZaloPivotId !== null}
+                        campaignCreatorId={quickZaloPivotId}
+                        onClose={() => setQuickZaloPivotId(null)}
+                        onSuccess={(msg) => showFeedback(msg)}
+                    />
                 </div>
             );
 }

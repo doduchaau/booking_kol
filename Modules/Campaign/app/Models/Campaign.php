@@ -29,6 +29,11 @@ class Campaign extends Model
         'end_date',
         'content_guidelines',
         'content_guidelines_file',
+        'key_messages',
+        'hashtags',
+        'dos_and_donts',
+        'discount_code',
+        'affiliate_link',
         'sample_requirement',
         'sample_requirement_file',
         'video_deadline_days',
@@ -39,7 +44,9 @@ class Campaign extends Model
 
     protected $appends = [
         'content_guidelines_file_url',
+        'content_guidelines_file_name',
         'sample_requirement_file_url',
+        'sample_requirement_file_name',
     ];
 
     protected $casts = [
@@ -61,11 +68,27 @@ class Campaign extends Model
     }
 
     /**
+     * Tên file hướng dẫn kịch bản
+     */
+    public function getContentGuidelinesFileNameAttribute(): ?string
+    {
+        return $this->content_guidelines_file ? basename($this->content_guidelines_file) : null;
+    }
+
+    /**
      * URL tải file quy định gửi mẫu
      */
     public function getSampleRequirementFileUrlAttribute(): ?string
     {
         return $this->sample_requirement_file ? asset('storage/' . $this->sample_requirement_file) : null;
+    }
+
+    /**
+     * Tên file quy định gửi mẫu
+     */
+    public function getSampleRequirementFileNameAttribute(): ?string
+    {
+        return $this->sample_requirement_file ? basename($this->sample_requirement_file) : null;
     }
 
     /**

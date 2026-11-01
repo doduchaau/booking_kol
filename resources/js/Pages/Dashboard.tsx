@@ -20,11 +20,13 @@ import {
     Phone,
     ShieldAlert,
     MessageSquare,
+    MessageCircle,
     Eye,
 } from 'lucide-react';
 import PageHeader from '@/Components/Common/PageHeader';
 import Button from '@/Components/Common/Button';
 import Badge from '@/Components/Common/Badge';
+import QuickZaloReminderModal from '@/Components/Outreach/QuickZaloReminderModal';
 
 export interface DashboardProps {
     stats: {
@@ -97,6 +99,8 @@ export interface DashboardProps {
 
 export default function Dashboard({ stats, action_center, active_campaigns }: DashboardProps) {
     const [actionTab, setActionTab] = useState<'deadlines' | 'approvals' | 'shipping'>('deadlines');
+    const [quickZaloModalId, setQuickZaloModalId] = useState<number | null>(null);
+    const [dashboardToast, setDashboardToast] = useState<string | null>(null);
 
     // Helper format tiền tệ VND chuẩn
     const formatCurrency = (amount: number) => {
@@ -410,9 +414,17 @@ export default function Dashboard({ stats, action_center, active_campaigns }: Da
                                                 </div>
 
                                                 <div className="flex items-center gap-2 self-end sm:self-center">
+                                                    <Button
+                                                        variant="primary"
+                                                        size="sm"
+                                                        onClick={() => setQuickZaloModalId(koc.id)}
+                                                        iconLeft={<MessageCircle className="h-3.5 w-3.5" />}
+                                                    >
+                                                        Nhắc Zalo
+                                                    </Button>
                                                     <Link href={route('campaigns.show', koc.campaign_id)}>
                                                         <Button variant="secondary" size="sm" iconRight={<ChevronRight className="h-3.5 w-3.5" />}>
-                                                            Nhắc KOC
+                                                            Chi Tiết
                                                         </Button>
                                                     </Link>
                                                 </div>
@@ -707,6 +719,25 @@ export default function Dashboard({ stats, action_center, active_campaigns }: Da
                     </Link>
                 </div>
             </div>
+
+            {/* Modal Nhắc Zalo 1-Chạm Thông Minh */}
+            <QuickZaloReminderModal
+                isOpen={quickZaloModalId !== null}
+                campaignCreatorId={quickZaloModalId}
+                onClose={() => setQuickZaloModalId(null)}
+                onSuccess={(msg) => {
+                    setDashboardToast(msg);
+                    setTimeout(() => setDashboardToast(null), 3000);
+                }}
+            />
+
+            {/* Toast feedback nếu có */}
+            {dashboardToast && (
+                <div className="fixed top-5 right-5 z-50 flex items-center gap-2 rounded-xl bg-slate-900 text-white px-4 py-3 shadow-xl text-xs font-semibold animate-in fade-in">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                    <span>{dashboardToast}</span>
+                </div>
+            )}
         </AppLayout>
     );
 }

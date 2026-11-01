@@ -92,8 +92,21 @@ class PortalServiceTest extends TestCase
         $this->assertEquals('0912345678', $this->creator->phone);
     }
 
+    public function test_cannot_confirm_receipt_before_sample_sent(): void
+    {
+        $this->expectException(Exception::class);
+        $this->expectExceptionMessage('chưa được gửi đi');
+
+        $this->portalService->confirmReceipt($this->campaignCreator);
+    }
+
     public function test_confirm_receipt_advances_pipeline_to_sample_received(): void
     {
+        $this->campaignCreator->update([
+            'status' => PipelineStatusEnum::SAMPLE_SENT,
+            'sample_sent_at' => now(),
+        ]);
+
         $this->portalService->confirmReceipt($this->campaignCreator);
 
         $this->campaignCreator->refresh();
@@ -101,8 +114,26 @@ class PortalServiceTest extends TestCase
         $this->assertNotNull($this->campaignCreator->sample_received_at);
     }
 
+    public function test_cannot_submit_video_before_sample_sent(): void
+    {
+        $this->expectException(Exception::class);
+        $this->expectExceptionMessage('Chưa thể nộp link video khi chưa gửi mẫu');
+
+        $this->portalService->submitVideo($this->campaignCreator, [
+            'platform' => 'tiktok',
+            'post_url' => 'https://www.tiktok.com/@linhnga/video/123456789',
+            'video_title' => 'Review Son Môi Kem Lì',
+        ]);
+    }
+
     public function test_submit_video_creates_content_post_and_advances_pipeline_to_posted(): void
     {
+        $this->campaignCreator->update([
+            'status' => PipelineStatusEnum::SAMPLE_RECEIVED,
+            'sample_sent_at' => now()->subDays(2),
+            'sample_received_at' => now()->subDay(),
+        ]);
+
         $post = $this->portalService->submitVideo($this->campaignCreator, [
             'platform' => 'tiktok',
             'post_url' => 'https://www.tiktok.com/@linhnga/video/123456789',
