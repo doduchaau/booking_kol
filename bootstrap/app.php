@@ -16,8 +16,8 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\HandleInertiaRequests::class,
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
             \App\Http\Middleware\EnsureUserHasRole::class,
-            \Illuminate\Http\Middleware\TrustProxies::class,
         ]);
+        $middleware->trustProxies(at: '*');
 
         //
     })
