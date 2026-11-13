@@ -11,7 +11,7 @@ RUN npm run build
 # ==========================================
 # Giai đoạn 2: Runtime (PHP 8.2-FPM + Nginx + Supervisor)
 # ==========================================
-FROM php:8.2-fpm-bookworm
+FROM php:8.4-fpm-bookworm
 
 # Cài đặt tiện ích cài extension PHP chuẩn Docker (tự giải quyết mọi C library dependencies)
 COPY --from=mlocati/php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
