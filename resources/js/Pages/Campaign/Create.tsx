@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import AppLayout from '@/Layouts/AppLayout';
 import { Head, Link, useForm } from '@inertiajs/react';
-import { FolderKanban, Save, Calendar, DollarSign, Target, Sparkles, Paperclip, FileText, X } from 'lucide-react';
+import { FolderKanban, Save, Calendar, DollarSign, Target, Sparkles, Paperclip, FileText, X, Users, Database } from 'lucide-react';
 import PageHeader from '@/Components/Common/PageHeader';
 import Button from '@/Components/Common/Button';
 import FormField from '@/Components/Form/FormField';
@@ -11,9 +11,10 @@ import Textarea from '@/Components/Form/Textarea';
 
 interface Props {
     statuses: { value: string; label: string }[];
+    totalCreatorsCount?: number;
 }
 
-export default function Create({ statuses }: Props) {
+export default function Create({ statuses, totalCreatorsCount = 0 }: Props) {
     const guidelineFileInputRef = useRef<HTMLInputElement>(null);
     const sampleFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -23,6 +24,7 @@ export default function Create({ statuses }: Props) {
         product_sku: '',
         budget: '',
         target_creators_count: 10,
+        assign_all_creators: false,
         start_date: new Date().toISOString().split('T')[0],
         end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         content_guidelines: '',
@@ -36,6 +38,7 @@ export default function Create({ statuses }: Props) {
         affiliate_link: '',
         video_deadline_days: 7,
         commission_rate: '0',
+        ads_commission_rate: '0',
         status: 'active',
     });
 
@@ -346,6 +349,41 @@ export default function Create({ statuses }: Props) {
                                     placeholder="10"
                                     error={!!errors.target_creators_count}
                                 />
+                                {totalCreatorsCount > 0 && (
+                                    <div className="mt-2.5 p-3 rounded-xl border border-indigo-200 bg-indigo-50/60 transition-colors">
+                                        <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                                            <input
+                                                type="checkbox"
+                                                checked={data.assign_all_creators}
+                                                onChange={(e) => {
+                                                    const checked = e.target.checked;
+                                                    setData((prev) => ({
+                                                        ...prev,
+                                                        assign_all_creators: checked,
+                                                        target_creators_count: checked && totalCreatorsCount > prev.target_creators_count
+                                                            ? totalCreatorsCount
+                                                            : prev.target_creators_count,
+                                                    }));
+                                                }}
+                                                className="mt-0.5 rounded border-indigo-300 text-primary-600 focus:ring-primary-500 h-4 w-4 cursor-pointer"
+                                            />
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                                                        <Database className="h-3.5 w-3.5 text-primary-600" />
+                                                        Chọn toàn bộ KOC trong kho dữ liệu ({totalCreatorsCount} KOC)
+                                                    </span>
+                                                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-indigo-200/70 text-indigo-800">
+                                                        Toàn bộ kho CRM
+                                                    </span>
+                                                </div>
+                                                <p className="text-[11px] text-slate-500 mt-0.5">
+                                                    Tự động gán toàn bộ {totalCreatorsCount} KOC khả dụng trong kho CRM vào chiến dịch này ngay khi tạo, không cần gán thủ công từng người.
+                                                </p>
+                                            </div>
+                                        </label>
+                                    </div>
+                                )}
                             </FormField>
 
                             <FormField
@@ -365,19 +403,41 @@ export default function Create({ statuses }: Props) {
                                 />
                             </FormField>
 
-                            <FormField
-                                label="Hoa hồng Affiliate (%) nếu có"
-                                error={errors.commission_rate}
-                            >
-                                <TextInput
-                                    type="number"
-                                    step="0.1"
-                                    value={data.commission_rate}
-                                    onChange={(e) => setData('commission_rate', e.target.value)}
-                                    placeholder="15"
-                                    error={!!errors.commission_rate}
-                                />
-                            </FormField>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <FormField
+                                    label="Hoa hồng Affiliate (%)"
+                                    hint="Đơn hàng tự nhiên qua giỏ hàng / bio"
+                                    error={errors.commission_rate}
+                                >
+                                    <TextInput
+                                        type="number"
+                                        step="0.1"
+                                        min="0"
+                                        max="100"
+                                        value={data.commission_rate}
+                                        onChange={(e) => setData('commission_rate', e.target.value)}
+                                        placeholder="15"
+                                        error={!!errors.commission_rate}
+                                    />
+                                </FormField>
+
+                                <FormField
+                                    label="Hoa hồng ADS (%)"
+                                    hint="Đơn hàng phát sinh khi chạy quảng cáo"
+                                    error={errors.ads_commission_rate}
+                                >
+                                    <TextInput
+                                        type="number"
+                                        step="0.1"
+                                        min="0"
+                                        max="100"
+                                        value={data.ads_commission_rate}
+                                        onChange={(e) => setData('ads_commission_rate', e.target.value)}
+                                        placeholder="5"
+                                        error={!!errors.ads_commission_rate}
+                                    />
+                                </FormField>
+                            </div>
 
                             <div className="grid grid-cols-2 gap-3">
                                 <FormField label="Bắt đầu" required error={errors.start_date}>

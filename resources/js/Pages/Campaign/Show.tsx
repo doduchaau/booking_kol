@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import AppLayout from '@/Layouts/AppLayout';
-import { Head, Link, useForm } from '@inertiajs/react';
+import { Head, Link, useForm, router } from '@inertiajs/react';
 import {
     Calendar,
     Users,
@@ -13,6 +13,9 @@ import {
     Edit3,
     Paperclip,
     Download,
+    Database,
+    Info,
+    X,
 } from 'lucide-react';
 import PageHeader from '@/Components/Common/PageHeader';
 import Button from '@/Components/Common/Button';
@@ -57,6 +60,7 @@ interface Campaign {
     affiliate_link?: string | null;
     video_deadline_days?: number;
     commission_rate: string | number;
+    ads_commission_rate?: string | number;
     status: 'draft' | 'active' | 'completed' | 'paused';
     campaign_creators: CampaignCreatorPivot[];
 }
@@ -66,25 +70,41 @@ interface Props {
     stats: CampaignStats;
     stageCounts?: Record<string, number>;
     availableCreators: Creator[];
+    totalAvailableCount?: number;
     staffUsers: { id: number; name: string; email: string }[];
 }
 
 export default function Show({
     campaign,
     stats,
-    availableCreators,
-    staffUsers,
+    availableCreators = [],
+    totalAvailableCount = 0,
+    staffUsers = [],
 }: Props) {
     const [activeTab, setActiveTab] = useState<'matrix' | 'guidelines'>('matrix');
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const [selectAllInDb, setSelectAllInDb] = useState(false);
     const [modalSearch, setModalSearch] = useState('');
 
     // Form gán Creator mới
     const addForm = useForm({
+        select_all_in_db: false,
         creator_ids: [] as number[],
         assigned_to: '',
         booking_fee: '0',
     });
+
+    const handleOpenAddModal = (allDb: boolean = false) => {
+        setSelectAllInDb(allDb);
+        addForm.setData((prev) => ({
+            ...prev,
+            select_all_in_db: allDb,
+        }));
+        if (!allDb && (!availableCreators || availableCreators.length === 0)) {
+            router.reload({ only: ['availableCreators'] });
+        }
+        setIsAddModalOpen(true);
+    };
 
     const formatCurrency = (val: string | number) => {
         return new Intl.NumberFormat('vi-VN', {
@@ -122,6 +142,42 @@ export default function Show({
                 (c.niche && c.niche.toLowerCase().includes(q))
         );
     }, [availableCreators, modalSearch]);
+
+    // Trạng thái chọn tất cả KOC trong modal
+    const isAllFilteredSelected = useMemo(() => {
+        if (filteredAvailableCreators.length === 0) return false;
+        return filteredAvailableCreators.every((c) => addForm.data.creator_ids.includes(c.id));
+    }, [filteredAvailableCreators, addForm.data.creator_ids]);
+
+    const isSomeFilteredSelected = useMemo(() => {
+        return (
+            filteredAvailableCreators.some((c) => addForm.data.creator_ids.includes(c.id)) &&
+            !isAllFilteredSelected
+        );
+    }, [filteredAvailableCreators, addForm.data.creator_ids, isAllFilteredSelected]);
+
+    const handleToggleSelectAll = () => {
+        if (isAllFilteredSelected) {
+            const filteredIdSet = new Set(filteredAvailableCreators.map((c) => c.id));
+            addForm.setData(
+                'creator_ids',
+                addForm.data.creator_ids.filter((id) => !filteredIdSet.has(id))
+            );
+        } else {
+            const newIds = Array.from(
+                new Set([...addForm.data.creator_ids, ...filteredAvailableCreators.map((c) => c.id)])
+            );
+            addForm.setData('creator_ids', newIds);
+        }
+    };
+
+    const handleSelectAllInDb = () => {
+        addForm.setData('creator_ids', availableCreators.map((c) => c.id));
+    };
+
+    const handleDeselectAll = () => {
+        addForm.setData('creator_ids', []);
+    };
 
     const handleAddCreatorsSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -167,7 +223,7 @@ export default function Show({
                         <Button
                             variant="primary"
                             iconLeft={<Plus className="h-4 w-4" />}
-                            onClick={() => setIsAddModalOpen(true)}
+                            onClick={() => handleOpenAddModal(false)}
                         >
                             Gán KOC Vào Chiến Dịch
                         </Button>
@@ -175,8 +231,8 @@ export default function Show({
                 }
             />
 
-            {/* 4 Thẻ KPI Tóm Tắt */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            {/* 5 Thẻ KPI Tóm Tắt */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
                 <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-2xs">
                     <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">
                         Tiến độ lên video
@@ -235,7 +291,19 @@ export default function Show({
                             {campaign.commission_rate}%
                         </span>
                     </div>
-                    <p className="mt-1 text-xs text-slate-400">Chia sẻ doanh số bán lẻ</p>
+                    <p className="mt-1 text-xs text-slate-400">Đơn hàng tự nhiên (bio/giỏ hàng)</p>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-2xs">
+                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">
+                        Hoa Hồng Chạy ADS
+                    </span>
+                    <div className="mt-2 flex items-baseline gap-2">
+                        <span className="text-2xl font-bold text-indigo-600">
+                            {campaign.ads_commission_rate || 0}%
+                        </span>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-400">Đơn hàng khi nhãn hàng chạy ads</p>
                 </div>
             </div>
 
@@ -276,7 +344,8 @@ export default function Show({
                     campaign={campaign}
                     items={campaign.campaign_creators}
                     staffUsers={staffUsers}
-                    onOpenAddModal={() => setIsAddModalOpen(true)}
+                    onOpenAddModal={handleOpenAddModal}
+                    totalAvailableCount={totalAvailableCount}
                 />
             )}
 
@@ -390,81 +459,224 @@ export default function Show({
                     />
                     <div className="flex min-h-full items-center justify-center p-4">
                         <div className="relative w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl border border-slate-100 animate-in zoom-in-95">
-                            <h2 className="text-lg font-bold text-slate-900 mb-1">
-                                Gán KOC Vào Chiến Dịch [{campaign.name}]
-                            </h2>
-                            <p className="text-xs text-slate-500 mb-4">
-                                Chọn KOC từ kho dữ liệu CRM để thêm vào quy trình làm việc của chiến dịch.
-                            </p>
+                            <div className="flex items-start justify-between mb-4">
+                                <div>
+                                    <h2 className="text-lg font-bold text-slate-900">
+                                        Gán KOC Vào Chiến Dịch [{campaign.name}]
+                                    </h2>
+                                    <p className="text-xs text-slate-500 mt-0.5">
+                                        Thêm KOC từ kho dữ liệu CRM để triển khai tiếp cận và booking.
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsAddModalOpen(false)}
+                                    className="rounded-lg p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                                >
+                                    <X className="h-4 w-4" />
+                                </button>
+                            </div>
 
                             <form onSubmit={handleAddCreatorsSubmit} className="space-y-4">
-                                <FormField
-                                    label="Chọn KOC từ kho CRM"
-                                    required
-                                    error={addForm.errors.creator_ids}
-                                >
-                                    {/* Ô tìm kiếm nhanh trong danh sách khả dụng */}
-                                    <div className="relative mb-2">
-                                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                                        <input
-                                            type="text"
-                                            value={modalSearch}
-                                            onChange={(e) => setModalSearch(e.target.value)}
-                                            placeholder="Gõ tên hoặc SĐT để lọc nhanh..."
-                                            className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-1 focus:ring-primary-500 placeholder:text-slate-400"
-                                        />
-                                    </div>
+                                {/* BỘ CHUYỂN ĐỔI CHẾ ĐỘ: CHỌN TỪNG KOC vs CHỌN TOÀN BỘ KHO */}
+                                <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-slate-100 border border-slate-200/80 text-xs">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setSelectAllInDb(false);
+                                            addForm.setData('select_all_in_db', false);
+                                        }}
+                                        className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg font-semibold transition-all ${
+                                            !selectAllInDb
+                                                ? 'bg-white text-primary-700 shadow-2xs'
+                                                : 'text-slate-600 hover:text-slate-900'
+                                        }`}
+                                    >
+                                        <Users className="h-3.5 w-3.5" />
+                                        <span>Chọn KOC cụ thể ({addForm.data.creator_ids.length})</span>
+                                    </button>
 
-                                    <div className="max-h-52 overflow-y-auto rounded-xl border border-slate-200 p-2 divide-y divide-slate-100 space-y-1 bg-slate-50/50">
-                                        {filteredAvailableCreators.length > 0 ? (
-                                            filteredAvailableCreators.map((cr) => (
-                                                <label
-                                                    key={cr.id}
-                                                    className="flex items-center gap-2.5 p-2 hover:bg-white rounded-lg cursor-pointer text-xs transition-colors"
-                                                >
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setSelectAllInDb(true);
+                                            addForm.setData('select_all_in_db', true);
+                                        }}
+                                        className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg font-semibold transition-all ${
+                                            selectAllInDb
+                                                ? 'bg-primary-600 text-white shadow-2xs'
+                                                : 'text-slate-600 hover:text-slate-900'
+                                        }`}
+                                    >
+                                        <Database className="h-3.5 w-3.5" />
+                                        <span>Chọn toàn bộ kho ({totalAvailableCount} KOC)</span>
+                                    </button>
+                                </div>
+
+                                {/* NỘI DUNG THEO CHẾ ĐỘ */}
+                                {selectAllInDb ? (
+                                    <div className="rounded-xl border border-primary-200 bg-primary-50/50 p-4 space-y-3 animate-in fade-in">
+                                        <div className="flex items-start gap-3">
+                                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-600 text-white shadow-sm">
+                                                <Database className="h-5 w-5" />
+                                            </div>
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2">
+                                                    <h4 className="text-sm font-bold text-slate-900">
+                                                        Đã chọn toàn bộ KOC trong kho dữ liệu
+                                                    </h4>
+                                                    <Badge variant="success" size="sm">
+                                                        {totalAvailableCount} KOC khả dụng
+                                                    </Badge>
+                                                </div>
+                                                <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                                                    Hệ thống sẽ tự động gán toàn bộ <strong className="text-slate-900">{totalAvailableCount} KOC</strong> khả dụng trong kho CRM (chưa có trong chiến dịch này) vào quy trình làm việc.
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-primary-100 text-xs">
+                                            <div className="p-2.5 rounded-lg bg-white/80 border border-primary-100">
+                                                <span className="text-[11px] text-slate-500 block">Đã có trong chiến dịch</span>
+                                                <span className="text-sm font-bold text-slate-800">{campaign.campaign_creators.length} KOC</span>
+                                            </div>
+                                            <div className="p-2.5 rounded-lg bg-white/80 border border-primary-100">
+                                                <span className="text-[11px] text-slate-500 block">Sẽ gán mới đợt này</span>
+                                                <span className="text-sm font-bold text-primary-600">+{totalAvailableCount} KOC</span>
+                                            </div>
+                                        </div>
+
+                                        <p className="text-[11px] text-slate-500 italic flex items-center gap-1.5">
+                                            <Info className="h-3.5 w-3.5 text-primary-500 shrink-0" />
+                                            Mỗi KOC sẽ được cấp sẵn token bảo mật Cổng KOC Portal (hạn 14 ngày) để điền địa chỉ nhận hàng.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <FormField
+                                        label="Chọn KOC từ kho CRM"
+                                        required
+                                        error={addForm.errors.creator_ids}
+                                    >
+                                        {/* Ô tìm kiếm nhanh trong danh sách khả dụng */}
+                                        <div className="relative mb-2">
+                                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                                            <input
+                                                type="text"
+                                                value={modalSearch}
+                                                onChange={(e) => setModalSearch(e.target.value)}
+                                                placeholder="Gõ tên hoặc SĐT để lọc nhanh..."
+                                                className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-1 focus:ring-primary-500 placeholder:text-slate-400"
+                                            />
+                                        </div>
+
+                                        {/* Thanh Chọn Tất Cả / Thao Tác Hàng Loạt */}
+                                        {availableCreators.length > 0 && (
+                                            <div className="flex items-center justify-between mb-2 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                                                <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-800 select-none">
                                                     <input
                                                         type="checkbox"
-                                                        checked={addForm.data.creator_ids.includes(cr.id)}
-                                                        onChange={(e) => {
-                                                            if (e.target.checked) {
-                                                                addForm.setData('creator_ids', [
-                                                                    ...addForm.data.creator_ids,
-                                                                    cr.id,
-                                                                ]);
-                                                            } else {
-                                                                addForm.setData(
-                                                                    'creator_ids',
-                                                                    addForm.data.creator_ids.filter((id) => id !== cr.id)
-                                                                );
+                                                        checked={isAllFilteredSelected}
+                                                        ref={(el) => {
+                                                            if (el) {
+                                                                el.indeterminate = isSomeFilteredSelected;
                                                             }
                                                         }}
-                                                        className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                                                        onChange={handleToggleSelectAll}
+                                                        disabled={filteredAvailableCreators.length === 0}
+                                                        className="rounded border-slate-300 text-primary-600 focus:ring-primary-500 h-4 w-4 disabled:opacity-50 cursor-pointer"
                                                     />
-                                                    <div className="flex-1">
-                                                        <div className="flex items-center gap-1.5">
-                                                            <span className="font-bold text-slate-900">{cr.name}</span>
-                                                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 font-semibold text-slate-600">
-                                                                {cr.tier.toUpperCase()}
-                                                            </span>
-                                                        </div>
-                                                        <div className="text-[11px] text-slate-500">
-                                                            {cr.phone || 'Chưa có SĐT'} • Niche: {cr.niche}
-                                                        </div>
-                                                    </div>
+                                                    <span>
+                                                        {modalSearch
+                                                            ? `Chọn kết quả lọc (${filteredAvailableCreators.length} KOC)`
+                                                            : `Chọn danh sách hiển thị (${availableCreators.length} KOC)`}
+                                                    </span>
                                                 </label>
-                                            ))
-                                        ) : (
-                                            <p className="text-xs text-slate-400 italic p-4 text-center">
-                                                {modalSearch ? 'Không tìm thấy KOC nào.' : 'Tất cả KOC khả dụng đã được gán vào chiến dịch này.'}
-                                            </p>
-                                        )}
-                                    </div>
-                                    <p className="text-[11px] text-slate-500 mt-1.5">
-                                        Đã chọn: <span className="font-bold text-primary-600">{addForm.data.creator_ids.length}</span> KOC
-                                    </p>
-                                </FormField>
 
-                                <div className="grid grid-cols-2 gap-3">
+                                                <div className="flex items-center gap-2.5 text-[11px]">
+                                                    {addForm.data.creator_ids.length > 0 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={handleDeselectAll}
+                                                            className="text-slate-500 hover:text-rose-600 font-medium transition-colors"
+                                                        >
+                                                            Bỏ chọn hết
+                                                        </button>
+                                                    )}
+                                                    {totalAvailableCount > addForm.data.creator_ids.length && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setSelectAllInDb(true);
+                                                                addForm.setData('select_all_in_db', true);
+                                                            }}
+                                                            className="text-primary-600 hover:text-primary-700 font-bold transition-colors flex items-center gap-1"
+                                                        >
+                                                            <Database className="h-3 w-3" />
+                                                            Chọn toàn bộ kho ({totalAvailableCount})
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="max-h-52 overflow-y-auto rounded-xl border border-slate-200 p-2 divide-y divide-slate-100 space-y-1 bg-slate-50/50">
+                                            {filteredAvailableCreators.length > 0 ? (
+                                                filteredAvailableCreators.map((cr) => (
+                                                    <label
+                                                        key={cr.id}
+                                                        className="flex items-center gap-2.5 p-2 hover:bg-white rounded-lg cursor-pointer text-xs transition-colors"
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={addForm.data.creator_ids.includes(cr.id)}
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) {
+                                                                    addForm.setData('creator_ids', [
+                                                                        ...addForm.data.creator_ids,
+                                                                        cr.id,
+                                                                    ]);
+                                                                } else {
+                                                                    addForm.setData(
+                                                                        'creator_ids',
+                                                                        addForm.data.creator_ids.filter((id) => id !== cr.id)
+                                                                    );
+                                                                }
+                                                            }}
+                                                            className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                                                        />
+                                                        <div className="flex-1">
+                                                            <div className="flex items-center gap-1.5">
+                                                                <span className="font-bold text-slate-900">{cr.name}</span>
+                                                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 font-semibold text-slate-600">
+                                                                    {cr.tier.toUpperCase()}
+                                                                </span>
+                                                            </div>
+                                                            <div className="text-[11px] text-slate-500">
+                                                                {cr.phone || 'Chưa có SĐT'} • Niche: {cr.niche}
+                                                            </div>
+                                                        </div>
+                                                    </label>
+                                                ))
+                                            ) : (
+                                                <p className="text-xs text-slate-400 italic p-4 text-center">
+                                                    {modalSearch ? 'Không tìm thấy KOC nào.' : 'Tất cả KOC khả dụng đã được gán vào chiến dịch này.'}
+                                                </p>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center justify-between text-[11px] text-slate-500 mt-1.5">
+                                            <span>
+                                                Đã chọn: <strong className="text-primary-600">{addForm.data.creator_ids.length}</strong> / {totalAvailableCount} KOC khả dụng
+                                            </span>
+                                            {modalSearch && (
+                                                <span className="text-slate-400">
+                                                    (Đang lọc: {filteredAvailableCreators.length} KOC phù hợp)
+                                                </span>
+                                            )}
+                                        </div>
+                                    </FormField>
+                                )}
+
+                                <div className="grid grid-cols-2 gap-3 pt-1">
                                     <FormField label="Phí booking dự kiến (VND)" error={addForm.errors.booking_fee}>
                                         <TextInput
                                             type="number"
@@ -495,11 +707,14 @@ export default function Show({
                                     <Button
                                         type="submit"
                                         variant="primary"
-                                        disabled={addForm.data.creator_ids.length === 0}
+                                        disabled={selectAllInDb ? totalAvailableCount === 0 : addForm.data.creator_ids.length === 0}
                                         loading={addForm.processing}
                                         loadingText="Đang gán..."
+                                        iconLeft={selectAllInDb ? <Database className="h-4 w-4" /> : undefined}
                                     >
-                                        Xác Nhận Gán ({addForm.data.creator_ids.length})
+                                        {selectAllInDb
+                                            ? `Xác Nhận Gán Toàn Bộ (${totalAvailableCount} KOC)`
+                                            : `Xác Nhận Gán (${addForm.data.creator_ids.length})`}
                                     </Button>
                                 </div>
                             </form>

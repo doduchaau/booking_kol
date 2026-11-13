@@ -11,7 +11,8 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('campaign_creators', function (Blueprint $table) {
+        if (!Schema::hasTable('campaign_creators')) {
+            Schema::create('campaign_creators', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('campaign_id');
             $table->unsignedBigInteger('creator_id');
@@ -19,6 +20,7 @@ return new class extends Migration
             $table->enum('status', [
                 'new',               // Mới thêm vào danh sách
                 'contacted',         // Đã liên hệ
+                'waiting_approval',  // Chờ duyệt chi phí cast
                 'agreed',            // Đồng ý tham gia
                 'address_confirmed', // Đã xác nhận địa chỉ nhận hàng
                 'sample_sent',       // Đã gửi mẫu
@@ -30,12 +32,17 @@ return new class extends Migration
             ])->default('new');
             $table->decimal('booking_fee', 14, 2)->default(0.00)->comment('Phí booking thỏa thuận (VND)');
             $table->decimal('commission_rate', 5, 2)->nullable()->comment('% hoa hồng affiliate');
+            $table->decimal('ads_commission_rate', 5, 2)->nullable()->comment('% hoa hồng ads thỏa thuận riêng');
             $table->string('portal_token', 64)->nullable()->unique()->comment('Token truy cập cổng Portal');
             $table->timestamp('portal_token_expires_at')->nullable();
             $table->text('notes')->nullable()->comment('Ghi chú trao đổi riêng');
 
             // Mốc thời gian lưu vết chuyển trạng thái
             $table->timestamp('contacted_at')->nullable();
+            $table->timestamp('waiting_approval_at')->nullable()->comment('Thời điểm chuyển sang chờ duyệt chi phí');
+            $table->timestamp('approved_cost_at')->nullable()->comment('Thời điểm xác nhận đã được duyệt chi phí');
+            $table->string('approver_name', 150)->nullable()->comment('Tên người duyệt');
+            $table->text('approval_notes')->nullable()->comment('Ghi chú khi duyệt chi phí');
             $table->timestamp('agreed_at')->nullable();
             $table->timestamp('address_confirmed_at')->nullable();
             $table->timestamp('sample_sent_at')->nullable();
@@ -56,6 +63,7 @@ return new class extends Migration
             $table->foreign('campaign_id')->references('id')->on('campaigns')->onDelete('cascade');
             $table->foreign('creator_id')->references('id')->on('creators')->onDelete('cascade');
         });
+        }
     }
 
     /**

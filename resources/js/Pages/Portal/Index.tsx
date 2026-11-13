@@ -18,6 +18,10 @@ import {
     Download,
     Paperclip,
     Clock,
+    BadgePercent,
+    ShieldCheck,
+    AlertTriangle,
+    RefreshCw,
 } from 'lucide-react';
 import Button from '@/Components/Common/Button';
 import FormField from '@/Components/Form/FormField';
@@ -25,6 +29,7 @@ import TextInput from '@/Components/Form/TextInput';
 import Select from '@/Components/Form/Select';
 import Textarea from '@/Components/Form/Textarea';
 import Toast from '@/Components/Common/Toast';
+import PlatformIcon from '@/Components/Common/PlatformIcon';
 
 export interface CampaignFileItem {
     type: string;
@@ -45,6 +50,8 @@ interface CampaignInfo {
     dos_and_donts?: string | null;
     discount_code?: string | null;
     affiliate_link?: string | null;
+    commission_rate?: string | number | null;
+    ads_commission_rate?: string | number | null;
     content_guidelines_file_url?: string | null;
     content_guidelines_file_name?: string | null;
     sample_requirement_file_url?: string | null;
@@ -59,6 +66,7 @@ interface CreatorInfo {
     shipping_address: string | null;
     city_province: string | null;
     district: string | null;
+    ward: string | null;
 }
 
 interface PipelineInfo {
@@ -86,6 +94,7 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
         shipping_address: creator.shipping_address || '',
         city_province: creator.city_province || '',
         district: creator.district || '',
+        ward: creator.ward || '',
     });
 
     // Form xác nhận nhận hàng
@@ -97,6 +106,44 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
         post_url: '',
         video_title: '',
     });
+
+    // State Pre-check kiểm tra tự động tuân thủ video cho KOC
+    const [precheckResult, setPrecheckResult] = useState<any>(null);
+    const [isPrechecking, setIsPrechecking] = useState(false);
+
+    const runPrecheck = async (url: string, platform: string) => {
+        if (!url || !url.startsWith('http')) {
+            setPrecheckResult(null);
+            return;
+        }
+        setIsPrechecking(true);
+        try {
+            const csrfToken = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content;
+            const resp = await fetch(route('portal.precheck-video', token), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken || '',
+                    'Accept': 'application/json',
+                },
+                body: JSON.stringify({
+                    post_url: url,
+                    platform: platform,
+                }),
+            });
+            if (resp.ok) {
+                const data = await resp.json();
+                setPrecheckResult(data);
+                if (data.metadata?.caption && !videoForm.data.video_title) {
+                    videoForm.setData('video_title', data.metadata.caption.slice(0, 200));
+                }
+            }
+        } catch (e) {
+            console.error('Lỗi pre-check:', e);
+        } finally {
+            setIsPrechecking(false);
+        }
+    };
 
     const [copiedHashtags, setCopiedHashtags] = useState(false);
     const [copiedCode, setCopiedCode] = useState(false);
@@ -175,6 +222,51 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
                     </div>
                 </div>
 
+                {/* Khối Quyền Lợi & Chính Sách Hoa Hồng Dành Cho KOC - Luôn hiển thị độc lập & nổi bật */}
+                <div className="rounded-2xl border border-indigo-100 bg-white p-5 shadow-sm space-y-3.5">
+                    <div className="flex items-center gap-2.5 pb-2.5 border-b border-slate-100">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 shadow-2xs shrink-0">
+                            <BadgePercent className="h-5 w-5" />
+                        </div>
+                        <div>
+                            <h2 className="text-sm font-bold text-slate-900">
+                                Chính Sách Hoa Hồng Dành Cho Bạn
+                            </h2>
+                            <p className="text-[11px] text-slate-500">
+                                Quyền lợi doanh thu áp dụng cho tài khoản của bạn trong chiến dịch
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                        {/* 1. Hoa hồng Affiliate */}
+                        <div className="rounded-xl bg-gradient-to-br from-indigo-50/70 via-white to-blue-50/40 border border-indigo-200/70 p-3.5 space-y-1.5 shadow-2xs">
+                            <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block">
+                                Hoa Hồng Affiliate
+                            </span>
+                            <div className="text-2xl font-black text-primary-600 tracking-tight">
+                                {Number(campaign.commission_rate || 0)}%
+                            </div>
+                            <p className="text-[11px] text-slate-500 leading-snug">
+                                Đơn tự nhiên qua link bio / giỏ hàng video của bạn.
+                            </p>
+                        </div>
+
+                        {/* 2. Hoa hồng ADS */}
+                        <div className="rounded-xl bg-gradient-to-br from-purple-50/70 via-white to-pink-50/40 border border-purple-200/70 p-3.5 space-y-1.5 shadow-2xs">
+                            <span className="text-[10px] font-bold text-purple-950 uppercase tracking-wider block">
+                                Hoa Hồng Chạy ADS
+                            </span>
+                            <div className="text-2xl font-black text-purple-600 tracking-tight">
+                                {Number(campaign.ads_commission_rate || 0)}%
+                            </div>
+                            <p className="text-[11px] text-slate-500 leading-snug">
+                                Đơn phát sinh khi nhãn hàng sử dụng video chạy quảng cáo.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
                 {/* Thanh Chỉ Báo Tiến Trình 3 Bước */}
                 <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                     <div className="grid grid-cols-3 gap-2 text-center text-xs">
@@ -191,7 +283,7 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
                 </div>
 
                 {/* Khối Brief Hợp Tác & Yêu Cầu Kịch Bản Dành Cho KOC */}
-                {(campaign.key_messages || campaign.hashtags || campaign.dos_and_donts || campaign.discount_code || (campaign.files && campaign.files.length > 0) || campaign.content_guidelines_file_url || campaign.sample_requirement_file_url) && (
+                {(campaign.key_messages || campaign.hashtags || campaign.dos_and_donts || campaign.content_guidelines || campaign.discount_code || campaign.affiliate_link || (campaign.files && campaign.files.length > 0) || campaign.content_guidelines_file_url || campaign.sample_requirement_file_url) && (
                     <div className="rounded-2xl border border-primary-200/80 bg-white p-5 shadow-sm space-y-3.5">
                         <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
                             <div className="flex items-center gap-2">
@@ -211,6 +303,19 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
 
                         {showBrief && (
                             <div className="space-y-3 text-xs">
+                                {/* Hướng dẫn nội dung & Kịch bản */}
+                                {campaign.content_guidelines && (
+                                    <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
+                                        <div className="font-bold text-slate-800 mb-1 flex items-center gap-1.5">
+                                            <FileText className="h-3.5 w-3.5 text-primary-600" />
+                                            <span>Hướng dẫn nội dung & kịch bản:</span>
+                                        </div>
+                                        <p className="text-slate-700 leading-relaxed whitespace-pre-line">
+                                            {campaign.content_guidelines}
+                                        </p>
+                                    </div>
+                                )}
+
                                 {/* Thông điệp chính */}
                                 {campaign.key_messages && (
                                     <div className="rounded-xl bg-amber-50/60 border border-amber-200/60 p-3">
@@ -455,12 +560,13 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
                     )}
 
                     <form onSubmit={handleAddressSubmit} className="space-y-3.5">
-                        <FormField label="Số điện thoại nhận hàng" error={addressForm.errors.phone}>
+                        <FormField label="Số điện thoại nhận hàng" required error={addressForm.errors.phone}>
                             <TextInput
                                 type="tel"
                                 value={addressForm.data.phone}
                                 onChange={(e) => addressForm.setData('phone', e.target.value)}
                                 placeholder="0912345678"
+                                required
                             />
                         </FormField>
 
@@ -472,16 +578,18 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
                             <TextInput
                                 value={addressForm.data.shipping_address}
                                 onChange={(e) => addressForm.setData('shipping_address', e.target.value)}
-                                placeholder="Ví dụ: 45A Đường Lê Lợi, Phường Bến Nghé"
+                                placeholder="Ví dụ: 45A Đường Lê Lợi"
+                                required
                             />
                         </FormField>
 
-                        <div className="grid grid-cols-2 gap-3">
-                            <FormField label="Tỉnh / Thành phố" error={addressForm.errors.city_province}>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <FormField label="Tỉnh / Thành phố" required error={addressForm.errors.city_province}>
                                 <TextInput
                                     value={addressForm.data.city_province}
                                     onChange={(e) => addressForm.setData('city_province', e.target.value)}
                                     placeholder="TP. HCM"
+                                    required
                                 />
                             </FormField>
 
@@ -490,6 +598,15 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
                                     value={addressForm.data.district}
                                     onChange={(e) => addressForm.setData('district', e.target.value)}
                                     placeholder="Quận 1"
+                                />
+                            </FormField>
+
+                            <FormField label="Phường / Xã" required error={addressForm.errors.ward}>
+                                <TextInput
+                                    value={addressForm.data.ward}
+                                    onChange={(e) => addressForm.setData('ward', e.target.value)}
+                                    placeholder="Phường Bến Nghé"
+                                    required
                                 />
                             </FormField>
                         </div>
@@ -548,7 +665,7 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
                     ) : (
                         <div className="space-y-3">
                             <p className="text-xs text-slate-500 leading-relaxed">
-                                Khi nhận được kiện hàng từ shipper của GHN/GHTK, bạn vui lòng kiểm tra sản phẩm và bấm nút bên dưới để hệ thống kích hoạt mốc thời gian lên video.
+                                Khi nhận được kiện hàng từ shipper giao tới, bạn vui lòng kiểm tra sản phẩm và bấm nút bên dưới để hệ thống kích hoạt mốc thời gian lên video.
                             </p>
                             <form onSubmit={handleReceiptSubmit}>
                                 <Button
@@ -592,31 +709,95 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
                     ) : (
                         <form onSubmit={handleVideoSubmit} className="space-y-3.5">
                             <FormField label="Nền tảng xuất bản" required error={videoForm.errors.platform}>
-                                <Select
-                                    value={videoForm.data.platform}
-                                    onChange={(e) => videoForm.setData('platform', e.target.value)}
-                                    options={[
-                                        { value: 'tiktok', label: 'TikTok Video' },
-                                        { value: 'facebook', label: 'Facebook / Reels' },
-                                        { value: 'instagram', label: 'Instagram Reels' },
-                                        { value: 'youtube', label: 'YouTube Shorts / Video' },
-                                        { value: 'shopee', label: 'Shopee Video' },
-                                    ]}
-                                />
+                                <div className="flex items-center gap-2">
+                                    <div className="p-2 rounded-lg bg-white border border-slate-200 shadow-2xs shrink-0 flex items-center justify-center">
+                                        <PlatformIcon platform={videoForm.data.platform} className="h-4 w-4" />
+                                    </div>
+                                    <div className="flex-1">
+                                        <Select
+                                            value={videoForm.data.platform}
+                                            onChange={(e) => videoForm.setData('platform', e.target.value)}
+                                            options={[
+                                                { value: 'tiktok', label: 'TikTok Video' },
+                                                { value: 'facebook', label: 'Facebook / Reels' },
+                                                { value: 'instagram', label: 'Instagram Reels' },
+                                                { value: 'youtube', label: 'YouTube Shorts / Video' },
+                                                { value: 'shopee', label: 'Shopee Video' },
+                                            ]}
+                                        />
+                                    </div>
+                                </div>
                             </FormField>
 
                             <FormField
                                 label="Đường link video trực tiếp (URL)"
                                 required
-                                hint="Dán đường link chia sẻ từ ứng dụng TikTok hoặc Facebook"
+                                hint="Dán đường link chia sẻ từ ứng dụng TikTok hoặc Facebook (Hệ thống sẽ tự động kiểm tra hashtag & brief)"
                                 error={videoForm.errors.post_url}
                             >
-                                <TextInput
-                                    type="url"
-                                    value={videoForm.data.post_url}
-                                    onChange={(e) => videoForm.setData('post_url', e.target.value)}
-                                    placeholder="https://www.tiktok.com/@user/video/..."
-                                />
+                                <div className="space-y-2">
+                                    <div className="relative">
+                                        <TextInput
+                                            type="url"
+                                            value={videoForm.data.post_url}
+                                            onChange={(e) => {
+                                                videoForm.setData('post_url', e.target.value);
+                                            }}
+                                            onBlur={() => {
+                                                runPrecheck(videoForm.data.post_url, videoForm.data.platform);
+                                            }}
+                                            placeholder="https://www.tiktok.com/@user/video/..."
+                                        />
+                                        {isPrechecking && (
+                                            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-xs text-indigo-600 bg-white px-2 py-1 rounded-md border border-indigo-100 shadow-xs">
+                                                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                                                <span>Đang quét...</span>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Hộp Thông Báo Kiểm Tra Tuân Thủ Nhanh Cho KOC */}
+                                    {precheckResult && (
+                                        <div
+                                            className={`p-3 rounded-xl border text-xs flex items-start gap-2.5 transition-all animate-in fade-in duration-200 ${
+                                                precheckResult.status === 'passed'
+                                                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                                                    : precheckResult.status === 'warning'
+                                                    ? 'bg-amber-50 border-amber-200 text-amber-800'
+                                                    : 'bg-rose-50 border-rose-200 text-rose-800'
+                                            }`}
+                                        >
+                                            {precheckResult.status === 'passed' ? (
+                                                <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                                            ) : precheckResult.status === 'warning' ? (
+                                                <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                                            ) : (
+                                                <AlertCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
+                                            )}
+                                            <div className="space-y-1">
+                                                <div className="font-bold">
+                                                    {precheckResult.status === 'passed'
+                                                        ? '✓ Tuyệt vời! Video của bạn đã đủ hashtag và yêu cầu brief.'
+                                                        : precheckResult.status === 'warning'
+                                                        ? '⚠️ Lưu ý kiểm tra lại caption video:'
+                                                        : '❌ Video không thể truy cập hoặc ở chế độ riêng tư.'}
+                                                </div>
+                                                {precheckResult.issues && precheckResult.issues.length > 0 && (
+                                                    <ul className="list-disc list-inside space-y-0.5 text-[11px]">
+                                                        {precheckResult.issues.map((issue: string, idx: number) => (
+                                                            <li key={idx}>{issue}</li>
+                                                        ))}
+                                                    </ul>
+                                                )}
+                                                {precheckResult.status === 'warning' && (
+                                                    <p className="text-[11px] text-amber-700 italic pt-0.5">
+                                                        Mẹo: Bạn có thể cập nhật caption trên TikTok/MXH cho đúng brief trước khi bấm gửi để được duyệt nghiệm thu nhanh nhất nhé!
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                             </FormField>
 
                             <FormField label="Tiêu đề / Caption ngắn gọn" error={videoForm.errors.video_title}>

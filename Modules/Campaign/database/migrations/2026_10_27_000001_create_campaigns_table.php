@@ -23,6 +23,7 @@ return new class extends Migration
             $table->text('content_guidelines')->nullable()->comment('Mô tả kịch bản, hashtag, quy định cấm kỵ');
             $table->text('sample_requirement')->nullable()->comment('Quy định về mẫu sản phẩm trải nghiệm');
             $table->decimal('commission_rate', 5, 2)->default(0.00)->comment('% hoa hồng affiliate nếu có');
+            $table->decimal('ads_commission_rate', 5, 2)->default(0.00)->comment('% hoa hồng ads nếu có');
             $table->enum('status', ['draft', 'active', 'completed', 'paused'])->default('draft')->comment('Trạng thái chiến dịch');
             $table->unsignedBigInteger('created_by')->nullable()->comment('User ID người tạo');
             $table->timestamps();

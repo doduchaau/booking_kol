@@ -19,12 +19,40 @@ class ReportCalculationService
     protected const CACHE_TTL_SECONDS = 900;
 
     /**
+     * Lấy version cache hiện tại (hỗ trợ mọi Cache driver: Redis, File, Database, Array)
+     */
+    protected static function getCacheVersion(?int $campaignId = null): int
+    {
+        $scope = $campaignId ? "campaign_{$campaignId}" : 'global';
+        return (int) Cache::get("report_cache_ver:{$scope}", 1);
+    }
+
+    /**
+     * Xóa cache báo cáo (tự động kích hoạt khi có thay đổi trạng thái Pipeline, duyệt video hoặc đồng bộ GMV)
+     */
+    public static function flushReportCache(?int $campaignId = null): void
+    {
+        try {
+            Cache::increment('report_cache_ver:global');
+            if ($campaignId) {
+                Cache::increment("report_cache_ver:campaign_{$campaignId}");
+            }
+        } catch (\Throwable $e) {
+            Cache::put('report_cache_ver:global', time(), 86400 * 30);
+            if ($campaignId) {
+                Cache::put("report_cache_ver:campaign_{$campaignId}", time(), 86400 * 30);
+            }
+        }
+    }
+
+    /**
      * Thống kê phễu chuyển đổi (Funnel Metrics) sử dụng SQL Conditional Aggregation thuần:
      * Mới -> Đã liên hệ -> Chốt hợp tác -> Đã nhận mẫu -> Đã lên video
      */
     public function getFunnelMetrics(?int $campaignId = null, ?array $dateRange = null): array
     {
-        $cacheKey = "report_funnel:v2:{$campaignId}:" . md5(json_encode($dateRange));
+        $ver = self::getCacheVersion($campaignId);
+        $cacheKey = "report_funnel:v3:{$ver}:{$campaignId}:" . md5(json_encode($dateRange));
 
         return Cache::remember($cacheKey, self::CACHE_TTL_SECONDS, function () use ($campaignId, $dateRange) {
             $query = CampaignCreator::query()
@@ -44,10 +72,12 @@ class ReportCalculationService
             // Thực thi 1 câu truy vấn SQL gom nhóm duy nhất thay vì duyệt PHP Collection
             $stats = $query->selectRaw("
                 COUNT(*) as count_new,
-                COUNT(CASE WHEN contacted_at IS NOT NULL OR status IN ('contacted', 'agreed', 'address_confirmed', 'sample_sent', 'sample_received', 'posted', 'completed', 'declined', 'no_show') THEN 1 END) as count_contacted,
+                COUNT(CASE WHEN contacted_at IS NOT NULL OR status IN ('contacted', 'waiting_approval', 'agreed', 'address_confirmed', 'sample_sent', 'sample_received', 'posted', 'completed', 'declined', 'no_show') THEN 1 END) as count_contacted,
                 COUNT(CASE WHEN agreed_at IS NOT NULL OR status IN ('agreed', 'address_confirmed', 'sample_sent', 'sample_received', 'posted', 'completed', 'no_show') THEN 1 END) as count_agreed,
                 COUNT(CASE WHEN sample_received_at IS NOT NULL OR status IN ('sample_received', 'posted', 'completed', 'no_show') THEN 1 END) as count_sample_received,
-                COUNT(CASE WHEN posted_at IS NOT NULL OR status IN ('posted', 'completed') OR EXISTS (SELECT 1 FROM content_posts cp WHERE cp.campaign_creator_id = campaign_creators.id AND cp.deleted_at IS NULL) THEN 1 END) as count_posted
+                COUNT(CASE WHEN posted_at IS NOT NULL OR status IN ('posted', 'completed') OR EXISTS (SELECT 1 FROM content_posts cp WHERE cp.campaign_creator_id = campaign_creators.id AND cp.deleted_at IS NULL) THEN 1 END) as count_posted,
+                COUNT(CASE WHEN status = 'declined' THEN 1 END) as count_declined,
+                COUNT(CASE WHEN status = 'no_show' THEN 1 END) as count_no_show
             ")->first();
 
             $countNew = (int) ($stats->count_new ?? 0);
@@ -74,11 +104,114 @@ class ReportCalculationService
 
             $overallConversion = $countNew > 0 ? round(($countPosted / $countNew) * 100, 1) : 0;
 
+            // Xác định điểm nghẽn lớn nhất trong phễu
+            $drops = [
+                'contacted' => ['name' => 'Liên hệ KOC', 'rate' => $step2['drop_rate'], 'advice' => 'Tỷ lệ KOC không phản hồi cao. Gợi ý: Ưu tiên nhắn Zalo cá nhân trực tiếp và cá nhân hóa lời chào.'],
+                'agreed' => ['name' => 'Đàm phán thù lao', 'rate' => $step3['drop_rate'], 'advice' => 'Tỷ lệ từ chối deal cao. Gợi ý: Kiểm tra lại mức thù lao booking so với thị trường hoặc bổ sung hoa hồng affiliate.'],
+                'sample' => ['name' => 'Gửi & Nhận mẫu', 'rate' => $step4['drop_rate'], 'advice' => 'Tỷ lệ rớt khi nhận mẫu cao. Gợi ý: Nhắc KOC xác nhận địa chỉ sớm và phối hợp kho đóng hàng nhanh.'],
+                'posted' => ['name' => 'Sản xuất video', 'rate' => $step5['drop_rate'], 'advice' => 'Tỷ lệ nợ video sau nhận mẫu cao. Gợi ý: Tăng cường gửi tin nhắn nhắc nhở Zalo 1-chạm khi còn 2 ngày đến hạn.'],
+            ];
+
+            $biggestDropKey = 'contacted';
+            $maxDrop = -1;
+            foreach ($drops as $key => $d) {
+                if ($d['rate'] > $maxDrop) {
+                    $maxDrop = $d['rate'];
+                    $biggestDropKey = $key;
+                }
+            }
+
+            $biggestDropStage = $drops[$biggestDropKey]['name'];
+            $bottleneckAdvice = $countNew > 0 && $maxDrop > 0
+                ? $drops[$biggestDropKey]['advice']
+                : 'Quy trình vận hành phễu đang rất tốt và đồng đều.';
+
+            // Phân tích chuyển đổi theo Phân hạng KOC (Tier: Nano, Micro, Macro, Celeb)
+            $tierQuery = CampaignCreator::query()
+                ->join('creators', 'creators.id', '=', 'campaign_creators.creator_id')
+                ->whereNull('campaign_creators.deleted_at')
+                ->whereNull('creators.deleted_at');
+
+            if ($campaignId) {
+                $tierQuery->where('campaign_creators.campaign_id', $campaignId);
+            }
+            if (!empty($dateRange['start_date'])) {
+                $tierQuery->whereDate('campaign_creators.created_at', '>=', $dateRange['start_date']);
+            }
+            if (!empty($dateRange['end_date'])) {
+                $tierQuery->whereDate('campaign_creators.created_at', '<=', $dateRange['end_date']);
+            }
+
+            $tierStats = $tierQuery->selectRaw("
+                COALESCE(creators.tier, 'nano') as tier,
+                COUNT(*) as total_kocs,
+                COUNT(CASE WHEN campaign_creators.posted_at IS NOT NULL OR campaign_creators.status IN ('posted', 'completed') OR EXISTS (SELECT 1 FROM content_posts cp WHERE cp.campaign_creator_id = campaign_creators.id AND cp.deleted_at IS NULL) THEN 1 END) as posted_kocs,
+                COALESCE(SUM(campaign_creators.booking_fee), 0) as total_fee
+            ")->groupBy('creators.tier')->get();
+
+            $tierConversion = $tierStats->map(function ($row) {
+                $total = (int) $row->total_kocs;
+                $posted = (int) $row->posted_kocs;
+                $rate = $total > 0 ? round(($posted / $total) * 100, 1) : 0.0;
+                return [
+                    'tier' => (string) $row->tier,
+                    'total_kocs' => $total,
+                    'posted_kocs' => $posted,
+                    'conversion_rate' => $rate,
+                    'total_fee' => (float) $row->total_fee,
+                ];
+            })->values()->all();
+
+            // Phân tích thời gian chu kỳ chuyển đổi trung bình (Cycle time - ngày)
+            $isSqlite = DB::connection()->getDriverName() === 'sqlite';
+            $cycleQuery = CampaignCreator::query()
+                ->whereNull('campaign_creators.deleted_at');
+
+            if ($campaignId) {
+                $cycleQuery->where('campaign_creators.campaign_id', $campaignId);
+            }
+            if (!empty($dateRange['start_date'])) {
+                $cycleQuery->whereDate('campaign_creators.created_at', '>=', $dateRange['start_date']);
+            }
+            if (!empty($dateRange['end_date'])) {
+                $cycleQuery->whereDate('campaign_creators.created_at', '<=', $dateRange['end_date']);
+            }
+
+            if ($isSqlite) {
+                $cycleStats = $cycleQuery->selectRaw("
+                    AVG(CASE WHEN agreed_at IS NOT NULL AND created_at IS NOT NULL THEN (julianday(agreed_at) - julianday(created_at)) END) as avg_days_to_agree,
+                    AVG(CASE WHEN sample_received_at IS NOT NULL AND sample_sent_at IS NOT NULL THEN (julianday(sample_received_at) - julianday(sample_sent_at)) END) as avg_days_shipping,
+                    AVG(CASE WHEN posted_at IS NOT NULL AND sample_received_at IS NOT NULL THEN (julianday(posted_at) - julianday(sample_received_at)) END) as avg_days_to_post
+                ")->first();
+            } else {
+                $cycleStats = $cycleQuery->selectRaw("
+                    AVG(CASE WHEN agreed_at IS NOT NULL AND created_at IS NOT NULL THEN DATEDIFF(agreed_at, created_at) END) as avg_days_to_agree,
+                    AVG(CASE WHEN sample_received_at IS NOT NULL AND sample_sent_at IS NOT NULL THEN DATEDIFF(sample_received_at, sample_sent_at) END) as avg_days_shipping,
+                    AVG(CASE WHEN posted_at IS NOT NULL AND sample_received_at IS NOT NULL THEN DATEDIFF(posted_at, sample_received_at) END) as avg_days_to_post
+                ")->first();
+            }
+
             return [
                 'steps' => [$step1, $step2, $step3, $step4, $step5],
                 'total_candidates' => $countNew,
                 'total_posted' => $countPosted,
                 'overall_conversion_rate' => $overallConversion,
+                'drop_off_analysis' => [
+                    'declined_count' => (int) ($stats->count_declined ?? 0),
+                    'no_show_count' => (int) ($stats->count_no_show ?? 0),
+                    'contact_drop_rate' => $step2['drop_rate'],
+                    'agreed_drop_rate' => $step3['drop_rate'],
+                    'sample_drop_rate' => $step4['drop_rate'],
+                    'posted_drop_rate' => $step5['drop_rate'],
+                    'biggest_drop_stage' => $biggestDropStage,
+                    'bottleneck_advice' => $bottleneckAdvice,
+                ],
+                'tier_conversion' => $tierConversion,
+                'cycle_time' => [
+                    'avg_days_to_agree' => round(max(0, (float) ($cycleStats->avg_days_to_agree ?? 0)), 1),
+                    'avg_days_shipping' => round(max(0, (float) ($cycleStats->avg_days_shipping ?? 0)), 1),
+                    'avg_days_to_post' => round(max(0, (float) ($cycleStats->avg_days_to_post ?? 0)), 1),
+                ],
             ];
         });
     }
@@ -88,7 +221,8 @@ class ReportCalculationService
      */
     public function getFinancialRoiMetrics(?int $campaignId = null, ?array $dateRange = null): array
     {
-        $cacheKey = "report_financial:v2:{$campaignId}:" . md5(json_encode($dateRange));
+        $ver = self::getCacheVersion($campaignId);
+        $cacheKey = "report_financial:v3:{$ver}:{$campaignId}:" . md5(json_encode($dateRange));
 
         return Cache::remember($cacheKey, self::CACHE_TTL_SECONDS, function () use ($campaignId, $dateRange) {
             $ccQuery = CampaignCreator::query()
@@ -176,7 +310,8 @@ class ReportCalculationService
      */
     public function getCreatorLeaderboard(?int $campaignId = null, int $limit = 10): array
     {
-        $cacheKey = "report_leaderboard:v2:{$campaignId}:{$limit}";
+        $ver = self::getCacheVersion($campaignId);
+        $cacheKey = "report_leaderboard:v3:{$ver}:{$campaignId}:{$limit}";
 
         return Cache::remember($cacheKey, self::CACHE_TTL_SECONDS, function () use ($campaignId, $limit) {
             $baseQuery = CampaignCreator::query()
@@ -314,7 +449,8 @@ class ReportCalculationService
      */
     public function getStaffPerformance(?int $campaignId = null, ?array $dateRange = null): array
     {
-        $cacheKey = "report_staff:v2:{$campaignId}:" . md5(json_encode($dateRange));
+        $ver = self::getCacheVersion($campaignId);
+        $cacheKey = "report_staff:v3:{$ver}:{$campaignId}:" . md5(json_encode($dateRange));
 
         return Cache::remember($cacheKey, self::CACHE_TTL_SECONDS, function () use ($campaignId, $dateRange) {
             $staffUsers = User::with('roles')->orderBy('name')->get();

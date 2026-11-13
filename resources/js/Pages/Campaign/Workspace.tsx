@@ -1,10 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Head, Link, router } from '@inertiajs/react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/Common/PageHeader';
 import Button from '@/Components/Common/Button';
-import Badge, { BadgeVariant } from '@/Components/Common/Badge';
+import Badge from '@/Components/Common/Badge';
+import PlatformBadge from '@/Components/Common/PlatformBadge';
+import PlatformIcon from '@/Components/Common/PlatformIcon';
 import QuickZaloReminderModal from '@/Components/Outreach/QuickZaloReminderModal';
+import WorkspaceFilterChips from '@/Pages/Campaign/Partials/Workspace/WorkspaceFilterChips';
+import WorkspaceShipmentModal from '@/Pages/Campaign/Partials/Workspace/WorkspaceShipmentModal';
+import WorkspaceVideoModal from '@/Pages/Campaign/Partials/Workspace/WorkspaceVideoModal';
 import {
     ClipboardList,
     Users,
@@ -28,6 +33,12 @@ import {
     User,
     UserPlus,
     FolderKanban,
+    MapPin,
+    Share2,
+    PlayCircle,
+    CheckCheck,
+    RotateCcw,
+    X,
 } from 'lucide-react';
 
 export interface CreatorAccount {
@@ -43,6 +54,9 @@ export interface Creator {
     name: string;
     phone: string | null;
     shipping_address: string | null;
+    city_province?: string | null;
+    district?: string | null;
+    ward?: string | null;
     niche: string;
     tier: string;
     trust_score?: number;
@@ -55,6 +69,19 @@ export interface DeadlineInfo {
     days: number;
     text: string;
     date: string;
+}
+
+export interface ContentPostItem {
+    id: number;
+    platform: string;
+    post_url: string;
+    video_title?: string;
+    status: string;
+    views_count?: number;
+    likes_count?: number;
+    comments_count?: number;
+    gmv_amount?: number;
+    posted_at?: string | null;
 }
 
 export interface WorkspaceKocItem {
@@ -83,13 +110,7 @@ export interface WorkspaceKocItem {
     };
     assignee?: { id: number; name: string; email: string } | null;
     deadline_info?: DeadlineInfo | null;
-    contentPosts?: Array<{
-        id: number;
-        platform: string;
-        post_url: string;
-        video_title?: string;
-        status: string;
-    }>;
+    contentPosts?: ContentPostItem[];
 }
 
 interface Props {
@@ -97,6 +118,8 @@ interface Props {
         staff_id: string;
         campaign_id: number | null;
         search: string | null;
+        urgency?: string | null;
+        focus_koc?: number | null;
     };
     is_leader_or_admin: boolean;
     current_user_id: number;
@@ -106,6 +129,7 @@ interface Props {
         total_my_kocs: number;
         my_kocs_count?: number;
         unassigned_count?: number;
+        approval_count?: number;
         leads_count: number;
         samples_count: number;
         deadlines_count: number;
@@ -118,6 +142,7 @@ interface Props {
     };
     buckets: {
         leads: WorkspaceKocItem[];
+        approval?: WorkspaceKocItem[];
         samples: WorkspaceKocItem[];
         deadlines: WorkspaceKocItem[];
         reviews: WorkspaceKocItem[];
@@ -133,18 +158,71 @@ export default function Workspace({
     stats,
     buckets,
 }: Props) {
-    const [activeTab, setActiveTab] = useState<'deadlines' | 'samples' | 'leads' | 'reviews'>('deadlines');
+    const [activeTab, setActiveTab] = useState<'deadlines' | 'samples' | 'leads' | 'approval' | 'reviews'>('deadlines');
     const [searchTerm, setSearchTerm] = useState(filters.search || '');
     const [selectedCampaignId, setSelectedCampaignId] = useState<string>(filters.campaign_id ? String(filters.campaign_id) : '');
     const [selectedStaffId, setSelectedStaffId] = useState<string>(filters.staff_id || '');
+    const [urgencyFilter, setUrgencyFilter] = useState<string>(filters.urgency || 'all');
+
+    // Modals state
     const [quickZaloModalId, setQuickZaloModalId] = useState<number | null>(null);
+    const [shipmentModalItem, setShipmentModalItem] = useState<WorkspaceKocItem | null>(null);
+    const [videoModalItem, setVideoModalItem] = useState<WorkspaceKocItem | null>(null);
+
+    // Interaction states
     const [copiedToken, setCopiedToken] = useState<number | null>(null);
     const [toastMessage, setToastMessage] = useState<string | null>(null);
     const [claimingId, setClaimingId] = useState<number | null>(null);
+    const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
+    const [isCopyingList, setIsCopyingList] = useState(false);
+
+    // Tự động chuyển đến đúng tab của KOC khi lọc từ thông báo
+    useEffect(() => {
+        if (filters.focus_koc) {
+            const id = filters.focus_koc;
+            if (buckets.deadlines?.some(item => item.id === id)) setActiveTab('deadlines');
+            else if (buckets.samples?.some(item => item.id === id)) setActiveTab('samples');
+            else if (buckets.reviews?.some(item => item.id === id)) setActiveTab('reviews');
+            else if (buckets.approval?.some(item => item.id === id)) setActiveTab('approval');
+            else if (buckets.leads?.some(item => item.id === id)) setActiveTab('leads');
+        }
+    }, [filters.focus_koc, buckets]);
 
     const showToast = (msg: string) => {
         setToastMessage(msg);
         setTimeout(() => setToastMessage(null), 3500);
+    };
+
+    // Áp dụng bộ lọc
+    const handleFilterChange = (newParams: Record<string, any>) => {
+        router.get(
+            // @ts-ignore
+            typeof route === 'function' ? route('workspace.index') : '/workspace',
+            {
+                search: searchTerm || undefined,
+                campaign_id: selectedCampaignId || undefined,
+                staff_id: selectedStaffId || undefined,
+                urgency: urgencyFilter !== 'all' ? urgencyFilter : undefined,
+                ...newParams,
+            },
+            {
+                preserveState: true,
+                preserveScroll: true,
+            }
+        );
+    };
+
+    // Chuyển nhanh qua Urgency Chips
+    const handleUrgencyClick = (urgency: string) => {
+        setUrgencyFilter(urgency);
+        if (urgency === 'overdue' || urgency === 'warning') {
+            setActiveTab('deadlines');
+        } else if (urgency === 'ready_to_ship') {
+            setActiveTab('samples');
+        } else if (urgency === 'pending_approval') {
+            setActiveTab('reviews');
+        }
+        handleFilterChange({ urgency: urgency === 'all' ? undefined : urgency });
     };
 
     // Nhận phụ trách KOC (hoặc Admin chỉ định nhân viên)
@@ -174,22 +252,114 @@ export default function Workspace({
         );
     };
 
-    // Áp dụng bộ lọc
-    const handleFilterChange = (newParams: Record<string, any>) => {
-        router.get(
-            // @ts-ignore
-            typeof route === 'function' ? route('workspace.index') : '/workspace',
+    // 1-Click: Xác nhận KOC đã nhận mẫu (Sample Received)
+    const handleConfirmSampleReceived = (item: WorkspaceKocItem) => {
+        setActionLoadingId(item.id);
+        // @ts-ignore
+        const url = typeof route === 'function'
+            ? route('pipeline.status.update', item.id)
+            : `/pipeline/${item.id}/status`;
+
+        router.patch(
+            url,
+            { status: 'sample_received' },
             {
-                search: searchTerm || undefined,
-                campaign_id: selectedCampaignId || undefined,
-                staff_id: selectedStaffId || undefined,
-                ...newParams,
-            },
-            {
-                preserveState: true,
                 preserveScroll: true,
+                onSuccess: () => {
+                    showToast(`Đã xác nhận KOC ${item.creator?.name} đã nhận mẫu! Bắt đầu tính deadline nộp video.`);
+                },
+                onError: (errs) => {
+                    const firstErr = Object.values(errs)[0];
+                    showToast(`Lỗi: ${typeof firstErr === 'string' ? firstErr : 'Không thể cập nhật'}`);
+                },
+                onFinish: () => setActionLoadingId(null),
             }
         );
+    };
+
+    // 1-Click: Duyệt video hoặc Yêu cầu sửa bài
+    const handleUpdatePostStatus = (postId: number, newStatus: 'approved' | 'changes_requested') => {
+        setActionLoadingId(postId);
+        // @ts-ignore
+        const url = typeof route === 'function'
+            ? route('content.status', postId)
+            : `/contents/${postId}/status`;
+
+        router.patch(
+            url,
+            { status: newStatus },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    showToast(newStatus === 'approved'
+                        ? 'Đã duyệt video nghiệm thu thành công! Hệ thống đang đồng bộ số liệu.'
+                        : 'Đã gửi yêu cầu chỉnh sửa video cho KOC.'
+                    );
+                },
+                onFinish: () => setActionLoadingId(null),
+            }
+        );
+    };
+
+    // 1-Click: Chốt nhận mẫu cho KOC ở tab leads
+    const handleQuickAdvanceLead = (item: WorkspaceKocItem) => {
+        if (item.creator?.shipping_address?.trim()) {
+            setActionLoadingId(item.id);
+            // @ts-ignore
+            const url = typeof route === 'function'
+                ? route('pipeline.status.update', item.id)
+                : `/pipeline/${item.id}/status`;
+
+            router.patch(
+                url,
+                { status: 'address_confirmed' },
+                {
+                    preserveScroll: true,
+                    onSuccess: () => showToast(`Đã chuyển KOC ${item.creator?.name} sang trạng thái Đã chốt địa chỉ nhận mẫu!`),
+                    onFinish: () => setActionLoadingId(null),
+                }
+            );
+        } else {
+            // Chưa có địa chỉ -> Mở modal gửi mẫu để nhập nhanh
+            setShipmentModalItem(item);
+        }
+    };
+
+    // Sao chép danh sách KOC cần đôn đốc
+    const handleCopyFollowupList = () => {
+        const currentItems = buckets[activeTab] || [];
+        if (currentItems.length === 0) {
+            showToast('Không có KOC nào trong danh sách để sao chép.');
+            return;
+        }
+
+        setIsCopyingList(true);
+        const dateStr = new Date().toLocaleDateString('vi-VN');
+        const tabTitle = activeTab === 'deadlines' ? 'HẠN NỘP VIDEO'
+            : activeTab === 'samples' ? 'MẪU THỬ & GIAO HÀNG'
+            : activeTab === 'reviews' ? 'NGHIỆM THU VIDEO'
+            : 'TIẾP CẬN KOC';
+
+        const lines = [
+            `📋 [DANH SÁCH ĐÔN ĐỐC ${tabTitle}] - Ngày ${dateStr}`,
+            `Tổng cộng: ${currentItems.length} KOC`,
+            '----------------------------------------',
+        ];
+
+        currentItems.forEach((item, index) => {
+            const phone = item.creator?.phone || 'Chưa có SĐT';
+            const handle = item.creator?.accounts?.[0]?.handle ? `@${item.creator.accounts[0].handle}` : item.creator?.niche;
+            const deadline = item.deadline_info?.text ? `(${item.deadline_info.text})` : '';
+            const camp = item.campaign?.name || '';
+            lines.push(`${index + 1}. ${item.creator?.name} | ${phone} | ${handle} | SP: ${item.campaign?.product_name || camp} ${deadline}`);
+        });
+
+        lines.push('----------------------------------------');
+        lines.push('💡 Vui lòng kiểm tra và xử lý công việc sớm!');
+
+        navigator.clipboard.writeText(lines.join('\n'));
+        showToast(`Đã sao chép danh sách ${currentItems.length} KOC vào Clipboard để gửi nhóm Zalo!`);
+        setTimeout(() => setIsCopyingList(false), 2000);
     };
 
     const handleCopyPortal = (item: WorkspaceKocItem) => {
@@ -218,6 +388,8 @@ export default function Workspace({
                 return <Badge variant="default">Mới</Badge>;
             case 'contacted':
                 return <Badge variant="info">Đã liên hệ</Badge>;
+            case 'waiting_approval':
+                return <Badge variant="warning">Chờ duyệt chi phí</Badge>;
             case 'agreed':
                 return <Badge variant="primary">Đã chốt</Badge>;
             case 'address_confirmed':
@@ -262,6 +434,13 @@ export default function Workspace({
                 ]}
                 actions={
                     <div className="flex items-center gap-2.5">
+                        <Button
+                            variant="secondary"
+                            onClick={handleCopyFollowupList}
+                            iconLeft={isCopyingList ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4 text-primary-600" />}
+                        >
+                            {isCopyingList ? 'Đã sao chép!' : 'Sao Chép DS Đôn Đốc'}
+                        </Button>
                         <Link href={route('campaigns.index')}>
                             <Button variant="secondary" iconLeft={<FolderKanban className="h-4 w-4" />}>
                                 Xem Các Chiến Dịch
@@ -271,10 +450,15 @@ export default function Workspace({
                 }
             />
 
-            {/* 4 Khối Chỉ Số Khẩn Cấp của Bàn Làm Việc */}
+            {/* 4 Khối Chỉ Số Khẩn Cấp */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 {/* Metric 1: Tổng KOC Đang Phụ Trách */}
-                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
+                <div
+                    onClick={() => handleUrgencyClick('all')}
+                    className={`rounded-xl border p-4 shadow-xs cursor-pointer transition-all ${
+                        urgencyFilter === 'all' ? 'border-primary-500 ring-2 ring-primary-100 bg-white' : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}
+                >
                     <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                             KOC Đang Phụ Trách
@@ -287,12 +471,17 @@ export default function Workspace({
                         <span className="text-2xl font-bold text-slate-900">
                             {stats.total_my_kocs}
                         </span>
-                        <span className="text-xs text-slate-500">KOC trên toàn bộ chiến dịch</span>
+                        <span className="text-xs text-slate-500">KOC trên toàn chiến dịch</span>
                     </div>
                 </div>
 
                 {/* Metric 2: Mẫu Cần Xử Lý */}
-                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
+                <div
+                    onClick={() => handleUrgencyClick('ready_to_ship')}
+                    className={`rounded-xl border p-4 shadow-xs cursor-pointer transition-all ${
+                        urgencyFilter === 'ready_to_ship' ? 'border-amber-500 ring-2 ring-amber-100 bg-white' : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}
+                >
                     <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                             Xử Lý Mẫu Thử
@@ -305,12 +494,17 @@ export default function Workspace({
                         <span className="text-2xl font-bold text-amber-600">
                             {stats.ready_to_ship_count}
                         </span>
-                        <span className="text-xs text-slate-500">chờ báo kho / {stats.awaiting_receipt_count} chờ KOC nhận</span>
+                        <span className="text-xs text-slate-500">chờ báo kho / {stats.awaiting_receipt_count} chờ nhận</span>
                     </div>
                 </div>
 
                 {/* Metric 3: Cảnh Báo Quá Hạn Video */}
-                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
+                <div
+                    onClick={() => handleUrgencyClick('overdue')}
+                    className={`rounded-xl border p-4 shadow-xs cursor-pointer transition-all ${
+                        urgencyFilter === 'overdue' ? 'border-rose-500 ring-2 ring-rose-100 bg-white' : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}
+                >
                     <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                             Video Quá Hạn
@@ -323,12 +517,17 @@ export default function Workspace({
                         <span className="text-2xl font-bold text-rose-600">
                             {stats.overdue_count}
                         </span>
-                        <span className="text-xs text-slate-500">quá hạn ({stats.warning_count} sắp đến hạn)</span>
+                        <span className="text-xs text-slate-500">trễ hạn ({stats.warning_count} sắp đến hạn)</span>
                     </div>
                 </div>
 
                 {/* Metric 4: Video Đang Chờ Nghiệm Thu */}
-                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
+                <div
+                    onClick={() => handleUrgencyClick('pending_approval')}
+                    className={`rounded-xl border p-4 shadow-xs cursor-pointer transition-all ${
+                        urgencyFilter === 'pending_approval' ? 'border-emerald-500 ring-2 ring-emerald-100 bg-white' : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}
+                >
                     <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                             Chờ Nghiệm Thu
@@ -345,6 +544,19 @@ export default function Workspace({
                     </div>
                 </div>
             </div>
+
+            {/* Thanh Chip Lọc "Việc Cần Làm Ngay" */}
+            <WorkspaceFilterChips
+                currentUrgency={urgencyFilter}
+                onUrgencyChange={handleUrgencyClick}
+                stats={{
+                    overdue_count: stats.overdue_count,
+                    warning_count: stats.warning_count,
+                    ready_to_ship_count: stats.ready_to_ship_count,
+                    pending_approval_count: stats.pending_approval_count,
+                    total_my_kocs: stats.total_my_kocs,
+                }}
+            />
 
             {/* Thanh Bộ Lọc & Tìm Kiếm */}
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs mb-6">
@@ -410,13 +622,26 @@ export default function Workspace({
                         </select>
                     </div>
 
-                    <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => handleFilterChange({ search: searchTerm })}
-                    >
-                        Áp dụng lọc
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        {urgencyFilter !== 'all' && (
+                            <button
+                                type="button"
+                                onClick={() => handleUrgencyClick('all')}
+                                className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 p-1.5 rounded-lg border border-slate-200"
+                                title="Bỏ lọc việc gấp"
+                            >
+                                <RotateCcw className="h-3.5 w-3.5" />
+                                <span>Xem tất cả</span>
+                            </button>
+                        )}
+                        <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => handleFilterChange({ search: searchTerm })}
+                        >
+                            Áp dụng lọc
+                        </Button>
+                    </div>
                 </div>
             </div>
 
@@ -452,9 +677,38 @@ export default function Workspace({
                 </div>
             )}
 
+            {/* Banner Lọc Theo Thông Báo */}
+            {filters.focus_koc && (
+                <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-gradient-to-r from-primary-50 via-indigo-50/50 to-white border border-primary-200 px-5 py-3.5 shadow-xs animate-in fade-in">
+                    <div className="flex items-center gap-3">
+                        <div className="h-9 w-9 rounded-xl bg-primary-600 flex items-center justify-center text-white shrink-0 shadow-xs">
+                            <Sparkles className="h-5 w-5" />
+                        </div>
+                        <div>
+                            <span className="font-bold text-slate-900 text-sm">
+                                Đang lọc theo thông báo (Chỉ hiển thị đúng 1 KOC cần xử lý)
+                            </span>
+                            <p className="mt-0.5 text-xs text-slate-600">
+                                Hệ thống đã tự động chọn thẻ công việc tương ứng để bạn thao tác tức thì.
+                            </p>
+                        </div>
+                    </div>
+                    <div>
+                        <Link
+                            // @ts-ignore
+                            href={typeof route === 'function' ? route('workspace.index') : '/workspace'}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors shadow-2xs"
+                        >
+                            <X className="h-4 w-4 text-slate-500" />
+                            <span>Xem tất cả công việc</span>
+                        </Link>
+                    </div>
+                </div>
+            )}
+
             {/* Khối Tabs To-Do & Bảng Công Việc */}
             <div className="rounded-2xl border border-slate-200 bg-white shadow-xs overflow-hidden">
-                {/* 4 Tabs */}
+                {/* 5 Tabs */}
                 <div className="flex border-b border-slate-200 bg-slate-50/70 px-4 pt-3 overflow-x-auto gap-2">
                     {/* Tab 1: Đôn đốc deadline */}
                     <button
@@ -517,6 +771,25 @@ export default function Workspace({
                         </span>
                     </button>
 
+                    {/* Tab 3.5: Chờ duyệt chi phí */}
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab('approval')}
+                        className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-xl transition-all border-b-2 ${
+                            activeTab === 'approval'
+                                ? 'bg-white text-amber-900 border-amber-500 shadow-xs'
+                                : 'text-slate-600 border-transparent hover:text-slate-900'
+                        }`}
+                    >
+                        <Clock className="h-4 w-4 text-amber-500" />
+                        <span>Chờ Duyệt Phí</span>
+                        {(stats.approval_count ?? 0) > 0 && (
+                            <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                                {stats.approval_count}
+                            </span>
+                        )}
+                    </button>
+
                     {/* Tab 4: Nghiệm thu video */}
                     <button
                         type="button"
@@ -529,6 +802,11 @@ export default function Workspace({
                     >
                         <Video className="h-4 w-4 text-emerald-500" />
                         <span>Nghiệm Thu & Đối Soát</span>
+                        {stats.pending_approval_count > 0 && (
+                            <span className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                                {stats.pending_approval_count} chờ duyệt
+                            </span>
+                        )}
                         <span className="rounded-md bg-slate-200/70 px-1.5 py-0.2 text-[11px] text-slate-700">
                             {stats.reviews_count}
                         </span>
@@ -563,9 +841,15 @@ export default function Workspace({
                                     const primaryAccount = item.creator?.accounts?.[0];
                                     const isOverdue = item.deadline_info?.status === 'overdue';
                                     const isWarning = item.deadline_info?.status === 'warning';
+                                    const isProcessing = actionLoadingId === item.id;
 
                                     return (
-                                        <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
+                                        <tr
+                                            key={item.id}
+                                            className={`transition-colors ${
+                                                isOverdue ? 'bg-rose-50/40 hover:bg-rose-50/60' : isWarning ? 'bg-amber-50/30 hover:bg-amber-50/50' : 'hover:bg-slate-50/70'
+                                            }`}
+                                        >
                                             {/* Cột 1: Thông tin KOC */}
                                             <td className="py-3 px-4">
                                                 <div className="flex items-center gap-2.5">
@@ -583,15 +867,12 @@ export default function Workspace({
                                                         </div>
                                                         <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500">
                                                             {primaryAccount ? (
-                                                                <a
-                                                                    href={primaryAccount.url || '#'}
-                                                                    target="_blank"
-                                                                    rel="noreferrer"
-                                                                    className="text-primary-600 hover:underline flex items-center gap-0.5"
-                                                                >
-                                                                    <span>@{primaryAccount.handle}</span>
-                                                                    <ArrowUpRight className="h-3 w-3" />
-                                                                </a>
+                                                                <PlatformBadge
+                                                                    platform={primaryAccount.platform}
+                                                                    handle={primaryAccount.handle}
+                                                                    url={primaryAccount.url}
+                                                                    size="xs"
+                                                                />
                                                             ) : (
                                                                 <span>{item.creator?.niche}</span>
                                                             )}
@@ -617,7 +898,7 @@ export default function Workspace({
                                                 </div>
                                             </td>
 
-                                            {/* Cột 2: Chiến dịch & Sản phẩm */}
+                                            {/* Cột 2: Chiến dịch & Sản phẩm & Địa chỉ */}
                                             <td className="py-3 px-4">
                                                 <Link
                                                     href={route('campaigns.show', item.campaign_id)}
@@ -629,9 +910,17 @@ export default function Workspace({
                                                 <div className="text-[11px] text-slate-500 mt-0.5 line-clamp-1">
                                                     SP: <span className="font-medium text-slate-700">{item.campaign?.product_name}</span>
                                                 </div>
+
+                                                {/* Hiển thị tóm tắt địa chỉ nếu ở Tab Samples */}
+                                                {activeTab === 'samples' && item.creator?.shipping_address && (
+                                                    <div className="mt-1 text-[11px] text-slate-600 flex items-center gap-1 font-normal line-clamp-1" title={item.creator.shipping_address}>
+                                                        <MapPin className="h-3 w-3 text-slate-400 shrink-0" />
+                                                        <span>{item.creator.shipping_address}</span>
+                                                    </div>
+                                                )}
                                             </td>
 
-                                            {/* Cột 3: Trạng thái & Hạn chót */}
+                                            {/* Cột 3: Trạng thái & Hạn chót & Videos */}
                                             <td className="py-3 px-4">
                                                 <div className="flex items-center gap-2">
                                                     {getStatusBadge(item.status)}
@@ -645,7 +934,7 @@ export default function Workspace({
                                                                     : isWarning
                                                                     ? 'bg-amber-100 text-amber-800'
                                                                     : 'bg-slate-100 text-slate-600'
-                                                            }`}
+                                                                }`}
                                                         >
                                                             <Clock className="h-3 w-3" />
                                                             {item.deadline_info.text}
@@ -655,7 +944,53 @@ export default function Workspace({
                                                 {item.status === 'address_confirmed' && (
                                                     <div className="mt-1 text-[11px] text-amber-700 font-medium flex items-center gap-1">
                                                         <Package className="h-3 w-3" />
-                                                        Đã có địa chỉ, cần báo kho
+                                                        Đã có địa chỉ, cần báo kho gửi mẫu
+                                                    </div>
+                                                )}
+
+                                                {/* Hiển thị video và trạng thái duyệt ở Tab Reviews */}
+                                                {activeTab === 'reviews' && item.contentPosts && item.contentPosts.length > 0 && (
+                                                    <div className="mt-2 space-y-1">
+                                                        {item.contentPosts.map((post) => (
+                                                            <div key={post.id} className="flex items-center gap-2 text-[11px]">
+                                                                <a
+                                                                    href={post.post_url}
+                                                                    target="_blank"
+                                                                    rel="noreferrer"
+                                                                    className="text-primary-600 hover:underline flex items-center gap-1.5 font-medium"
+                                                                >
+                                                                    <PlatformIcon platform={post.platform} className="h-3.5 w-3.5" />
+                                                                    <span>{post.video_title || 'Xem Video'}</span>
+                                                                </a>
+                                                                {post.status === 'approved' ? (
+                                                                    <Badge variant="success" size="sm">Đã duyệt</Badge>
+                                                                ) : post.status === 'changes_requested' ? (
+                                                                    <Badge variant="danger" size="sm">Yêu cầu sửa</Badge>
+                                                                ) : (
+                                                                    <div className="flex items-center gap-1">
+                                                                        <Badge variant="warning" size="sm">Chờ duyệt</Badge>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleUpdatePostStatus(post.id, 'approved')}
+                                                                            disabled={actionLoadingId === post.id}
+                                                                            className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold hover:bg-emerald-200 transition-colors"
+                                                                            title="Duyệt video ngay"
+                                                                        >
+                                                                            Duyệt
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleUpdatePostStatus(post.id, 'changes_requested')}
+                                                                            disabled={actionLoadingId === post.id}
+                                                                            className="px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-bold hover:bg-rose-200 transition-colors"
+                                                                            title="Yêu cầu sửa video"
+                                                                        >
+                                                                            Sửa
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        ))}
                                                     </div>
                                                 )}
                                             </td>
@@ -667,9 +1002,9 @@ export default function Workspace({
                                                 </span>
                                             </td>
 
-                                            {/* Cột 5: Thao tác nhanh */}
+                                            {/* Cột 5: Thao tác nhanh 1-Chạm */}
                                             <td className="py-3 px-4 text-right">
-                                                <div className="flex items-center justify-end gap-1.5">
+                                                <div className="flex items-center justify-end gap-1.5 flex-wrap">
                                                     {/* Nút Nhận KOC khi chưa có ai nhận */}
                                                     {!item.assigned_to && (
                                                         <Button
@@ -681,6 +1016,59 @@ export default function Workspace({
                                                             className="!border-amber-300 hover:!bg-amber-50 text-amber-900 font-bold"
                                                         >
                                                             {claimingId === item.id ? 'Đang nhận...' : 'Nhận KOC'}
+                                                        </Button>
+                                                    )}
+
+                                                    {/* Thao tác theo từng tab */}
+                                                    {activeTab === 'deadlines' && (
+                                                        <Button
+                                                            size="sm"
+                                                            variant="secondary"
+                                                            onClick={() => setVideoModalItem(item)}
+                                                            iconLeft={<Video className="h-3.5 w-3.5 text-emerald-600" />}
+                                                            className="font-bold text-slate-800"
+                                                        >
+                                                            + Nộp Video
+                                                        </Button>
+                                                    )}
+
+                                                    {activeTab === 'samples' && (
+                                                        <>
+                                                            {item.status === 'address_confirmed' && (
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant="primary"
+                                                                    onClick={() => setShipmentModalItem(item)}
+                                                                    iconLeft={<Package className="h-3.5 w-3.5" />}
+                                                                >
+                                                                    Gửi Mẫu
+                                                                </Button>
+                                                            )}
+                                                            {item.status === 'sample_sent' && (
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant="secondary"
+                                                                    onClick={() => handleConfirmSampleReceived(item)}
+                                                                    disabled={isProcessing}
+                                                                    iconLeft={<CheckCheck className="h-3.5 w-3.5 text-primary-600" />}
+                                                                    className="font-bold text-slate-800"
+                                                                >
+                                                                    {isProcessing ? 'Đang lưu...' : 'Đã Nhận Mẫu'}
+                                                                </Button>
+                                                            )}
+                                                        </>
+                                                    )}
+
+                                                    {activeTab === 'leads' && (
+                                                        <Button
+                                                            size="sm"
+                                                            variant="secondary"
+                                                            onClick={() => handleQuickAdvanceLead(item)}
+                                                            disabled={isProcessing}
+                                                            iconLeft={<CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />}
+                                                            className="font-bold text-slate-800"
+                                                        >
+                                                            Chốt Nhận Mẫu
                                                         </Button>
                                                     )}
 
@@ -732,6 +1120,20 @@ export default function Workspace({
                 isOpen={quickZaloModalId !== null}
                 campaignCreatorId={quickZaloModalId}
                 onClose={() => setQuickZaloModalId(null)}
+                onSuccess={(msg) => showToast(msg)}
+            />
+
+            {/* Modal Xác Nhận Gửi Mẫu Thử Nhanh */}
+            <WorkspaceShipmentModal
+                item={shipmentModalItem}
+                onClose={() => setShipmentModalItem(null)}
+                onSuccess={(msg) => showToast(msg)}
+            />
+
+            {/* Modal Nộp Video Nghiệm Thu Nhanh */}
+            <WorkspaceVideoModal
+                item={videoModalItem}
+                onClose={() => setVideoModalItem(null)}
                 onSuccess={(msg) => showToast(msg)}
             />
         </AppLayout>

@@ -1,0 +1,11 @@
+node_modules
+vendor
+.git
+.env
+.github
+tests
+storage/*.key
+storage/logs/*.log
+storage/framework/cache/data/*
+storage/framework/sessions/*
+storage/framework/views/*

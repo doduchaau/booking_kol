@@ -26,6 +26,7 @@ import {
 import PageHeader from '@/Components/Common/PageHeader';
 import Button from '@/Components/Common/Button';
 import Badge from '@/Components/Common/Badge';
+import PlatformBadge from '@/Components/Common/PlatformBadge';
 
 interface ColumnReviewItem {
     index: number;
@@ -42,19 +43,45 @@ interface AnalysisData {
     columns_review: ColumnReviewItem[];
     preview_rows: any[];
     unmapped_count: number;
+    file_token?: string;
+    file_name?: string;
+    job_id?: number;
+}
+
+interface ImportProgressState {
+    processedRows: number;
+    totalRows: number;
+    importedCount: number;
+    updatedCount: number;
+    skippedCount: number;
+    progressPercent: number;
+    errors: string[];
 }
 
 export default function Import() {
     const [activeTab, setActiveTab] = useState<'file' | 'batch_urls'>('file');
 
-    // State cho Smart Import Step 1 & Step 2
-    const [fileStep, setFileStep] = useState<'upload' | 'preview'>('upload');
+    // State cho Smart Import Step 1 & Step 2 & Step 3 & Step 4
+    const [fileStep, setFileStep] = useState<'upload' | 'preview' | 'importing' | 'completed'>('upload');
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [selectedFileName, setSelectedFileName] = useState<string>('');
     const [selectedFormat, setSelectedFormat] = useState<string>('auto');
     const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
     const [analyzeError, setAnalyzeError] = useState<string | null>(null);
     const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null);
+
+    // Tiến trình Import theo thời gian thực (Live Streaming Chunks)
+    const [importProgress, setImportProgress] = useState<ImportProgressState>({
+        processedRows: 0,
+        totalRows: 0,
+        importedCount: 0,
+        updatedCount: 0,
+        skippedCount: 0,
+        progressPercent: 0,
+        errors: [],
+    });
+    const [importError, setImportError] = useState<string | null>(null);
+    const cancelRequestedRef = React.useRef<boolean>(false);
 
     // Schema mapping do người dùng tùy biến hoặc giữ mặc định
     const [userMappings, setUserMappings] = useState<Record<number, string>>({});
@@ -143,8 +170,93 @@ export default function Import() {
         }
     };
 
-    // Xác nhận và thực hiện Import chính thức (Bước 2)
-    const handleConfirmImport = () => {
+    // Xác nhận và thực hiện Import chính thức (Hỗ trợ Streaming Chunk siêu tốc & Live Progress)
+    const handleConfirmImport = async () => {
+        if (!analysisData) return;
+
+        // Nếu có file_token từ bước analyze, chạy Streaming Chunks trực tiếp
+        if (analysisData.file_token) {
+            setFileStep('importing');
+            setImportError(null);
+            cancelRequestedRef.current = false;
+
+            setImportProgress({
+                processedRows: 0,
+                totalRows: analysisData.total_rows,
+                importedCount: 0,
+                updatedCount: 0,
+                skippedCount: 0,
+                progressPercent: 0,
+                errors: [],
+            });
+
+            try {
+                let chunkIndex = 0;
+                let isFinished = false;
+                let currentErrors: string[] = [];
+
+                while (!isFinished) {
+                    if (cancelRequestedRef.current) {
+                        break;
+                    }
+
+                    const csrfToken = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || '';
+                    const res = await fetch(route('creators.import.chunk'), {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': csrfToken,
+                            'Accept': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            file_token: analysisData.file_token,
+                            chunk_index: chunkIndex,
+                            chunk_size: 200,
+                            custom_mapping: userMappings,
+                            auto_enrich: autoEnrich,
+                        }),
+                    });
+
+                    const json = await res.json();
+                    if (!res.ok || !json.success) {
+                        throw new Error(json.message || 'Lỗi khi xử lý khối dữ liệu.');
+                    }
+
+                    const data = json.data;
+                    if (data.is_cancelled) {
+                        setImportError('Phiên import đã bị hủy bởi người dùng.');
+                        break;
+                    }
+
+                    if (data.errors && data.errors.length > 0) {
+                        currentErrors = [...currentErrors, ...data.errors];
+                    }
+
+                    setImportProgress({
+                        processedRows: data.total_processed,
+                        totalRows: data.total_rows,
+                        importedCount: data.imported_total,
+                        updatedCount: data.updated_total,
+                        skippedCount: data.skipped_total,
+                        progressPercent: data.progress_percent,
+                        errors: currentErrors,
+                    });
+
+                    if (data.is_finished) {
+                        isFinished = true;
+                        setFileStep('completed');
+                        break;
+                    }
+
+                    chunkIndex++;
+                }
+            } catch (err: any) {
+                setImportError(err.message || 'Lỗi kết nối trong quá trình import.');
+            }
+            return;
+        }
+
+        // Fallback upload trực tiếp nếu không có file_token
         if (!selectedFile) return;
 
         setIsSubmittingImport(true);
@@ -615,12 +727,11 @@ export default function Import() {
                                                         </td>
                                                         <td className="py-3 px-3">
                                                             <div className="flex items-center gap-1.5">
-                                                                <Badge variant="purple" size="sm">
-                                                                    {row.platform}
-                                                                </Badge>
-                                                                <span className="text-slate-700 font-mono">
-                                                                    @{row.handle}
-                                                                </span>
+                                                                <PlatformBadge
+                                                                    platform={row.platform || ''}
+                                                                    handle={row.handle}
+                                                                    size="xs"
+                                                                />
                                                             </div>
                                                         </td>
                                                         <td className="py-3 px-3 font-mono text-slate-800">
@@ -689,6 +800,174 @@ export default function Import() {
                                             Xác Nhận Nhập {analysisData.total_rows} KOC Vào CRM
                                         </Button>
                                     </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* BƯỚC 3: TIẾN TRÌNH NHẬP DỮ LIỆU REAL-TIME (LIVE PROGRESS BAR) */}
+                        {fileStep === 'importing' && (
+                            <div className="bg-white p-8 rounded-xl border border-slate-200 shadow-sm space-y-6">
+                                <div className="text-center max-w-lg mx-auto space-y-2">
+                                    <div className="mx-auto w-12 h-12 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center animate-pulse">
+                                        <Database className="h-6 w-6" />
+                                    </div>
+                                    <h3 className="text-base font-bold text-slate-900">
+                                        Đang Tiến Hành Nhập Dữ Liệu KOC...
+                                    </h3>
+                                    <p className="text-xs text-slate-500">
+                                        Xử lý phân đoạn thông minh, kiểm tra trùng lặp SĐT/Handle và cập nhật hồ sơ
+                                    </p>
+                                </div>
+
+                                {/* Live Progress Bar */}
+                                <div className="max-w-xl mx-auto space-y-2">
+                                    <div className="flex items-center justify-between text-xs font-bold">
+                                        <span className="text-slate-600">
+                                            Đã xử lý: {importProgress.processedRows.toLocaleString('vi-VN')} / {importProgress.totalRows.toLocaleString('vi-VN')} dòng
+                                        </span>
+                                        <span className="text-indigo-600 font-mono text-sm">
+                                            {importProgress.progressPercent}%
+                                        </span>
+                                    </div>
+                                    <div className="w-full bg-slate-100 rounded-full h-3.5 overflow-hidden border border-slate-200 shadow-inner">
+                                        <div
+                                            className="h-full bg-gradient-to-r from-indigo-500 to-indigo-600 rounded-full transition-all duration-300 relative"
+                                            style={{ width: `${importProgress.progressPercent}%` }}
+                                        >
+                                            <div className="absolute inset-0 bg-white/20 animate-pulse" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Real-time Counter Cards */}
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-xl mx-auto">
+                                    <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-4 text-center">
+                                        <span className="block text-xs font-semibold text-emerald-700">Thêm Mới Creator</span>
+                                        <span className="text-2xl font-black text-emerald-800 font-mono mt-1 block">
+                                            {importProgress.importedCount.toLocaleString('vi-VN')}
+                                        </span>
+                                    </div>
+                                    <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-4 text-center">
+                                        <span className="block text-xs font-semibold text-blue-700">Cập Nhật Hồ Sơ</span>
+                                        <span className="text-2xl font-black text-blue-800 font-mono mt-1 block">
+                                            {importProgress.updatedCount.toLocaleString('vi-VN')}
+                                        </span>
+                                    </div>
+                                    <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-4 text-center">
+                                        <span className="block text-xs font-semibold text-amber-700">Bỏ Qua / Lỗi</span>
+                                        <span className="text-2xl font-black text-amber-800 font-mono mt-1 block">
+                                            {importProgress.skippedCount.toLocaleString('vi-VN')}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {importError && (
+                                    <div className="flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 p-4 text-xs text-rose-700 max-w-xl mx-auto">
+                                        <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600" />
+                                        <span>{importError}</span>
+                                    </div>
+                                )}
+
+                                <div className="text-center pt-2">
+                                    <Button
+                                        type="button"
+                                        variant="secondary"
+                                        size="sm"
+                                        onClick={() => {
+                                            cancelRequestedRef.current = true;
+                                            if (analysisData?.file_token) {
+                                                const csrfToken = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || '';
+                                                fetch(route('creators.import.cancel', { fileToken: analysisData.file_token }), {
+                                                    method: 'POST',
+                                                    headers: {
+                                                        'X-CSRF-TOKEN': csrfToken,
+                                                        'Accept': 'application/json',
+                                                    },
+                                                });
+                                            }
+                                            setFileStep('preview');
+                                        }}
+                                    >
+                                        Hủy tiến trình
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* BƯỚC 4: THẺ CHÚC MỪNG HOÀN TẤT */}
+                        {fileStep === 'completed' && (
+                            <div className="bg-white p-8 rounded-xl border border-slate-200 shadow-sm space-y-6 max-w-2xl mx-auto">
+                                <div className="text-center space-y-2">
+                                    <div className="mx-auto w-14 h-14 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center">
+                                        <CheckCircle2 className="h-8 w-8" />
+                                    </div>
+                                    <h3 className="text-xl font-bold text-slate-900">
+                                        Nhập Dữ Liệu Hoàn Tất!
+                                    </h3>
+                                    <p className="text-xs text-slate-500">
+                                        Đã xử lý xong toàn bộ dữ liệu từ file <strong>{selectedFileName}</strong>
+                                    </p>
+                                </div>
+
+                                <div className="grid grid-cols-3 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                                    <div className="text-center">
+                                        <span className="text-xs text-slate-500 font-medium">Thêm mới</span>
+                                        <p className="text-xl font-bold text-emerald-600 font-mono mt-0.5">
+                                            +{importProgress.importedCount.toLocaleString('vi-VN')}
+                                        </p>
+                                    </div>
+                                    <div className="text-center border-x border-slate-200">
+                                        <span className="text-xs text-slate-500 font-medium">Cập nhật</span>
+                                        <p className="text-xl font-bold text-blue-600 font-mono mt-0.5">
+                                            {importProgress.updatedCount.toLocaleString('vi-VN')}
+                                        </p>
+                                    </div>
+                                    <div className="text-center">
+                                        <span className="text-xs text-slate-500 font-medium">Bỏ qua</span>
+                                        <p className="text-xl font-bold text-slate-600 font-mono mt-0.5">
+                                            {importProgress.skippedCount.toLocaleString('vi-VN')}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {importProgress.errors.length > 0 && (
+                                    <div className="border border-amber-200 bg-amber-50/60 rounded-xl p-4 space-y-2">
+                                        <div className="flex items-center gap-1.5 text-xs font-bold text-amber-800">
+                                            <AlertTriangle className="h-4 w-4 text-amber-600" />
+                                            Có {importProgress.errors.length} dòng bị bỏ qua hoặc gặp lỗi:
+                                        </div>
+                                        <div className="max-h-40 overflow-y-auto space-y-1 pr-1 text-xs text-amber-900 font-mono">
+                                            {importProgress.errors.map((err, idx) => (
+                                                <div key={idx} className="bg-white/80 p-1.5 rounded border border-amber-200/50">
+                                                    {err}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="flex items-center justify-center gap-3 pt-4 border-t border-slate-100">
+                                    <Button
+                                        type="button"
+                                        variant="secondary"
+                                        onClick={() => {
+                                            setSelectedFile(null);
+                                            setSelectedFileName('');
+                                            setAnalysisData(null);
+                                            setFileStep('upload');
+                                        }}
+                                    >
+                                        Nhập file khác
+                                    </Button>
+                                    <Link href={route('creators.index')}>
+                                        <Button
+                                            type="button"
+                                            variant="primary"
+                                            iconRight={<ArrowRight className="h-4 w-4" />}
+                                        >
+                                            Đi Đến Danh Sách Creator
+                                        </Button>
+                                    </Link>
                                 </div>
                             </div>
                         )}
@@ -776,14 +1055,11 @@ export default function Import() {
                                                 </div>
                                                 <div className="shrink-0 flex items-center gap-2">
                                                     {item.isValid ? (
-                                                        <>
-                                                            <Badge variant="primary" size="sm">
-                                                                {item.platform}
-                                                            </Badge>
-                                                            <span className="font-semibold text-slate-700">
-                                                                @{item.handle}
-                                                            </span>
-                                                        </>
+                                                        <PlatformBadge
+                                                            platform={item.platform || ''}
+                                                            handle={item.handle}
+                                                            size="xs"
+                                                        />
                                                     ) : (
                                                         <Badge variant="danger" size="sm">
                                                             Sai định dạng

@@ -7,6 +7,7 @@ import {
     ExternalLink,
     Trash2,
     Eye,
+    Edit,
     ShieldAlert,
     Users,
     Sparkles,
@@ -15,6 +16,7 @@ import {
 import PageHeader from '@/Components/Common/PageHeader';
 import Button from '@/Components/Common/Button';
 import Badge, { BadgeVariant } from '@/Components/Common/Badge';
+import PlatformBadge from '@/Components/Common/PlatformBadge';
 import ConfirmDialog from '@/Components/Common/ConfirmDialog';
 import FilterBar from '@/Components/Table/FilterBar';
 import DataTable, { Column, PaginationMeta } from '@/Components/Table/DataTable';
@@ -286,23 +288,14 @@ export default function Index({ creators, filters, availableNiches, tiers }: Pro
                             <div className="flex flex-wrap gap-1.5">
                                 {c.accounts && c.accounts.length > 0 ? (
                                     c.accounts.map((acc: CreatorAccount) => (
-                                        <a
+                                        <PlatformBadge
                                             key={acc.id}
-                                            href={acc.url}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-700 transition-colors hover:border-primary-300 hover:bg-primary-50 hover:text-primary-700"
-                                            title={`Xem trang ${acc.platform}`}
-                                        >
-                                            <span className="font-semibold capitalize text-slate-800">
-                                                {acc.platform}:
-                                            </span>
-                                            <span>@{acc.handle}</span>
-                                            <span className="text-slate-400 font-medium">
-                                                ({(acc.followers_count / 1000).toFixed(0)}k)
-                                            </span>
-                                            <ExternalLink className="h-3 w-3 text-slate-400" />
-                                        </a>
+                                            platform={acc.platform}
+                                            handle={acc.handle}
+                                            followersCount={acc.followers_count}
+                                            url={acc.url}
+                                            size="sm"
+                                        />
                                     ))
                                 ) : (
                                     <span className="text-xs text-slate-400 italic">Chưa liên kết</span>
@@ -354,6 +347,14 @@ export default function Index({ creators, filters, availableNiches, tiers }: Pro
                                     title="Xem chi tiết hồ sơ"
                                 >
                                     <Eye className="h-4 w-4" />
+                                </Link>
+
+                                <Link
+                                    href={route('creators.edit', c.id)}
+                                    className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-primary-600 transition-colors"
+                                    title="Chỉnh sửa hồ sơ"
+                                >
+                                    <Edit className="h-4 w-4" />
                                 </Link>
 
                                 <button

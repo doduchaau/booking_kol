@@ -22,6 +22,7 @@ import {
 import PageHeader from '@/Components/Common/PageHeader';
 import Button from '@/Components/Common/Button';
 import Badge from '@/Components/Common/Badge';
+import PlatformBadge from '@/Components/Common/PlatformBadge';
 
 interface DiscoveredKol {
     platform: string;
@@ -425,9 +426,7 @@ export default function Discovery({ filters, results }: Props) {
                                         {/* Footer thẻ */}
                                         <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
                                             <div className="flex items-center gap-1.5">
-                                                <Badge variant="primary" size="sm">
-                                                    {kol.platform.toUpperCase()}
-                                                </Badge>
+                                                <PlatformBadge platform={kol.platform} size="xs" />
                                                 <Badge variant="info" size="sm">
                                                     {kol.tier.toUpperCase()}
                                                 </Badge>

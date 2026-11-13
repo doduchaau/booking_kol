@@ -51,6 +51,31 @@ class CreatorAccount extends Model
         'raw_metrics' => 'array',
     ];
 
+    protected static function booted(): void
+    {
+        static::saving(function (CreatorAccount $account) {
+            if (empty($account->url) && !empty($account->handle)) {
+                $account->url = self::generateDefaultUrl($account->platform, $account->handle);
+            }
+        });
+    }
+
+    public static function generateDefaultUrl(PlatformEnum|string|null $platform, string $handle): string
+    {
+        $platformValue = $platform instanceof PlatformEnum ? $platform->value : (string) $platform;
+        $cleanHandle = ltrim(trim($handle), '@');
+
+        return match (strtolower($platformValue)) {
+            'tiktok' => "https://www.tiktok.com/@{$cleanHandle}",
+            'youtube' => "https://www.youtube.com/@{$cleanHandle}",
+            'instagram' => "https://www.instagram.com/{$cleanHandle}",
+            'facebook' => "https://www.facebook.com/{$cleanHandle}",
+            'shopee' => "https://shopee.vn/@{$cleanHandle}",
+            'zalo' => "https://zalo.me/{$cleanHandle}",
+            default => "https://{$cleanHandle}",
+        };
+    }
+
     public function creator(): BelongsTo
     {
         return $this->belongsTo(Creator::class, 'creator_id');

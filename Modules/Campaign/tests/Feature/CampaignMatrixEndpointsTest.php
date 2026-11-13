@@ -142,6 +142,15 @@ class CampaignMatrixEndpointsTest extends TestCase
 
         $response->assertOk();
         $this->assertEquals(3000000, (float) $cc->fresh()->booking_fee);
+        // Có phát sinh chi phí cast > 0 nên tự động chuyển sang WAITING_APPROVAL
+        $this->assertEquals(PipelineStatusEnum::WAITING_APPROVAL, $cc->fresh()->status);
+
+        // Xác nhận Lãnh đạo duyệt chi phí
+        $confirmResponse = $this->actingAs($this->user)
+            ->patchJson(route('pipeline.cast.confirm', $cc->id), [
+                'approver_name' => 'Anh Hải',
+            ]);
+        $confirmResponse->assertOk();
         $this->assertEquals(PipelineStatusEnum::AGREED, $cc->fresh()->status);
     }
 

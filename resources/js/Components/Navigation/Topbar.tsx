@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { Link, usePage } from '@inertiajs/react';
-import { Menu, Bell, User, LogOut, ChevronDown, Sparkles } from 'lucide-react';
+import { Menu, User, LogOut, ChevronDown } from 'lucide-react';
 import Dropdown from '@/Components/Dropdown';
+import NotificationDropdown from '@/Components/Navigation/NotificationDropdown';
+import ApplicationLogo from '@/Components/ApplicationLogo';
 
 export interface TopbarProps {
     onOpenMobileSidebar: () => void;
@@ -24,25 +26,15 @@ export default function Topbar({ onOpenMobileSidebar }: TopbarProps) {
                     <Menu className="h-5 w-5" />
                 </button>
 
-                <div className="flex items-center gap-2 md:hidden">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary-600 text-white shadow-xs">
-                        <Sparkles className="h-4 w-4" />
-                    </div>
-                    <span className="text-sm font-bold text-slate-900">KOL Booking</span>
+                <div className="flex items-center md:hidden">
+                    <ApplicationLogo size="sm" />
                 </div>
             </div>
 
             {/* Right section: Notifications & User profile */}
             <div className="flex items-center gap-3">
-                {/* Notification Bell */}
-                <button
-                    type="button"
-                    className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors"
-                    title="Thông báo"
-                >
-                    <Bell className="h-5 w-5" />
-                    <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-primary-600 ring-2 ring-white" />
-                </button>
+                {/* Notification Center */}
+                <NotificationDropdown />
 
                 {/* Vertical Divider */}
                 <div className="h-5 w-px bg-slate-200" />

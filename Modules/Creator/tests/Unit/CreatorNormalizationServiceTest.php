@@ -89,5 +89,15 @@ class CreatorNormalizationServiceTest extends TestCase
         $this->assertEquals('facebook', $res2['platform']);
         $this->assertEquals('https://www.facebook.com/koc_review', $res2['url']);
     }
+
+    public function test_masks_phone_and_address_according_to_decree_13(): void
+    {
+        $this->assertEquals('098****567', CreatorNormalizationService::maskPhone('0981234567'));
+        $this->assertEquals('039****432', CreatorNormalizationService::maskPhone('398765432')); // Nuốt 0 Excel
+        $this->assertNull(CreatorNormalizationService::maskPhone(''));
+
+        $this->assertEquals('*** Hà Nội', CreatorNormalizationService::maskAddress('Số 123 Đường Cầu Giấy, Hà Nội'));
+        $this->assertNull(CreatorNormalizationService::maskAddress(''));
+    }
 }
 

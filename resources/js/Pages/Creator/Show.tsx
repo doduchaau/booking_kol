@@ -22,10 +22,12 @@ import {
     Zap,
     AlertCircle,
     Clock,
+    Edit,
 } from 'lucide-react';
 import PageHeader from '@/Components/Common/PageHeader';
 import Button from '@/Components/Common/Button';
 import Badge, { BadgeVariant } from '@/Components/Common/Badge';
+import PlatformBadge from '@/Components/Common/PlatformBadge';
 
 interface Account {
     id: number;
@@ -131,7 +133,7 @@ export default function Show({ creator }: Props) {
                     { label: creator.name },
                 ]}
                 actions={
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2.5">
                         <Badge variant={getTierVariant(creator.tier)} size="md">
                             TIER: {creator.tier.toUpperCase()}
                         </Badge>
@@ -144,6 +146,15 @@ export default function Show({ creator }: Props) {
                                 BLACKLIST
                             </Badge>
                         )}
+                        <Link href={route('creators.edit', creator.id)}>
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                iconLeft={<Edit className="h-4 w-4 text-slate-600" />}
+                            >
+                                Chỉnh Sửa
+                            </Button>
+                        </Link>
                     </div>
                 }
             />
@@ -268,9 +279,12 @@ export default function Show({ creator }: Props) {
                                         {/* Header của Kênh */}
                                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                             <div className="flex items-center gap-3">
-                                                <Badge variant="primary" size="md">
-                                                    {acc.platform.toUpperCase()}
-                                                </Badge>
+                                                <PlatformBadge
+                                                    platform={acc.platform}
+                                                    size="md"
+                                                    showIcon
+                                                    showLabel
+                                                />
                                                 <div>
                                                     <div className="flex items-center gap-2">
                                                         <span className="font-bold text-slate-900 text-base">

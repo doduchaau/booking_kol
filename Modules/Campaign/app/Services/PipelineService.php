@@ -2,7 +2,11 @@
 
 namespace Modules\Campaign\Services;
 
+use App\Models\User;
+use App\Notifications\KocAssignedNotification;
+use App\Notifications\KocNoShowAlertNotification;
 use Exception;
+use Illuminate\Support\Facades\Log;
 use Modules\Campaign\Enums\PipelineStatusEnum;
 use Modules\Campaign\Models\CampaignCreator;
 
@@ -20,6 +24,27 @@ class PipelineService
     ): CampaignCreator {
         $campaignCreator->loadMissing(['creator']);
         $creator = $campaignCreator->creator;
+
+        // RÀNG BUỘC CHI PHÍ CAST:
+        // Nếu có phát sinh chi phí cast (booking_fee > 0) và chưa được duyệt (approved_cost_at is null)
+        $hasCastFee = (float) $campaignCreator->booking_fee > 0;
+        $isCastApproved = !is_null($campaignCreator->approved_cost_at);
+
+        if ($hasCastFee && !$isCastApproved) {
+            // Nếu chuyển sang "agreed", tự động chuyển hướng thành "waiting_approval"
+            if ($newStatus === PipelineStatusEnum::AGREED) {
+                $newStatus = PipelineStatusEnum::WAITING_APPROVAL;
+            } elseif (in_array($newStatus, [
+                PipelineStatusEnum::ADDRESS_CONFIRMED,
+                PipelineStatusEnum::SAMPLE_SENT,
+                PipelineStatusEnum::SAMPLE_RECEIVED,
+                PipelineStatusEnum::POSTED,
+                PipelineStatusEnum::COMPLETED,
+            ])) {
+                $feeFormatted = number_format((float) $campaignCreator->booking_fee, 0, ',', '.') . ' đ';
+                throw new Exception("KOC {$creator->name} có phát sinh chi phí cast ({$feeFormatted}) chưa được duyệt. Vui lòng bấm [Xác nhận Lãnh đạo đã duyệt] trước khi tiếp tục các bước tiếp theo.");
+            }
+        }
 
         // RÀNG BUỘC 1: Không thể chuyển sang "sample_sent" (Đã gửi mẫu) nếu chưa có địa chỉ nhận hàng
         if ($newStatus === PipelineStatusEnum::SAMPLE_SENT) {
@@ -69,6 +94,22 @@ class PipelineService
             }
 
             $creator->update($updateData);
+
+            // Bắn thông báo CẢNH BÁO BOM HÀNG cho Admin & Leader
+            try {
+                $campaignCreator->loadMissing(['creator', 'campaign']);
+                $managers = User::whereHas('roles', function ($q) {
+                    $q->whereIn('name', ['Admin', 'Leader']);
+                })->get();
+                if ($managers->isEmpty()) {
+                    $managers = User::take(1)->get();
+                }
+                foreach ($managers as $manager) {
+                    $manager->notify(new KocNoShowAlertNotification($campaignCreator));
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Lỗi gửi cảnh báo bom hàng: ' . $e->getMessage());
+            }
         }
 
         // Cập nhật timestamp tương ứng với trạng thái
@@ -87,6 +128,15 @@ class PipelineService
 
         $campaignCreator->update($updates);
 
+        // Tự động làm mới cache báo cáo ROI / Phễu của chiến dịch, Dashboard và Workspace
+        if (class_exists(\Modules\Report\Services\ReportCalculationService::class)) {
+            \Modules\Report\Services\ReportCalculationService::flushReportCache($campaignCreator->campaign_id);
+        }
+        if (class_exists(\App\Services\SystemCacheService::class)) {
+            \App\Services\SystemCacheService::flushDashboardCache();
+            \App\Services\SystemCacheService::flushWorkspaceCache();
+        }
+
         return $campaignCreator;
     }
 
@@ -95,7 +145,26 @@ class PipelineService
      */
     public function assignStaff(CampaignCreator $campaignCreator, ?int $userId): CampaignCreator
     {
+        $oldAssignee = $campaignCreator->assigned_to;
         $campaignCreator->update(['assigned_to' => $userId]);
+
+        if ($userId && $userId !== $oldAssignee) {
+            try {
+                $user = User::find($userId);
+                if ($user) {
+                    $assignerName = auth()->user()?->name ?? 'Quản lý';
+                    $campaignCreator->loadMissing(['creator', 'campaign']);
+                    $user->notify(new KocAssignedNotification($campaignCreator, $assignerName));
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Lỗi gửi thông báo phân công phụ trách: ' . $e->getMessage());
+            }
+        }
+
+        if (class_exists(\App\Services\SystemCacheService::class)) {
+            \App\Services\SystemCacheService::flushWorkspaceCache();
+        }
+
         return $campaignCreator;
     }
 
@@ -112,8 +181,13 @@ class PipelineService
         $updated = 0;
         $errors = [];
 
+        // Chuẩn hóa và sắp xếp ID tăng dần để loại bỏ nguy cơ MySQL InnoDB Deadlock
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+        sort($ids);
+
         $items = CampaignCreator::query()
             ->whereIn('id', $ids)
+            ->orderBy('id')
             ->with(['creator'])
             ->get();
 
@@ -145,9 +219,34 @@ class PipelineService
      */
     public function bulkAssignStaff(array $ids, ?int $userId): int
     {
-        return CampaignCreator::query()
+        // Chuẩn hóa và sắp xếp ID tăng dần để loại bỏ nguy cơ MySQL InnoDB Deadlock
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+        sort($ids);
+
+        $updated = CampaignCreator::query()
             ->whereIn('id', $ids)
             ->update(['assigned_to' => $userId]);
+
+        if ($userId && $updated > 0) {
+            try {
+                $user = User::find($userId);
+                if ($user) {
+                    $assignerName = auth()->user()?->name ?? 'Quản lý';
+                    $sampleCreator = CampaignCreator::whereIn('id', $ids)->with(['creator', 'campaign'])->first();
+                    if ($sampleCreator) {
+                        $user->notify(new KocAssignedNotification($sampleCreator, $assignerName));
+                    }
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Lỗi gửi thông báo phân công hàng loạt: ' . $e->getMessage());
+            }
+        }
+
+        if (class_exists(\App\Services\SystemCacheService::class)) {
+            \App\Services\SystemCacheService::flushWorkspaceCache();
+        }
+
+        return $updated;
     }
 
     /**
@@ -158,7 +257,14 @@ class PipelineService
         $fillableData = [];
 
         if (array_key_exists('booking_fee', $data)) {
-            $fillableData['booking_fee'] = (float) $data['booking_fee'];
+            $newFee = (float) $data['booking_fee'];
+            $oldFee = (float) $campaignCreator->booking_fee;
+            $fillableData['booking_fee'] = $newFee;
+
+            // Nếu thay đổi chi phí cast thành mức mới > 0 khác mức cũ, reset phê duyệt
+            if ($newFee > 0 && abs($newFee - $oldFee) > 0.01) {
+                $fillableData['approved_cost_at'] = null;
+            }
         }
 
         if (array_key_exists('notes', $data)) {
@@ -180,6 +286,77 @@ class PipelineService
                 : PipelineStatusEnum::from((string) $data['status']);
 
             $this->updateCreatorStatus($campaignCreator, $newStatus, $data['notes'] ?? null);
+        } elseif (array_key_exists('booking_fee', $data) && (float) $data['booking_fee'] > 0 && is_null($campaignCreator->approved_cost_at)) {
+            // Nếu chỉ cập nhật phí > 0 mà KOC đang ở contacted/new, tự động chuyển sang waiting_approval
+            if (in_array($campaignCreator->status, [PipelineStatusEnum::NEW, PipelineStatusEnum::CONTACTED])) {
+                $this->updateCreatorStatus($campaignCreator, PipelineStatusEnum::WAITING_APPROVAL);
+            }
+        }
+
+        return $campaignCreator->fresh(['creator', 'assignee']);
+    }
+
+    /**
+     * Xác nhận chi phí cast đã được ban lãnh đạo thông qua (nhân viên thao tác trực tiếp)
+     */
+    public function confirmCastApproved(
+        CampaignCreator $campaignCreator,
+        array $data = []
+    ): CampaignCreator {
+        $updates = [
+            'status' => PipelineStatusEnum::AGREED,
+            'approved_cost_at' => now(),
+        ];
+
+        if (!empty($data['approver_name'])) {
+            $updates['approver_name'] = trim($data['approver_name']);
+        }
+
+        if (!empty($data['approval_notes'])) {
+            $updates['approval_notes'] = trim($data['approval_notes']);
+        }
+
+        if (is_null($campaignCreator->agreed_at)) {
+            $updates['agreed_at'] = now();
+        }
+
+        $campaignCreator->update($updates);
+
+        if (class_exists(\Modules\Report\Services\ReportCalculationService::class)) {
+            \Modules\Report\Services\ReportCalculationService::flushReportCache($campaignCreator->campaign_id);
+        }
+        if (class_exists(\App\Services\SystemCacheService::class)) {
+            \App\Services\SystemCacheService::flushDashboardCache();
+            \App\Services\SystemCacheService::flushWorkspaceCache();
+        }
+
+        return $campaignCreator->fresh(['creator', 'assignee']);
+    }
+
+    /**
+     * Chuyển KOC về trạng thái Đã liên hệ để đàm phán lại nếu lãnh đạo không đồng ý mức phí
+     */
+    public function reopenDeal(
+        CampaignCreator $campaignCreator,
+        ?string $reason = null
+    ): CampaignCreator {
+        $updates = [
+            'status' => PipelineStatusEnum::CONTACTED,
+            'approved_cost_at' => null,
+        ];
+
+        if ($reason) {
+            $updates['notes'] = $reason;
+        }
+
+        $campaignCreator->update($updates);
+
+        if (class_exists(\Modules\Report\Services\ReportCalculationService::class)) {
+            \Modules\Report\Services\ReportCalculationService::flushReportCache($campaignCreator->campaign_id);
+        }
+        if (class_exists(\App\Services\SystemCacheService::class)) {
+            \App\Services\SystemCacheService::flushDashboardCache();
+            \App\Services\SystemCacheService::flushWorkspaceCache();
         }
 
         return $campaignCreator->fresh(['creator', 'assignee']);

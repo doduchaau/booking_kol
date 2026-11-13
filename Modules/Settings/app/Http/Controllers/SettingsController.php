@@ -31,12 +31,10 @@ class SettingsController extends Controller
         $settings = [
             'default_video_deadline_days' => (int) Setting::get('default_video_deadline_days', 7),
             'blacklist_penalty_score' => (int) Setting::get('blacklist_penalty_score', 30),
+            'default_sample_shipping_note' => Setting::get('default_sample_shipping_note', 'Hàng mẫu tặng KOC quay video review - Không thu tiền COD'),
             'zalo_oa_app_id' => Setting::get('zalo_oa_app_id', ''),
             'zalo_oa_secret_key' => Setting::get('zalo_oa_secret_key', ''),
             'zalo_oa_id' => Setting::get('zalo_oa_id', ''),
-            'ghn_token' => Setting::get('ghn_token', ''),
-            'ghn_shop_id' => Setting::get('ghn_shop_id', ''),
-            'ghtk_token' => Setting::get('ghtk_token', ''),
             'groq_api_key' => Setting::get('groq_api_key', ''),
             'openai_api_key' => Setting::get('openai_api_key', ''),
         ];
@@ -75,16 +73,20 @@ class SettingsController extends Controller
         $validated = $request->validate([
             'default_video_deadline_days' => ['required', 'integer', 'min:1', 'max:60'],
             'blacklist_penalty_score' => ['required', 'integer', 'min:0', 'max:100'],
+            'default_sample_shipping_note' => ['nullable', 'string', 'max:500'],
         ]);
 
         Setting::set('default_video_deadline_days', $validated['default_video_deadline_days'], 'general');
         Setting::set('blacklist_penalty_score', $validated['blacklist_penalty_score'], 'general');
+        if (array_key_exists('default_sample_shipping_note', $validated)) {
+            Setting::set('default_sample_shipping_note', $validated['default_sample_shipping_note'] ?? '', 'general');
+        }
 
-        return back()->with('success', 'Đã lưu cấu hình thời hạn nộp video và điểm uy tín thành công.');
+        return back()->with('success', 'Đã lưu cấu hình thời hạn nộp video, điểm uy tín và ghi chú xuất mẫu thành công.');
     }
 
     /**
-     * Cập nhật Cấu hình Tích hợp (Zalo OA & Tài khoản Hãng vận chuyển)
+     * Cập nhật Cấu hình Tích hợp (Zalo OA & AI API Keys)
      */
     public function updateIntegrations(Request $request): RedirectResponse
     {
@@ -92,9 +94,6 @@ class SettingsController extends Controller
             'zalo_oa_app_id' => ['nullable', 'string', 'max:100'],
             'zalo_oa_secret_key' => ['nullable', 'string', 'max:255'],
             'zalo_oa_id' => ['nullable', 'string', 'max:100'],
-            'ghn_token' => ['nullable', 'string', 'max:255'],
-            'ghn_shop_id' => ['nullable', 'string', 'max:100'],
-            'ghtk_token' => ['nullable', 'string', 'max:255'],
             'groq_api_key' => ['nullable', 'string', 'max:255'],
             'openai_api_key' => ['nullable', 'string', 'max:255'],
         ]);
@@ -106,15 +105,6 @@ class SettingsController extends Controller
         }
         Setting::set('zalo_oa_id', $validated['zalo_oa_id'] ?? '', 'integration');
 
-        // Lưu Tài khoản hãng vận chuyển (ghn, ghtk) với mã hóa an toàn
-        if (!empty($validated['ghn_token']) && !str_contains($validated['ghn_token'], '••••')) {
-            Setting::set('ghn_token', $validated['ghn_token'], 'carrier', true);
-        }
-        Setting::set('ghn_shop_id', $validated['ghn_shop_id'] ?? '', 'carrier');
-        if (!empty($validated['ghtk_token']) && !str_contains($validated['ghtk_token'], '••••')) {
-            Setting::set('ghtk_token', $validated['ghtk_token'], 'carrier', true);
-        }
-
         // Lưu API Key cho Tầng 3 AI Smart Schema Mapper (Groq / OpenAI)
         if (!empty($validated['groq_api_key']) && !str_contains($validated['groq_api_key'], '••••')) {
             Setting::set('groq_api_key', $validated['groq_api_key'], 'ai_integration', true);
@@ -123,7 +113,7 @@ class SettingsController extends Controller
             Setting::set('openai_api_key', $validated['openai_api_key'], 'ai_integration', true);
         }
 
-        return back()->with('success', 'Đã lưu thông tin cấu hình kết nối Zalo OA, Hãng vận chuyển và AI API Keys an toàn.');
+        return back()->with('success', 'Đã lưu thông tin cấu hình kết nối Zalo OA và AI API Keys an toàn.');
     }
 
     /**

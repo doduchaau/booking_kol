@@ -72,17 +72,18 @@ class OutreachController extends Controller
             'groups_joined' => GroupInvite::where('status', 'joined')->count(),
         ];
 
-        // 6. Danh sách chiến dịch active để chọn nhanh KOC tiếp cận
+        // 6. Danh sách chiến dịch active để chọn nhanh KOC tiếp cận (Tối ưu hóa select để tránh over-fetching)
         $campaigns = Campaign::query()
             ->where('status', '!=', 'completed')
             ->select(['id', 'name', 'product_name'])
             ->with(['campaignCreators' => function ($q) {
-                $q->with([
-                    'creator' => function ($cq) {
-                        $cq->select(['id', 'name', 'phone', 'niche', 'tier'])
-                            ->with('accounts:id,creator_id,platform,handle,followers_count,url');
-                    },
-                ]);
+                $q->select(['id', 'campaign_id', 'creator_id'])
+                    ->with([
+                        'creator' => function ($cq) {
+                            $cq->select(['id', 'name', 'phone', 'niche', 'tier'])
+                                ->with('accounts:id,creator_id,platform,handle,followers_count,url');
+                        },
+                    ]);
             }])
             ->get();
 

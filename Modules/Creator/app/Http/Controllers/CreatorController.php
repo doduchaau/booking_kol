@@ -5,14 +5,17 @@ namespace Modules\Creator\Http\Controllers;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 use Inertia\Response;
 use Modules\Creator\Enums\CreatorTierEnum;
 use Modules\Creator\Enums\PlatformEnum;
 use Modules\Creator\Http\Requests\ImportCreatorRequest;
 use Modules\Creator\Http\Requests\StoreCreatorRequest;
+use Modules\Creator\Http\Requests\UpdateCreatorRequest;
 use Modules\Creator\Models\Creator;
 use Modules\Creator\Models\CreatorAccount;
+use Modules\Creator\Models\CreatorRateCard;
 use Modules\Creator\Services\CreatorDeduplicationService;
 use Modules\Creator\Services\CreatorImportService;
 use Modules\Creator\Services\CreatorNormalizationService;
@@ -34,12 +37,14 @@ class CreatorController extends Controller
             ->paginate(15)
             ->withQueryString();
 
-        // Lấy danh sách niche hiện có để hiển thị bộ lọc
-        $availableNiches = Creator::query()
-            ->select('niche')
-            ->distinct()
-            ->whereNotNull('niche')
-            ->pluck('niche');
+        // Lấy danh sách niche hiện có để hiển thị bộ lọc (cache 10 phút để tối ưu hiệu năng)
+        $availableNiches = Cache::remember('creators:available_niches', 600, function () {
+            return Creator::query()
+                ->select('niche')
+                ->distinct()
+                ->whereNotNull('niche')
+                ->pluck('niche');
+        });
 
         return Inertia::render('Creator/Index', [
             'creators' => $creators,
@@ -123,6 +128,9 @@ class CreatorController extends Controller
             }
         }
 
+        Cache::forget('creators:available_niches');
+        \App\Services\SystemCacheService::flushDashboardCache();
+
         return redirect()->route('creators.index')->with('success', "Đã tạo hồ sơ Creator {$creator->name} thành công.");
     }
 
@@ -137,6 +145,159 @@ class CreatorController extends Controller
         return Inertia::render('Creator/Show', [
             'creator' => $creator,
         ]);
+    }
+
+    /**
+     * Màn hình chỉnh sửa hồ sơ Creator
+     */
+    public function edit(int $id): Response
+    {
+        $creator = Creator::with(['accounts', 'rateCards'])->findOrFail($id);
+
+        return Inertia::render('Creator/Edit', [
+            'creator' => $creator,
+            'platforms' => array_map(fn ($p) => [
+                'value' => $p->value,
+                'label' => $p->label(),
+            ], PlatformEnum::cases()),
+            'tiers' => array_map(fn ($t) => [
+                'value' => $t->value,
+                'label' => $t->label(),
+            ], CreatorTierEnum::cases()),
+        ]);
+    }
+
+    /**
+     * Cập nhật thông tin Creator
+     */
+    public function update(
+        UpdateCreatorRequest $request,
+        int $id,
+        CreatorDeduplicationService $dedupService
+    ): RedirectResponse {
+        $creator = Creator::with(['accounts', 'rateCards'])->findOrFail($id);
+        $validated = $request->validated();
+        $normalizedPhone = CreatorNormalizationService::normalizePhone($validated['phone'] ?? null);
+
+        // Kiểm tra trùng (bỏ qua chính creator hiện tại)
+        $duplicate = $dedupService->findExistingMatch(
+            phone: $normalizedPhone,
+            email: $validated['email'] ?? null,
+            excludeCreatorId: $creator->id
+        );
+
+        if ($duplicate) {
+            return back()->withErrors([
+                'phone' => "Số điện thoại hoặc email này đã thuộc về Creator khác (ID #{$duplicate->id}: {$duplicate->name}). Vui lòng kiểm tra lại.",
+            ]);
+        }
+
+        $tier = !empty($validated['tier'])
+            ? CreatorTierEnum::from($validated['tier'])
+            : $creator->tier;
+
+        $creator->update([
+            'name' => $validated['name'],
+            'phone' => $normalizedPhone,
+            'email' => $validated['email'] ?? null,
+            'shipping_address' => $validated['shipping_address'] ?? null,
+            'city_province' => $validated['city_province'] ?? null,
+            'district' => $validated['district'] ?? null,
+            'ward' => $validated['ward'] ?? null,
+            'niche' => $validated['niche'],
+            'tier' => $tier,
+            'trust_score' => isset($validated['trust_score']) ? (int) $validated['trust_score'] : $creator->trust_score,
+            'blacklist_status' => (bool) ($validated['blacklist_status'] ?? false),
+            'blacklist_reason' => !empty($validated['blacklist_status']) ? ($validated['blacklist_reason'] ?? $creator->blacklist_reason) : null,
+            'notes' => $validated['notes'] ?? null,
+            'updated_by' => $request->user()?->id,
+        ]);
+
+        // Cập nhật danh sách tài khoản mạng xã hội
+        if (isset($validated['accounts'])) {
+            $existingAccountIds = $creator->accounts->pluck('id')->toArray();
+            $updatedAccountIds = [];
+
+            foreach ($validated['accounts'] as $acc) {
+                if (empty($acc['handle'])) {
+                    continue;
+                }
+                $handle = CreatorNormalizationService::normalizeHandle($acc['handle']);
+                $platform = $acc['platform'];
+                $followers = (int) ($acc['followers_count'] ?? 0);
+                $url = $acc['url'] ?? "https://{$platform}.com/@{$handle}";
+
+                if (!empty($acc['id']) && in_array($acc['id'], $existingAccountIds)) {
+                    $account = CreatorAccount::find($acc['id']);
+                    if ($account && $account->creator_id === $creator->id) {
+                        $account->update([
+                            'platform' => $platform,
+                            'handle' => $handle,
+                            'followers_count' => $followers,
+                            'url' => $url,
+                        ]);
+                        $updatedAccountIds[] = $account->id;
+                    }
+                } else {
+                    $newAccount = CreatorAccount::create([
+                        'creator_id' => $creator->id,
+                        'platform' => $platform,
+                        'handle' => $handle,
+                        'followers_count' => $followers,
+                        'url' => $url,
+                    ]);
+                    $updatedAccountIds[] = $newAccount->id;
+                }
+            }
+
+            $accountsToDelete = array_diff($existingAccountIds, $updatedAccountIds);
+            if (!empty($accountsToDelete)) {
+                CreatorAccount::whereIn('id', $accountsToDelete)->delete();
+            }
+        }
+
+        // Cập nhật danh sách Rate Cards
+        if (isset($validated['rate_cards'])) {
+            $existingRcIds = $creator->rateCards->pluck('id')->toArray();
+            $updatedRcIds = [];
+
+            foreach ($validated['rate_cards'] as $rc) {
+                $contentType = trim($rc['content_type'] ?? 'Video Review');
+                $price = (float) ($rc['price'] ?? 0);
+                $notes = $rc['notes'] ?? null;
+
+                if (!empty($rc['id']) && in_array($rc['id'], $existingRcIds)) {
+                    $rateCard = CreatorRateCard::find($rc['id']);
+                    if ($rateCard && $rateCard->creator_id === $creator->id) {
+                        $rateCard->update([
+                            'content_type' => $contentType,
+                            'price' => $price,
+                            'notes' => $notes,
+                        ]);
+                        $updatedRcIds[] = $rateCard->id;
+                    }
+                } else {
+                    $newRc = CreatorRateCard::create([
+                        'creator_id' => $creator->id,
+                        'content_type' => $contentType,
+                        'price' => $price,
+                        'currency' => 'VND',
+                        'notes' => $notes,
+                    ]);
+                    $updatedRcIds[] = $newRc->id;
+                }
+            }
+
+            $rcToDelete = array_diff($existingRcIds, $updatedRcIds);
+            if (!empty($rcToDelete)) {
+                CreatorRateCard::whereIn('id', $rcToDelete)->delete();
+            }
+        }
+
+        Cache::forget('creators:available_niches');
+
+        return redirect()->route('creators.show', $creator->id)
+            ->with('success', "Đã cập nhật hồ sơ Creator {$creator->name} thành công.");
     }
 
     /**
@@ -161,7 +322,7 @@ class CreatorController extends Controller
         ]);
 
         try {
-            $analysis = $importService->analyzeFile($request->file('file'));
+            $analysis = $importService->analyzeFile($request->file('file'), $request->user());
             return response()->json([
                 'success' => true,
                 'data' => $analysis,
@@ -175,6 +336,127 @@ class CreatorController extends Controller
     }
 
     /**
+     * Xử lý một Chunk dữ liệu được gọi tuần tự từ Frontend (Streaming Chunk API)
+     */
+    public function processChunk(Request $request, CreatorImportService $importService): \Illuminate\Http\JsonResponse
+    {
+        $request->validate([
+            'file_token' => ['required', 'string'],
+            'chunk_index' => ['required', 'integer', 'min:0'],
+            'chunk_size' => ['nullable', 'integer', 'min:50', 'max:1000'],
+            'custom_mapping' => ['nullable', 'array'],
+            'auto_enrich' => ['nullable', 'boolean'],
+        ]);
+
+        try {
+            $chunkIndex = (int) $request->input('chunk_index', 0);
+            $chunkSize = (int) $request->input('chunk_size', 200);
+            $customMapping = $request->input('custom_mapping', []);
+            $autoEnrich = $request->boolean('auto_enrich', true);
+
+            $result = $importService->processChunk(
+                fileToken: $request->input('file_token'),
+                chunkIndex: $chunkIndex,
+                chunkSize: $chunkSize,
+                customMapping: $customMapping,
+                autoEnrich: $autoEnrich,
+                user: $request->user()
+            );
+
+            return response()->json([
+                'success' => true,
+                'data' => $result,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Lỗi khi xử lý khối dữ liệu: ' . $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    /**
+     * Đẩy toàn bộ quá trình Import vào Background Queue Job
+     */
+    public function queueImport(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $request->validate([
+            'file_token' => ['required', 'string'],
+            'custom_mapping' => ['nullable', 'array'],
+            'auto_enrich' => ['nullable', 'boolean'],
+        ]);
+
+        $job = \Modules\Creator\Models\CreatorImportJob::where('file_token', $request->input('file_token'))->first();
+        if (!$job) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Không tìm thấy phiên import.',
+            ], 404);
+        }
+
+        $job->update([
+            'custom_mapping' => $request->input('custom_mapping', []),
+            'auto_enrich' => $request->boolean('auto_enrich', true),
+            'status' => 'pending',
+        ]);
+
+        \Modules\Creator\Jobs\ImportCreatorsJob::dispatch($job->id, 250);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Đã tiếp nhận và đẩy vào hàng đợi xử lý ngầm.',
+            'job_id' => $job->id,
+            'file_token' => $job->file_token,
+        ]);
+    }
+
+    /**
+     * Lấy tiến trình import theo thời gian thực
+     */
+    public function getImportProgress(string $fileToken): \Illuminate\Http\JsonResponse
+    {
+        $job = \Modules\Creator\Models\CreatorImportJob::where('file_token', $fileToken)->first();
+        if (!$job) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Không tìm thấy phiên import.',
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'status' => $job->status,
+                'total_rows' => $job->total_rows,
+                'processed_rows' => $job->processed_rows,
+                'imported_count' => $job->imported_count,
+                'updated_count' => $job->updated_count,
+                'skipped_count' => $job->skipped_count,
+                'progress_percent' => $job->progress_percent,
+                'errors' => $job->errors ?: [],
+                'error_message' => $job->error_message,
+                'completed_at' => $job->completed_at?->toIso8601String(),
+            ],
+        ]);
+    }
+
+    /**
+     * Hủy phiên import
+     */
+    public function cancelImport(string $fileToken): \Illuminate\Http\JsonResponse
+    {
+        $job = \Modules\Creator\Models\CreatorImportJob::where('file_token', $fileToken)->first();
+        if ($job && !in_array($job->status, ['completed', 'failed'])) {
+            $job->update(['status' => 'cancelled']);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Đã hủy phiên import.',
+        ]);
+    }
+
+    /**
      * Chốt nhập file dữ liệu với cấu hình mapping đã duyệt
      */
     public function confirmImport(ImportCreatorRequest $request, CreatorImportService $importService): mixed
@@ -182,7 +464,40 @@ class CreatorController extends Controller
         $format = $request->input('format', 'auto');
         $customMapping = $request->input('custom_mapping', []);
         $autoEnrich = $request->boolean('auto_enrich', true);
+        $fileToken = $request->input('file_token');
 
+        // Nếu client cung cấp file_token từ bước analyze (không cần upload lại)
+        if (!empty($fileToken)) {
+            $job = \Modules\Creator\Models\CreatorImportJob::where('file_token', $fileToken)->first();
+            if ($job) {
+                $job->update([
+                    'custom_mapping' => $customMapping,
+                    'auto_enrich' => $autoEnrich,
+                    'status' => 'processing',
+                ]);
+
+                $result = $importService->processAllChunks($job);
+
+                $message = "Đã xử lý xong: Thêm mới {$result['imported']} Creator, Cập nhật {$result['updated']} hồ sơ.";
+                if ($result['skipped'] > 0) {
+                    $message .= " Bỏ qua {$result['skipped']} dòng.";
+                }
+
+                if ($request->wantsJson()) {
+                    return response()->json([
+                        'success' => true,
+                        'message' => $message,
+                        'result' => $result,
+                    ]);
+                }
+
+                return redirect()->route('creators.index')
+                    ->with('success', $message)
+                    ->with('import_errors', $result['errors']);
+            }
+        }
+
+        // Fallback nếu người dùng upload trực tiếp file
         $result = $importService->importFile(
             file: $request->file('file'),
             user: $request->user(),
@@ -400,9 +715,18 @@ class CreatorController extends Controller
      */
     public function destroy(int $id): RedirectResponse
     {
+        // Phân quyền: Chỉ Admin/Leader mới được xóa hồ sơ Creator
+        $currentUser = auth()->user();
+        if (\Spatie\Permission\Models\Role::count() > 0 && (!$currentUser || !$currentUser->hasAnyRole(['Admin', 'Leader']))) {
+            return back()->withErrors(['error' => 'Chỉ Admin hoặc Leader mới có quyền xóa hồ sơ Creator.']);
+        }
+
         $creator = Creator::findOrFail($id);
         $name = $creator->name;
         $creator->delete();
+
+        Cache::forget('creators:available_niches');
+        \App\Services\SystemCacheService::flushDashboardCache();
 
         return redirect()->route('creators.index')->with('success', "Đã xóa hồ sơ Creator {$name}.");
     }

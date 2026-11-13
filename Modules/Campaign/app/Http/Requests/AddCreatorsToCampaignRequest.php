@@ -14,7 +14,16 @@ class AddCreatorsToCampaignRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'creator_ids' => ['required', 'array', 'min:1'],
+            'select_all_in_db' => ['nullable', 'boolean'],
+            'creator_ids' => [
+                'nullable',
+                'array',
+                function ($attribute, $value, $fail) {
+                    if (!$this->boolean('select_all_in_db') && (empty($value) || !is_array($value) || count($value) === 0)) {
+                        $fail('Vui lòng chọn ít nhất 1 Creator hoặc chọn gán toàn bộ KOC trong kho dữ liệu.');
+                    }
+                },
+            ],
             'creator_ids.*' => ['exists:creators,id'],
             'assigned_to' => ['nullable', 'exists:users,id'],
             'booking_fee' => ['nullable', 'numeric', 'min:0'],

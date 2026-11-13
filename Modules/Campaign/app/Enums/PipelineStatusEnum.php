@@ -6,6 +6,7 @@ enum PipelineStatusEnum: string
 {
     case NEW = 'new';
     case CONTACTED = 'contacted';
+    case WAITING_APPROVAL = 'waiting_approval';
     case AGREED = 'agreed';
     case ADDRESS_CONFIRMED = 'address_confirmed';
     case SAMPLE_SENT = 'sample_sent';
@@ -20,6 +21,7 @@ enum PipelineStatusEnum: string
         return match ($this) {
             self::NEW => 'Mới thêm',
             self::CONTACTED => 'Đã liên hệ',
+            self::WAITING_APPROVAL => 'Chờ duyệt chi phí',
             self::AGREED => 'Đồng ý / Chốt',
             self::ADDRESS_CONFIRMED => 'Đã chốt địa chỉ',
             self::SAMPLE_SENT => 'Đã gửi mẫu',
@@ -38,6 +40,7 @@ enum PipelineStatusEnum: string
     {
         return match ($this) {
             self::CONTACTED => 'contacted_at',
+            self::WAITING_APPROVAL => 'waiting_approval_at',
             self::AGREED => 'agreed_at',
             self::ADDRESS_CONFIRMED => 'address_confirmed_at',
             self::SAMPLE_SENT => 'sample_sent_at',
@@ -58,6 +61,7 @@ enum PipelineStatusEnum: string
         return [
             self::NEW,
             self::CONTACTED,
+            self::WAITING_APPROVAL,
             self::AGREED,
             self::ADDRESS_CONFIRMED,
             self::SAMPLE_SENT,

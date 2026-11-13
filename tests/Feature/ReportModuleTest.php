@@ -232,6 +232,7 @@ class ReportModuleTest extends TestCase
         );
 
         // 2. Test Excel Export route
+        \Carbon\Carbon::setTestNow(now());
         Excel::fake();
         $exportResponse = $this->actingAs($user)->get(route('reports.export', ['campaign_id' => $campaign->id]));
         $exportResponse->assertOk();
@@ -239,5 +240,6 @@ class ReportModuleTest extends TestCase
         Excel::assertDownloaded('Bao_Cao_ROI_Booking_KOL_chien_dich_my_pham_he_' . date('Ymd_His') . '.xlsx', function (CampaignRoiExport $export) {
             return true;
         });
+        \Carbon\Carbon::setTestNow();
     }
 }

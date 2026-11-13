@@ -34,6 +34,7 @@ class UpdateCampaignRequest extends FormRequest
             'remove_sample_requirement_file' => ['nullable', 'boolean'],
             'video_deadline_days' => ['nullable', 'integer', 'min:1', 'max:90'],
             'commission_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'ads_commission_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'status' => ['required', 'in:draft,active,completed,paused'],
         ];
     }

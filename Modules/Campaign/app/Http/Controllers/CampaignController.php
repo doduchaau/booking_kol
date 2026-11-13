@@ -41,7 +41,13 @@ class CampaignController extends Controller
 
         $campaigns = Campaign::query()
             ->filter($filters)
-            ->with(['creatorUser'])
+            ->with([
+                'creatorUser:id,name',
+                'campaignCreators' => function ($q) {
+                    $q->select(['id', 'campaign_id', 'status', 'booking_fee'])
+                        ->with(['contentPosts:id,campaign_creator_id']);
+                },
+            ])
             ->withCount('campaignCreators')
             ->latest('id')
             ->paginate(12)
@@ -69,11 +75,16 @@ class CampaignController extends Controller
      */
     public function create(): Response
     {
+        $totalCreatorsCount = Creator::query()
+            ->whereNull('merged_into_creator_id')
+            ->count();
+
         return Inertia::render('Campaign/Create', [
             'statuses' => array_map(fn ($s) => [
                 'value' => $s->value,
                 'label' => $s->label(),
             ], CampaignStatusEnum::cases()),
+            'totalCreatorsCount' => $totalCreatorsCount,
         ]);
     }
 
@@ -83,6 +94,7 @@ class CampaignController extends Controller
     public function store(StoreCampaignRequest $request): RedirectResponse
     {
         $validated = $request->validated();
+        $assignAllCreators = $request->boolean('assign_all_creators');
         $validated['created_by'] = $request->user()?->id;
 
         if ($request->hasFile('content_guidelines_file')) {
@@ -95,6 +107,17 @@ class CampaignController extends Controller
 
         $campaign = Campaign::create($validated);
 
+        if ($assignAllCreators) {
+            $result = $this->campaignService->addCreatorsToCampaign(
+                campaign: $campaign,
+                creatorIds: [],
+                selectAllInDb: true
+            );
+
+            return redirect()->route('campaigns.show', $campaign->id)
+                ->with('success', "Đã tạo chiến dịch [{$campaign->name}] và tự động gán toàn bộ {$result['added']} KOC từ kho dữ liệu thành công.");
+        }
+
         return redirect()->route('campaigns.show', $campaign->id)
             ->with('success', "Đã tạo chiến dịch [{$campaign->name}] thành công.");
     }
@@ -104,21 +127,22 @@ class CampaignController extends Controller
      */
     public function show(int $id): Response
     {
-        $campaign = Campaign::with([
-            'creatorUser',
-            'campaignCreators.creator.accounts',
-            'campaignCreators.assignee',
-            'campaignCreators.contentPosts',
-        ])->findOrFail($id);
-
-        // Phân quyền: Staff chỉ được xem các KOC mà mình được phân công
         $currentUser = auth()->user();
-        if ($currentUser && $currentUser->hasRole('Staff') && !$currentUser->hasAnyRole(['Admin', 'Leader'])) {
-            $campaign->setRelation(
-                'campaignCreators',
-                $campaign->campaignCreators->filter(fn ($cc) => $cc->assigned_to === $currentUser->id)->values()
-            );
-        }
+        $isLeaderOrAdmin = $currentUser && (\Spatie\Permission\Models\Role::count() === 0 || $currentUser->hasAnyRole(['Admin', 'Leader']));
+        $isStaffOnly = !$isLeaderOrAdmin;
+
+        $campaign = Campaign::with([
+            'creatorUser:id,name,email',
+            'campaignCreators' => function ($q) use ($currentUser, $isStaffOnly) {
+                $q->when($isStaffOnly, fn ($sq) => $sq->where('assigned_to', $currentUser->id))
+                  ->with([
+                      'creator:id,name,phone,shipping_address,city_province,district,ward,niche,tier,trust_score,blacklist_status',
+                      'creator.accounts:id,creator_id,platform,handle,followers_count,engagement_rate,average_views',
+                      'assignee:id,name,email',
+                      'contentPosts:id,campaign_creator_id,platform,post_url,video_title,posted_at,status,views_count,likes_count,comments_count,gmv_amount',
+                  ]);
+            },
+        ])->findOrFail($id);
 
         $stats = $this->campaignService->calculateCampaignStats($campaign);
 
@@ -132,9 +156,11 @@ class CampaignController extends Controller
         $allCc = $campaign->campaignCreators;
         $stageCounts = [
             'all' => $allCc->count(),
+            'waiting_approval' => $allCc->filter(fn ($cc) => $cc->status === PipelineStatusEnum::WAITING_APPROVAL)->count(),
             'outreach' => $allCc->filter(fn ($cc) => in_array($cc->status, [
                 PipelineStatusEnum::NEW,
                 PipelineStatusEnum::CONTACTED,
+                PipelineStatusEnum::WAITING_APPROVAL,
                 PipelineStatusEnum::AGREED,
             ]))->count(),
             'shipping' => $allCc->filter(fn ($cc) => in_array($cc->status, [
@@ -156,14 +182,11 @@ class CampaignController extends Controller
         // Lấy danh sách ID các creator đã có trong campaign
         $existingCreatorIds = $campaign->campaignCreators->pluck('creator_id')->toArray();
 
-        // Lấy danh sách Creator khả dụng trong hệ thống để gán vào chiến dịch
-        $availableCreators = Creator::query()
+        // Đếm tổng số Creator khả dụng trong kho dữ liệu chưa gán vào chiến dịch này
+        $totalAvailableCount = Creator::query()
             ->whereNull('merged_into_creator_id')
             ->whereNotIn('id', $existingCreatorIds)
-            ->with(['accounts'])
-            ->latest('id')
-            ->limit(100)
-            ->get();
+            ->count();
 
         // Lấy danh sách nhân viên nội bộ
         $staffUsers = User::query()->select(['id', 'name', 'email'])->get();
@@ -172,7 +195,16 @@ class CampaignController extends Controller
             'campaign' => $campaign,
             'stats' => $stats,
             'stageCounts' => $stageCounts,
-            'availableCreators' => $availableCreators,
+            'availableCreators' => Inertia::lazy(fn () => Creator::query()
+                ->whereNull('merged_into_creator_id')
+                ->whereNotIn('id', $existingCreatorIds)
+                ->with(['accounts:id,creator_id,platform,handle,followers_count'])
+                ->select(['id', 'name', 'phone', 'niche', 'tier'])
+                ->latest('id')
+                ->limit(150)
+                ->get()
+            ),
+            'totalAvailableCount' => $totalAvailableCount,
             'staffUsers' => $staffUsers,
         ]);
     }
@@ -204,7 +236,7 @@ class CampaignController extends Controller
         // Phân quyền: Chỉ Admin/Leader mới được duyệt thay đổi ngân sách
         if (isset($data['budget']) && (float)$data['budget'] !== (float)$campaign->budget) {
             $currentUser = auth()->user();
-            if ($currentUser && $currentUser->hasRole('Staff') && !$currentUser->hasAnyRole(['Admin', 'Leader'])) {
+            if (\Spatie\Permission\Models\Role::count() > 0 && (!$currentUser || !$currentUser->hasAnyRole(['Admin', 'Leader']))) {
                 return back()->withErrors(['budget' => 'Chỉ Admin hoặc Leader mới có quyền duyệt thay đổi ngân sách chiến dịch.']);
             }
         }
@@ -257,14 +289,21 @@ class CampaignController extends Controller
         }
 
         $validated = $request->validated();
+        $selectAllInDb = $request->boolean('select_all_in_db');
+
         $result = $this->campaignService->addCreatorsToCampaign(
             campaign: $campaign,
-            creatorIds: $validated['creator_ids'],
+            creatorIds: $validated['creator_ids'] ?? [],
             assignedTo: $validated['assigned_to'] ?? null,
-            bookingFee: (float) ($validated['booking_fee'] ?? 0)
+            bookingFee: (float) ($validated['booking_fee'] ?? 0),
+            selectAllInDb: $selectAllInDb
         );
 
-        return back()->with('success', "Đã gán {$result['added']} Creator vào chiến dịch thành công.");
+        $msg = $selectAllInDb
+            ? "Đã gán toàn bộ {$result['added']} KOC từ kho dữ liệu vào chiến dịch thành công."
+            : "Đã gán {$result['added']} Creator vào chiến dịch thành công.";
+
+        return back()->with('success', $msg);
     }
 
     /**
@@ -274,7 +313,7 @@ class CampaignController extends Controller
     {
         // Phân quyền: Chỉ Admin/Leader mới được xóa chiến dịch
         $currentUser = auth()->user();
-        if ($currentUser && $currentUser->hasRole('Staff') && !$currentUser->hasAnyRole(['Admin', 'Leader'])) {
+        if (\Spatie\Permission\Models\Role::count() > 0 && (!$currentUser || !$currentUser->hasAnyRole(['Admin', 'Leader']))) {
             return back()->withErrors(['error' => 'Chỉ Admin hoặc Leader mới có quyền xóa chiến dịch.']);
         }
 
@@ -308,6 +347,14 @@ class CampaignController extends Controller
     {
         $campaignCreator = CampaignCreator::where('campaign_id', $id)->findOrFail($pivotId);
 
+        // Phân quyền: Staff chỉ được xóa KOC mình được phân công
+        $currentUser = auth()->user();
+        if (\Spatie\Permission\Models\Role::count() > 0 && (!$currentUser || !$currentUser->hasAnyRole(['Admin', 'Leader']))) {
+            if ($campaignCreator->assigned_to !== null && $campaignCreator->assigned_to !== $currentUser->id) {
+                return back()->withErrors(['error' => 'Bạn chỉ được xóa KOC mà mình được phân công khỏi chiến dịch.']);
+            }
+        }
+
         if (!in_array($campaignCreator->status, [PipelineStatusEnum::NEW, PipelineStatusEnum::CONTACTED, PipelineStatusEnum::DECLINED])) {
             return back()->withErrors([
                 'error' => 'Chỉ có thể xóa KOC đang ở trạng thái Mới thêm, Đã liên hệ hoặc Từ chối khỏi chiến dịch.',
@@ -340,7 +387,7 @@ class CampaignController extends Controller
 
         // Phân quyền: Staff chỉ được sửa KOC mình được phân công
         $currentUser = auth()->user();
-        if ($currentUser && $currentUser->hasRole('Staff') && !$currentUser->hasAnyRole(['Admin', 'Leader'])) {
+        if (\Spatie\Permission\Models\Role::count() > 0 && (!$currentUser || !$currentUser->hasAnyRole(['Admin', 'Leader']))) {
             if ($campaignCreator->assigned_to !== null && $campaignCreator->assigned_to !== $currentUser->id) {
                 $msg = 'Bạn chỉ được xác nhận gửi mẫu cho KOC mà mình được phân công.';
                 return $request->wantsJson()
@@ -350,22 +397,54 @@ class CampaignController extends Controller
         }
 
         // Nếu nhân viên có nhập nhanh địa chỉ giao hàng tại modal, lưu ngay vào hồ sơ Creator
-        if ($request->filled('shipping_address')) {
+        // Bắt buộc: Số nhà/đường, SĐT, Tỉnh/TP, Phường/Xã
+        $hasQuickAddressInput = $request->filled('shipping_address')
+            || $request->filled('city_province')
+            || $request->filled('ward')
+            || $request->filled('phone');
+
+        if ($hasQuickAddressInput || empty($creator->shipping_address)) {
+            $effectiveAddress = trim((string) ($request->input('shipping_address') ?: ($creator->shipping_address ?? '')));
+            $effectivePhone = trim((string) ($request->input('phone') ?: ($creator->phone ?? '')));
+            $effectiveCity = trim((string) ($request->input('city_province') ?: ($creator->city_province ?? '')));
+            $effectiveWard = trim((string) ($request->input('ward') ?: ($creator->ward ?? '')));
+
+            $errors = [];
+            if ($effectiveAddress === '') {
+                $errors['shipping_address'] = "Vui lòng nhập địa chỉ cụ thể (số nhà, tên đường) để gửi hàng cho KOC {$creator->name}.";
+            }
+            if ($effectivePhone === '') {
+                $errors['phone'] = "Vui lòng nhập số điện thoại nhận hàng của KOC {$creator->name}.";
+            }
+            if ($effectiveCity === '') {
+                $errors['city_province'] = "Vui lòng nhập Tỉnh / Thành phố để gửi hàng cho KOC {$creator->name}.";
+            }
+            if ($effectiveWard === '') {
+                $errors['ward'] = "Vui lòng nhập Phường / Xã để gửi hàng cho KOC {$creator->name}.";
+            }
+
+            if (!empty($errors)) {
+                $firstMessage = reset($errors);
+                $errors['error'] = $firstMessage;
+                if ($request->wantsJson()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => $firstMessage,
+                        'errors' => $errors,
+                    ], 422);
+                }
+                return back()->withErrors($errors);
+            }
+
             $creatorData = [
-                'shipping_address' => trim($request->input('shipping_address')),
+                'shipping_address' => $effectiveAddress,
+                'city_province' => $effectiveCity,
+                'ward' => $effectiveWard,
+                'phone' => CreatorNormalizationService::normalizePhone($effectivePhone),
             ];
 
-            if ($request->filled('city_province')) {
-                $creatorData['city_province'] = trim($request->input('city_province'));
-            }
             if ($request->filled('district')) {
                 $creatorData['district'] = trim($request->input('district'));
-            }
-            if ($request->filled('ward')) {
-                $creatorData['ward'] = trim($request->input('ward'));
-            }
-            if ($request->filled('phone')) {
-                $creatorData['phone'] = CreatorNormalizationService::normalizePhone($request->input('phone'));
             }
 
             $creator->update($creatorData);
@@ -428,6 +507,14 @@ class CampaignController extends Controller
         ]);
 
         $campaignCreator = CampaignCreator::where('campaign_id', $id)->with('creator')->findOrFail($pivotId);
+
+        // Phân quyền: Staff chỉ được thêm video cho KOC mình được phân công
+        $currentUser = auth()->user();
+        if (\Spatie\Permission\Models\Role::count() > 0 && (!$currentUser || !$currentUser->hasAnyRole(['Admin', 'Leader']))) {
+            if ($campaignCreator->assigned_to !== null && $campaignCreator->assigned_to !== $currentUser->id) {
+                return back()->withErrors(['error' => 'Bạn chỉ được thêm video cho KOC mà mình được phân công.']);
+            }
+        }
 
         // KIỂM TRA RÀNG BUỘC: Không thể lên video khi chưa gửi mẫu
         $isSent = !empty($campaignCreator->sample_sent_at) || in_array($campaignCreator->status, [

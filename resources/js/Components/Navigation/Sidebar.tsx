@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link, usePage } from '@inertiajs/react';
+import ApplicationLogo from '@/Components/ApplicationLogo';
 import {
     LayoutDashboard,
     ClipboardList,
@@ -165,18 +166,8 @@ export default function Sidebar({ isOpenMobile, onCloseMobile }: SidebarProps) {
             {/* Top Brand Logo */}
             <div>
                 <div className="flex h-16 items-center justify-between px-6 border-b border-slate-100">
-                    <Link href="/dashboard" className="flex items-center gap-2.5">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-600 text-white shadow-md shadow-primary-500/20">
-                            <Sparkles className="h-5 w-5" />
-                        </div>
-                        <div>
-                            <span className="text-base font-bold tracking-tight text-slate-900 block leading-tight">
-                                KOL Booking
-                            </span>
-                            <span className="text-[10px] font-semibold text-primary-600 uppercase tracking-wider block">
-                                Doanh Nghiệp
-                            </span>
-                        </div>
+                    <Link href="/dashboard" className="flex items-center transition-opacity hover:opacity-90">
+                        <ApplicationLogo size="sm" />
                     </Link>
 
                     {/* Mobile close button */}

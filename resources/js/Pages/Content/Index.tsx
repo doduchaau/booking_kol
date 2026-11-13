@@ -18,12 +18,18 @@ import {
     DollarSign,
     Check,
     X,
+    ShieldCheck,
+    AlertTriangle,
+    AlertOctagon,
+    Activity,
 } from 'lucide-react';
 import PageHeader from '@/Components/Common/PageHeader';
 import Button from '@/Components/Common/Button';
 import Badge, { BadgeVariant } from '@/Components/Common/Badge';
+import PlatformBadge from '@/Components/Common/PlatformBadge';
 import FilterBar from '@/Components/Table/FilterBar';
 import DataTable, { Column, PaginationMeta } from '@/Components/Table/DataTable';
+import FastReviewComplianceModal, { ReviewPost } from './Partials/FastReviewComplianceModal';
 import {
     ResponsiveContainer,
     LineChart,
@@ -78,8 +84,16 @@ interface ContentPost {
     platform: 'tiktok' | 'facebook' | 'youtube' | 'instagram' | 'shopee';
     post_url: string;
     video_title?: string;
+    raw_caption?: string;
     posted_at?: string;
     status: 'pending_approval' | 'approved' | 'changes_requested';
+    compliance_status?: 'passed' | 'warning' | 'failed' | 'not_checked';
+    compliance_score?: number;
+    compliance_checklist?: any[];
+    compliance_checked_at?: string;
+    health_status?: 'healthy' | 'warning' | 'unavailable' | 'unknown';
+    health_error_message?: string;
+    health_last_checked_at?: string;
     views_count: number;
     likes_count: number;
     comments_count: number;
@@ -104,6 +118,8 @@ interface Props {
         search?: string;
         platform?: string;
         status?: string;
+        compliance_status?: string;
+        health_status?: string;
         campaign_id?: string;
     };
     campaigns: { id: number; name: string }[];
@@ -111,6 +127,9 @@ interface Props {
         total_posts: number;
         approved_posts: number;
         pending_posts: number;
+        passed_compliance?: number;
+        warning_compliance?: number;
+        unhealthy_count?: number;
         total_views: number;
         total_gmv: number;
     };
@@ -120,10 +139,15 @@ export default function Index({ posts, filters, campaigns, stats }: Props) {
     const [search, setSearch] = useState(filters.search || '');
     const [platform, setPlatform] = useState(filters.platform || '');
     const [status, setStatus] = useState(filters.status || '');
+    const [complianceStatus, setComplianceStatus] = useState(filters.compliance_status || '');
+    const [healthStatus, setHealthStatus] = useState(filters.health_status || '');
     const [campaignId, setCampaignId] = useState(filters.campaign_id || '');
 
     const [isSyncingAll, setIsSyncingAll] = useState(false);
     const [syncingPostId, setSyncingPostId] = useState<number | null>(null);
+
+    // State cho Modal nghiệm thu nhanh & tuân thủ
+    const [reviewModalPost, setReviewModalPost] = useState<ReviewPost | null>(null);
 
     // State cho Modal xem biểu đồ tăng trưởng
     const [chartModalPost, setChartModalPost] = useState<ContentPost | null>(null);
@@ -131,13 +155,22 @@ export default function Index({ posts, filters, campaigns, stats }: Props) {
     const [isLoadingChart, setIsLoadingChart] = useState(false);
 
     // Kích hoạt tìm kiếm
-    const triggerFilter = (newSearch: string, newPlatform: string, newStatus: string, newCampaign: string) => {
+    const triggerFilter = (
+        newSearch: string,
+        newPlatform: string,
+        newStatus: string,
+        newCampaign: string,
+        newCompliance: string = complianceStatus,
+        newHealth: string = healthStatus
+    ) => {
         router.get(
             route('content.index'),
             {
                 search: newSearch || undefined,
                 platform: newPlatform || undefined,
                 status: newStatus || undefined,
+                compliance_status: newCompliance || undefined,
+                health_status: newHealth || undefined,
                 campaign_id: newCampaign || undefined,
             },
             { preserveState: true, replace: true }
@@ -146,15 +179,52 @@ export default function Index({ posts, filters, campaigns, stats }: Props) {
 
     const handleSearchChange = (val: string) => {
         setSearch(val);
-        triggerFilter(val, platform, status, campaignId);
+        triggerFilter(val, platform, status, campaignId, complianceStatus, healthStatus);
     };
 
     const handleResetFilters = () => {
         setSearch('');
         setPlatform('');
         setStatus('');
+        setComplianceStatus('');
+        setHealthStatus('');
         setCampaignId('');
-        triggerFilter('', '', '', '');
+        triggerFilter('', '', '', '', '', '');
+    };
+
+    const getComplianceBadge = (post: ContentPost) => {
+        if (!post.compliance_status || post.compliance_status === 'not_checked') {
+            return (
+                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                    Chưa quét
+                </span>
+            );
+        }
+
+        if (post.compliance_status === 'passed') {
+            return (
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                    <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                    <span>Đạt {post.compliance_score || 100}%</span>
+                </span>
+            );
+        }
+
+        if (post.compliance_status === 'warning') {
+            return (
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                    <AlertTriangle className="h-3 w-3 text-amber-600" />
+                    <span>Lưu ý ({post.compliance_score || 0}đ)</span>
+                </span>
+            );
+        }
+
+        return (
+            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
+                <X className="h-3 w-3 text-rose-600" />
+                <span>Không đạt</span>
+            </span>
+        );
     };
 
     const handleSyncAll = () => {
@@ -229,9 +299,10 @@ export default function Index({ posts, filters, campaigns, stats }: Props) {
     };
 
     const columns: Column[] = [
-        { key: 'video', label: 'Video / Creator', className: 'w-1/3' },
+        { key: 'video', label: 'Video / Creator', className: 'w-1/4' },
         { key: 'campaign', label: 'Chiến dịch' },
         { key: 'status', label: 'Trạng thái duyệt' },
+        { key: 'compliance', label: 'Tuân thủ & Sức khỏe' },
         { key: 'metrics', label: 'Chỉ số tương tác' },
         { key: 'gmv', label: 'GMV ghi nhận' },
         { key: 'actions', label: 'Thao tác', align: 'right' },
@@ -245,7 +316,13 @@ export default function Index({ posts, filters, campaigns, stats }: Props) {
         links: posts.links,
     };
 
-    const activeFiltersCount = (search ? 1 : 0) + (platform ? 1 : 0) + (status ? 1 : 0) + (campaignId ? 1 : 0);
+    const activeFiltersCount =
+        (search ? 1 : 0) +
+        (platform ? 1 : 0) +
+        (status ? 1 : 0) +
+        (complianceStatus ? 1 : 0) +
+        (healthStatus ? 1 : 0) +
+        (campaignId ? 1 : 0);
 
     return (
         <AppLayout title="Quản lý nghiệm thu Video & Chỉ số">
@@ -335,6 +412,35 @@ export default function Index({ posts, filters, campaigns, stats }: Props) {
                 </div>
             </div>
 
+            {/* Cảnh báo Sức Khỏe Video Nếu Phát Hiện Video Bị Xóa / Ẩn */}
+            {stats.unhealthy_count && stats.unhealthy_count > 0 ? (
+                <div className="mb-6 p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 flex items-center justify-between shadow-xs">
+                    <div className="flex items-center gap-3">
+                        <span className="p-2 rounded-lg bg-rose-100 text-rose-600 shrink-0">
+                            <AlertOctagon className="h-5 w-5 animate-pulse" />
+                        </span>
+                        <div>
+                            <h4 className="text-sm font-bold">
+                                Phát hiện {stats.unhealthy_count} video không còn khả dụng trên mạng xã hội!
+                            </h4>
+                            <p className="text-xs text-rose-700 mt-0.5">
+                                Các video này có thể đã bị KOC chuyển sang chế độ riêng tư hoặc bị xóa sau khi nhận tiền. Hãy lọc xem ngay để liên hệ đối soát.
+                            </p>
+                        </div>
+                    </div>
+                    <Button
+                        variant="danger"
+                        size="sm"
+                        onClick={() => {
+                            setHealthStatus('unavailable');
+                            triggerFilter(search, platform, status, campaignId, complianceStatus, 'unavailable');
+                        }}
+                    >
+                        Lọc video bị lỗi
+                    </Button>
+                </div>
+            ) : null}
+
             {/* Filter Bar */}
             <div className="mb-6">
                 <FilterBar
@@ -350,7 +456,7 @@ export default function Index({ posts, filters, campaigns, stats }: Props) {
                                 value={platform}
                                 onChange={(e) => {
                                     setPlatform(e.target.value);
-                                    triggerFilter(search, e.target.value, status, campaignId);
+                                    triggerFilter(search, e.target.value, status, campaignId, complianceStatus, healthStatus);
                                 }}
                                 className="rounded-lg border border-slate-300 bg-white py-2 pl-3 pr-8 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                             >
@@ -362,12 +468,12 @@ export default function Index({ posts, filters, campaigns, stats }: Props) {
                                 <option value="shopee">Shopee</option>
                             </select>
 
-                            {/* Lọc trạng thái */}
+                            {/* Lọc trạng thái duyệt */}
                             <select
                                 value={status}
                                 onChange={(e) => {
                                     setStatus(e.target.value);
-                                    triggerFilter(search, platform, e.target.value, campaignId);
+                                    triggerFilter(search, platform, e.target.value, campaignId, complianceStatus, healthStatus);
                                 }}
                                 className="rounded-lg border border-slate-300 bg-white py-2 pl-3 pr-8 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                             >
@@ -377,12 +483,42 @@ export default function Index({ posts, filters, campaigns, stats }: Props) {
                                 <option value="changes_requested">Yêu cầu sửa</option>
                             </select>
 
+                            {/* Lọc tuân thủ kịch bản */}
+                            <select
+                                value={complianceStatus}
+                                onChange={(e) => {
+                                    setComplianceStatus(e.target.value);
+                                    triggerFilter(search, platform, status, campaignId, e.target.value, healthStatus);
+                                }}
+                                className="rounded-lg border border-slate-300 bg-white py-2 pl-3 pr-8 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                            >
+                                <option value="">Tất cả tuân thủ</option>
+                                <option value="passed">Đạt chuẩn 100%</option>
+                                <option value="warning">Cần lưu ý / Thiếu hashtag</option>
+                                <option value="failed">Không đạt / Lỗi</option>
+                                <option value="not_checked">Chưa quét</option>
+                            </select>
+
+                            {/* Lọc sức khỏe video */}
+                            <select
+                                value={healthStatus}
+                                onChange={(e) => {
+                                    setHealthStatus(e.target.value);
+                                    triggerFilter(search, platform, status, campaignId, complianceStatus, e.target.value);
+                                }}
+                                className="rounded-lg border border-slate-300 bg-white py-2 pl-3 pr-8 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                            >
+                                <option value="">Tình trạng sức khỏe</option>
+                                <option value="healthy">Hoạt động bình thường</option>
+                                <option value="unavailable">Bị xóa hoặc ẩn</option>
+                            </select>
+
                             {/* Lọc chiến dịch */}
                             <select
                                 value={campaignId}
                                 onChange={(e) => {
                                     setCampaignId(e.target.value);
-                                    triggerFilter(search, platform, status, e.target.value);
+                                    triggerFilter(search, platform, status, e.target.value, complianceStatus, healthStatus);
                                 }}
                                 className="rounded-lg border border-slate-300 bg-white py-2 pl-3 pr-8 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                             >
@@ -413,7 +549,7 @@ export default function Index({ posts, filters, campaigns, stats }: Props) {
                             <td className="px-6 py-4">
                                 <div className="space-y-1">
                                     <div className="flex items-center gap-2">
-                                        <Badge variant="default">{post.platform.toUpperCase()}</Badge>
+                                        <PlatformBadge platform={post.platform} size="xs" />
                                         <a
                                             href={post.post_url}
                                             target="_blank"
@@ -446,6 +582,19 @@ export default function Index({ posts, filters, campaigns, stats }: Props) {
                                 <Badge variant={getStatusVariant(post.status)}>
                                     {getStatusLabel(post.status)}
                                 </Badge>
+                            </td>
+
+                            {/* Tuân thủ & Sức khỏe */}
+                            <td className="px-6 py-4">
+                                <div className="space-y-1">
+                                    <div className="flex items-center gap-1.5">
+                                        {getComplianceBadge(post)}
+                                    </div>
+                                    <div className="flex items-center gap-1 text-[11px] text-slate-500">
+                                        <span className={`h-1.5 w-1.5 rounded-full ${post.health_status !== 'unavailable' ? 'bg-emerald-500' : 'bg-rose-500 animate-ping'}`} />
+                                        <span>{post.health_status !== 'unavailable' ? 'Khả dụng' : 'Bị xóa / Ẩn'}</span>
+                                    </div>
+                                </div>
                             </td>
 
                             {/* Chỉ số */}
@@ -502,13 +651,23 @@ export default function Index({ posts, filters, campaigns, stats }: Props) {
                             {/* Thao tác */}
                             <td className="px-6 py-4 text-right">
                                 <div className="flex items-center justify-end gap-1.5">
+                                    <Button
+                                        variant="primary"
+                                        size="sm"
+                                        onClick={() => setReviewModalPost(post as ReviewPost)}
+                                        iconLeft={<ShieldCheck className="h-3.5 w-3.5" />}
+                                        title="Kiểm tra tuân thủ & nghiệm thu nhanh"
+                                    >
+                                        Nghiệm thu
+                                    </Button>
+
                                     {post.status !== 'approved' && (
                                         <Button
                                             variant="secondary"
                                             size="sm"
                                             onClick={() => handleUpdateStatus(post.id, 'approved')}
                                             iconLeft={<Check className="h-3.5 w-3.5 text-emerald-600" />}
-                                            title="Duyệt bài đăng này"
+                                            title="Duyệt nhanh bài đăng này"
                                         >
                                             Duyệt
                                         </Button>
@@ -652,6 +811,12 @@ export default function Index({ posts, filters, campaigns, stats }: Props) {
                     </div>
                 </div>
             )}
+
+            {/* Modal Nghiệm Thu Nhanh & Tuân Thủ Video (Fast Review Drawer / Modal) */}
+            <FastReviewComplianceModal
+                post={reviewModalPost}
+                onClose={() => setReviewModalPost(null)}
+            />
         </AppLayout>
     );
 }

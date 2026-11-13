@@ -24,6 +24,7 @@ class ContentServiceProvider extends ModuleServiceProvider
      */
     protected array $commands = [
         \Modules\Content\Console\SyncPostMetricsCommand::class,
+        \Modules\Content\Console\CheckVideoHealthCommand::class,
     ];
 
     /**
@@ -42,5 +43,6 @@ class ContentServiceProvider extends ModuleServiceProvider
     protected function configureSchedules(Schedule $schedule): void
     {
         $schedule->command('content:sync-metrics')->dailyAt('01:00')->withoutOverlapping();
+        $schedule->command('content:check-video-health')->dailyAt('04:00')->withoutOverlapping();
     }
 }

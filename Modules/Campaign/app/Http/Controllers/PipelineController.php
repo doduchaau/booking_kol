@@ -68,9 +68,9 @@ class PipelineController extends Controller
     ): RedirectResponse|JsonResponse {
         $campaignCreator = CampaignCreator::findOrFail($id);
 
-        // Phân quyền: Staff chỉ được sửa KOC mình được phân công
+        // Phân quyền: Chỉ Admin/Leader mới được sửa toàn bộ KOC, còn lại chỉ được sửa KOC mình được phân công
         $currentUser = auth()->user();
-        if ($currentUser && $currentUser->hasRole('Staff') && !$currentUser->hasAnyRole(['Admin', 'Leader'])) {
+        if (\Spatie\Permission\Models\Role::count() > 0 && (!$currentUser || !$currentUser->hasAnyRole(['Admin', 'Leader']))) {
             if ($campaignCreator->assigned_to !== null && $campaignCreator->assigned_to !== $currentUser->id) {
                 $msg = 'Bạn chỉ được sửa trạng thái của KOC mà mình được phân công.';
                 return $request->wantsJson()
@@ -221,9 +221,9 @@ class PipelineController extends Controller
 
         $campaignCreator = CampaignCreator::where('campaign_id', $campaignId)->findOrFail($pivotId);
 
-        // Phân quyền: Staff chỉ được sửa KOC mình được phân công
+        // Phân quyền: Chỉ Admin/Leader mới được sửa toàn bộ KOC, còn lại chỉ được sửa KOC mình được phân công
         $currentUser = auth()->user();
-        if ($currentUser && $currentUser->hasRole('Staff') && !$currentUser->hasAnyRole(['Admin', 'Leader'])) {
+        if (\Spatie\Permission\Models\Role::count() > 0 && (!$currentUser || !$currentUser->hasAnyRole(['Admin', 'Leader']))) {
             if ($campaignCreator->assigned_to !== null && $campaignCreator->assigned_to !== $currentUser->id) {
                 $msg = 'Bạn chỉ được chỉnh sửa KOC mà mình được phân công.';
                 return $request->wantsJson()
@@ -249,6 +249,103 @@ class PipelineController extends Controller
             }
 
             return back()->with('success', 'Đã cập nhật thông tin KOC thành công.');
+        } catch (Exception $e) {
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 422);
+            }
+
+            return back()->withErrors(['error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Nhân viên xác nhận chi phí cast đã được ban lãnh đạo thông qua
+     */
+    public function confirmCastApproved(
+        Request $request,
+        int $id
+    ): RedirectResponse|JsonResponse {
+        $validated = $request->validate([
+            'approver_name' => ['nullable', 'string', 'max:150'],
+            'approval_notes' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $campaignCreator = CampaignCreator::findOrFail($id);
+
+        // Phân quyền: Chỉ Admin/Leader mới được duyệt chi phí toàn bộ KOC, còn lại chỉ được thao tác KOC mình được phân công
+        $currentUser = auth()->user();
+        if (\Spatie\Permission\Models\Role::count() > 0 && (!$currentUser || !$currentUser->hasAnyRole(['Admin', 'Leader']))) {
+            if ($campaignCreator->assigned_to !== null && $campaignCreator->assigned_to !== $currentUser->id) {
+                $msg = 'Bạn chỉ được xác nhận duyệt chi phí cho KOC mà mình được phân công.';
+                return $request->wantsJson()
+                    ? response()->json(['success' => false, 'message' => $msg], 403)
+                    : back()->withErrors(['error' => $msg]);
+            }
+        }
+
+        try {
+            $updated = $this->pipelineService->confirmCastApproved($campaignCreator, $validated);
+
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Đã xác nhận Lãnh đạo duyệt chi phí thành công!',
+                    'data' => $updated,
+                ]);
+            }
+
+            return back()->with('success', 'Đã xác nhận Lãnh đạo duyệt chi phí thành công!');
+        } catch (Exception $e) {
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 422);
+            }
+
+            return back()->withErrors(['error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Chuyển KOC về trạng thái Đã liên hệ để đàm phán lại nếu Lãnh đạo không đồng ý mức phí
+     */
+    public function reopenDeal(
+        Request $request,
+        int $id
+    ): RedirectResponse|JsonResponse {
+        $validated = $request->validate([
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $campaignCreator = CampaignCreator::findOrFail($id);
+
+        // Phân quyền: Chỉ Admin/Leader mới được mở lại deal toàn bộ KOC, còn lại chỉ được thao tác KOC mình được phân công
+        $currentUser = auth()->user();
+        if (\Spatie\Permission\Models\Role::count() > 0 && (!$currentUser || !$currentUser->hasAnyRole(['Admin', 'Leader']))) {
+            if ($campaignCreator->assigned_to !== null && $campaignCreator->assigned_to !== $currentUser->id) {
+                $msg = 'Bạn chỉ được thao tác KOC mà mình được phân công.';
+                return $request->wantsJson()
+                    ? response()->json(['success' => false, 'message' => $msg], 403)
+                    : back()->withErrors(['error' => $msg]);
+            }
+        }
+
+        try {
+            $updated = $this->pipelineService->reopenDeal($campaignCreator, $validated['reason'] ?? null);
+
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Đã đưa KOC về trạng thái Đã liên hệ để đàm phán lại.',
+                    'data' => $updated,
+                ]);
+            }
+
+            return back()->with('success', 'Đã đưa KOC về trạng thái Đã liên hệ để đàm phán lại.');
         } catch (Exception $e) {
             if ($request->wantsJson()) {
                 return response()->json([

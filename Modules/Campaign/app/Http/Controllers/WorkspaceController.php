@@ -4,6 +4,7 @@ namespace Modules\Campaign\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\SystemCacheService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -28,16 +29,20 @@ class WorkspaceController extends Controller
         $currentUser = auth()->user();
         $isLeaderOrAdmin = $currentUser ? $currentUser->hasAnyRole(['Admin', 'Leader']) : false;
 
-        // Đếm tổng số KOC chưa phân công và số KOC được phân công riêng cho currentUser
-        $unassignedCount = CampaignCreator::query()
-            ->whereHas('campaign', fn ($q) => $q->where('status', '!=', CampaignStatusEnum::COMPLETED))
-            ->whereNull('assigned_to')
-            ->count();
+        // Đếm tổng số KOC chưa phân công và số KOC được phân công riêng cho currentUser (Cache Versioning 5 phút)
+        $unassignedCount = SystemCacheService::rememberWorkspace('unassigned_count', 300, function () {
+            return CampaignCreator::query()
+                ->whereHas('campaign', fn ($q) => $q->where('status', '!=', CampaignStatusEnum::COMPLETED))
+                ->whereNull('assigned_to')
+                ->count();
+        });
 
-        $myKocCount = $currentUser ? CampaignCreator::query()
-            ->whereHas('campaign', fn ($q) => $q->where('status', '!=', CampaignStatusEnum::COMPLETED))
-            ->where('assigned_to', $currentUser->id)
-            ->count() : 0;
+        $myKocCount = $currentUser ? SystemCacheService::rememberWorkspace("user_{$currentUser->id}_count", 300, function () use ($currentUser) {
+            return CampaignCreator::query()
+                ->whereHas('campaign', fn ($q) => $q->where('status', '!=', CampaignStatusEnum::COMPLETED))
+                ->where('assigned_to', $currentUser->id)
+                ->count();
+        }) : 0;
 
         // Bộ lọc: Nhân viên phụ trách (all, unassigned, hoặc user_id)
         $requestedStaffId = $request->input('staff_id');
@@ -61,9 +66,11 @@ class WorkspaceController extends Controller
             }
         }
 
-        // Bộ lọc: Chiến dịch & Tìm kiếm
+        // Bộ lọc: Chiến dịch & Tìm kiếm & Độ khẩn cấp
         $campaignId = $request->filled('campaign_id') ? (int) $request->input('campaign_id') : null;
         $search = $request->input('search');
+        $urgency = $request->input('urgency'); // 'all' | 'overdue' | 'warning' | 'ready_to_ship' | 'pending_approval'
+        $focusKocId = $request->filled('focus_koc') ? (int) $request->input('focus_koc') : null;
 
         // Danh sách chiến dịch đang hoạt động để lọc
         $activeCampaigns = Campaign::query()
@@ -81,10 +88,11 @@ class WorkspaceController extends Controller
                 $q->where('status', '!=', CampaignStatusEnum::COMPLETED);
             })
             ->with([
-                'creator.accounts',
+                'creator:id,name,phone,shipping_address,city_province,district,ward,niche,tier,trust_score,blacklist_status',
+                'creator.accounts:id,creator_id,platform,handle,followers_count,url',
                 'campaign:id,name,product_name,video_deadline_days,status,hashtags,discount_code',
                 'assignee:id,name,email',
-                'contentPosts',
+                'contentPosts:id,campaign_creator_id,platform,post_url,video_title,status,views_count,likes_count,comments_count,gmv_amount,posted_at',
             ]);
 
         // Áp dụng bộ lọc nhân viên phụ trách
@@ -113,19 +121,26 @@ class WorkspaceController extends Controller
             });
         }
 
+        // Lọc tập trung theo thông báo (focus_koc)
+        if ($focusKocId) {
+            $query->where('id', $focusKocId);
+        }
+
         $allKocs = $query->latest('updated_at')->get();
 
-        // Tính deadline_info và sinh portal_token nếu thiếu
+        // Tính deadline_info cho từng KOC
         $allKocs->each(function ($item) {
-            if (!$item->portal_token) {
-                $item->generatePortalToken();
-            }
             $item->deadline_info = $this->pipelineService->calculateDeadline($item);
         });
 
         // 1. Nhóm Cần Tiếp Cận / Gửi Brief (status: new, contacted)
         $leadsGroup = $allKocs->filter(function ($item) {
             return in_array($item->status, [PipelineStatusEnum::NEW, PipelineStatusEnum::CONTACTED]);
+        })->values();
+
+        // 1.5. Nhóm Chờ Duyệt Chi Phí Cast (status: waiting_approval)
+        $approvalGroup = $allKocs->filter(function ($item) {
+            return $item->status === PipelineStatusEnum::WAITING_APPROVAL;
         })->values();
 
         // 2. Nhóm Xử Lý Mẫu Thử
@@ -166,11 +181,42 @@ class WorkspaceController extends Controller
             })
             ->count();
 
+        // Áp dụng bộ lọc khẩn cấp (Urgency Filter) vào các buckets nếu người dùng chỉ định
+        if ($urgency === 'overdue') {
+            $deadlinesGroup = $deadlinesGroup->filter(fn ($item) => ($item->deadline_info['status'] ?? '') === 'overdue')->values();
+            $leadsGroup = collect();
+            $approvalGroup = collect();
+            $samplesGroup = collect();
+            $reviewsGroup = collect();
+        } elseif ($urgency === 'warning') {
+            $deadlinesGroup = $deadlinesGroup->filter(fn ($item) => ($item->deadline_info['status'] ?? '') === 'warning')->values();
+            $leadsGroup = collect();
+            $approvalGroup = collect();
+            $samplesGroup = collect();
+            $reviewsGroup = collect();
+        } elseif ($urgency === 'ready_to_ship') {
+            $samplesGroup = $samplesGroup->filter(fn ($item) => $item->status === PipelineStatusEnum::ADDRESS_CONFIRMED)->values();
+            $leadsGroup = collect();
+            $approvalGroup = collect();
+            $deadlinesGroup = collect();
+            $reviewsGroup = collect();
+        } elseif ($urgency === 'pending_approval') {
+            $reviewsGroup = $reviewsGroup->filter(function ($item) {
+                return $item->contentPosts && $item->contentPosts->contains('status', 'pending_approval');
+            })->values();
+            $leadsGroup = collect();
+            $approvalGroup = collect();
+            $samplesGroup = collect();
+            $deadlinesGroup = collect();
+        }
+
         return Inertia::render('Campaign/Workspace', [
             'filters' => [
                 'staff_id' => is_numeric($effectiveFilterMode) ? (string) $effectiveFilterMode : (string) $effectiveFilterMode,
                 'campaign_id' => $campaignId,
                 'search' => $search,
+                'urgency' => $urgency ?: 'all',
+                'focus_koc' => $focusKocId,
             ],
             'is_leader_or_admin' => $isLeaderOrAdmin,
             'current_user_id' => $currentUser?->id ?? 0,
@@ -180,6 +226,7 @@ class WorkspaceController extends Controller
                 'total_my_kocs' => $allKocs->count(),
                 'my_kocs_count' => $myKocCount,
                 'unassigned_count' => $unassignedCount,
+                'approval_count' => $approvalGroup->count(),
                 'leads_count' => $leadsGroup->count(),
                 'samples_count' => $samplesGroup->count(),
                 'deadlines_count' => $deadlinesGroup->count(),
@@ -192,6 +239,7 @@ class WorkspaceController extends Controller
             ],
             'buckets' => [
                 'leads' => $leadsGroup,
+                'approval' => $approvalGroup,
                 'samples' => $samplesGroup,
                 'deadlines' => $deadlinesGroup,
                 'reviews' => $reviewsGroup,

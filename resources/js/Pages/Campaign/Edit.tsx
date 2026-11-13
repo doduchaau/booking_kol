@@ -31,6 +31,7 @@ interface Campaign {
     affiliate_link?: string | null;
     video_deadline_days?: number;
     commission_rate: string | number;
+    ads_commission_rate?: string | number;
     status: string;
 }
 
@@ -65,6 +66,7 @@ export default function Edit({ campaign, statuses }: Props) {
         affiliate_link: campaign.affiliate_link || '',
         video_deadline_days: campaign.video_deadline_days || 7,
         commission_rate: campaign.commission_rate ? campaign.commission_rate.toString() : '0',
+        ads_commission_rate: campaign.ads_commission_rate ? campaign.ads_commission_rate.toString() : '0',
         status: campaign.status,
     });
 
@@ -466,15 +468,39 @@ export default function Edit({ campaign, statuses }: Props) {
                                 />
                             </FormField>
 
-                            <FormField label="Hoa hồng Affiliate (%)" error={errors.commission_rate}>
-                                <TextInput
-                                    type="number"
-                                    step="0.1"
-                                    value={data.commission_rate}
-                                    onChange={(e) => setData('commission_rate', e.target.value)}
-                                    error={!!errors.commission_rate}
-                                />
-                            </FormField>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <FormField
+                                    label="Hoa hồng Affiliate (%)"
+                                    hint="Đơn hàng tự nhiên qua giỏ hàng / bio"
+                                    error={errors.commission_rate}
+                                >
+                                    <TextInput
+                                        type="number"
+                                        step="0.1"
+                                        min="0"
+                                        max="100"
+                                        value={data.commission_rate}
+                                        onChange={(e) => setData('commission_rate', e.target.value)}
+                                        error={!!errors.commission_rate}
+                                    />
+                                </FormField>
+
+                                <FormField
+                                    label="Hoa hồng ADS (%)"
+                                    hint="Đơn hàng phát sinh khi chạy quảng cáo"
+                                    error={errors.ads_commission_rate}
+                                >
+                                    <TextInput
+                                        type="number"
+                                        step="0.1"
+                                        min="0"
+                                        max="100"
+                                        value={data.ads_commission_rate}
+                                        onChange={(e) => setData('ads_commission_rate', e.target.value)}
+                                        error={!!errors.ads_commission_rate}
+                                    />
+                                </FormField>
+                            </div>
 
                             <div className="grid grid-cols-2 gap-3">
                                 <FormField label="Bắt đầu" required error={errors.start_date}>

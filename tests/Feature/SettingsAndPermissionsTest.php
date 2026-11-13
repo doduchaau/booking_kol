@@ -80,11 +80,13 @@ class SettingsAndPermissionsTest extends TestCase
         $response = $this->actingAs($this->admin)->post(route('settings.general.update'), [
             'default_video_deadline_days' => 10,
             'blacklist_penalty_score' => 35,
+            'default_sample_shipping_note' => 'Hàng mẫu tặng KOC quay video review - Không thu tiền COD',
         ]);
 
         $response->assertSessionHas('success');
         $this->assertEquals(10, Setting::get('default_video_deadline_days'));
         $this->assertEquals(35, Setting::get('blacklist_penalty_score'));
+        $this->assertEquals('Hàng mẫu tặng KOC quay video review - Không thu tiền COD', Setting::get('default_sample_shipping_note'));
     }
 
     public function test_admin_can_update_integrations_with_secure_encryption(): void
@@ -93,22 +95,29 @@ class SettingsAndPermissionsTest extends TestCase
             'zalo_oa_app_id' => '123456789',
             'zalo_oa_secret_key' => 'top_secret_zalo_key',
             'zalo_oa_id' => '987654321',
-            'ghn_token' => 'ghn_access_token_secret_123',
-            'ghn_shop_id' => '99999',
-            'ghtk_token' => 'ghtk_access_token_secret_456',
+            'groq_api_key' => 'gsk_mock_groq_api_key_secure_123',
+            'openai_api_key' => 'sk-proj-mock_openai_api_key_secure_456',
         ]);
 
         $response->assertSessionHas('success');
 
         // Giá trị trong database phải được mã hóa (không lưu plaintext)
-        $rawSetting = Setting::where('key', 'zalo_oa_secret_key')->first();
-        $this->assertTrue($rawSetting->is_encrypted);
-        $this->assertNotEquals('top_secret_zalo_key', $rawSetting->value);
+        $rawZaloSetting = Setting::where('key', 'zalo_oa_secret_key')->first();
+        $this->assertTrue($rawZaloSetting->is_encrypted);
+        $this->assertNotEquals('top_secret_zalo_key', $rawZaloSetting->value);
+
+        $rawGroqSetting = Setting::where('key', 'groq_api_key')->first();
+        $this->assertTrue($rawGroqSetting->is_encrypted);
+        $this->assertNotEquals('gsk_mock_groq_api_key_secure_123', $rawGroqSetting->value);
 
         // Khi truy xuất qua Setting::get() phải giải mã đúng
         $this->assertEquals('top_secret_zalo_key', Setting::get('zalo_oa_secret_key'));
-        $this->assertEquals('ghn_access_token_secret_123', Setting::get('ghn_token'));
-        $this->assertEquals('ghtk_access_token_secret_456', Setting::get('ghtk_token'));
+        $this->assertEquals('gsk_mock_groq_api_key_secure_123', Setting::get('groq_api_key'));
+        $this->assertEquals('sk-proj-mock_openai_api_key_secure_456', Setting::get('openai_api_key'));
+
+        // Kiểm tra chắc chắn không lưu carrier settings
+        $this->assertNull(Setting::where('key', 'ghn_token')->first());
+        $this->assertNull(Setting::where('key', 'ghtk_token')->first());
     }
 
     public function test_admin_can_create_user_and_update_roles(): void

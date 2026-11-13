@@ -25,6 +25,12 @@ import {
 import PageHeader from '@/Components/Common/PageHeader';
 import Button from '@/Components/Common/Button';
 import Badge from '@/Components/Common/Badge';
+import PlatformBadge from '@/Components/Common/PlatformBadge';
+import FunnelAnalysisSection, {
+    DropOffAnalysis,
+    TierConversionItem,
+    CycleTimeInfo,
+} from '@/Pages/Report/Partials/FunnelAnalysisSection';
 import {
     ResponsiveContainer,
     ComposedChart,
@@ -114,6 +120,9 @@ export interface ReportIndexProps {
         total_candidates: number;
         total_posted: number;
         overall_conversion_rate: number;
+        drop_off_analysis?: DropOffAnalysis;
+        tier_conversion?: TierConversionItem[];
+        cycle_time?: CycleTimeInfo;
     };
     financial: {
         total_booking_cost: number;
@@ -581,6 +590,9 @@ export default function ReportIndex({
                     </div>
                 </div>
 
+                {/* 4.5. Phân Tích Chuyên Sâu Hao Hụt & Chuyển Đổi Phễu */}
+                <FunnelAnalysisSection funnel={funnel} formatVND={formatVND} />
+
                 {/* 5. Top Creator Leaderboard */}
                 <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
                     <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -702,9 +714,7 @@ export default function ReportIndex({
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     <div className="flex items-center gap-1.5">
-                                                        <Badge variant="default" size="sm">
-                                                            {koc.platform.toUpperCase()}
-                                                        </Badge>
+                                                        <PlatformBadge platform={koc.platform} size="xs" />
                                                         <Badge variant="info" size="sm">
                                                             {koc.tier.toUpperCase()}
                                                         </Badge>

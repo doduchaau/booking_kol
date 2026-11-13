@@ -1,164 +1,111 @@
-import React, { useState, useMemo } from 'react';
-import { Link, router } from '@inertiajs/react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { router, usePage } from '@inertiajs/react';
 import {
-    Search,
-    Filter,
-    CheckSquare,
-    Square,
-    MessageCircle,
-    Copy,
-    Check,
-    Clock,
-    AlertTriangle,
-    Package,
-    Truck,
-    Video,
-    CheckCircle2,
-    XCircle,
-    UserX,
     Users,
-    Trash2,
-    DollarSign,
-    ExternalLink,
-    ChevronDown,
-    Flame,
-    Sparkles,
-    ShieldAlert,
-    Edit3,
-    X,
-    Send,
-    PhoneCall,
-    Share2,
-    TrendingUp,
+    CheckCircle2,
+    Database,
     Plus,
-    MapPin,
+    Sparkles,
+    X,
 } from 'lucide-react';
-import Badge, { BadgeVariant } from '@/Components/Common/Badge';
 import Button from '@/Components/Common/Button';
-import QuickZaloReminderModal from '@/Components/Outreach/QuickZaloReminderModal';
 
-export interface CreatorAccount {
-    id: number;
-    platform: string;
-    handle: string;
-    followers_count: number;
-}
+// Sub-components
+import KocMatrixFilterBar from './KocMatrix/KocMatrixFilterBar';
+import KocMatrixRow from './KocMatrix/KocMatrixRow';
+import KocMatrixBulkActions from './KocMatrix/KocMatrixBulkActions';
+import KocMatrixModals from './KocMatrix/KocMatrixModals';
 
-export interface Creator {
-    id: number;
-    name: string;
-    phone: string | null;
-    email: string | null;
-    shipping_address: string | null;
-    city_province: string | null;
-    district: string | null;
-    ward: string | null;
-    niche: string;
-    tier: string;
-    trust_score?: number;
-    blacklist_status?: boolean;
-    accounts: CreatorAccount[];
-}
+// Types & Definitions
+import {
+    Campaign,
+    CampaignCreatorPivot,
+    StageType,
+    RiskFilterType,
+    STATUS_DEFINITIONS,
+    Creator,
+    CreatorAccount,
+    DeadlineInfo,
+    ContentPostItem,
+} from './KocMatrix/types';
 
-export interface DeadlineInfo {
-    status: 'safe' | 'warning' | 'overdue';
-    days: number;
-    text: string;
-    date: string;
-}
-
-export interface ContentPostItem {
-    id: number;
-    platform: string;
-    post_url: string;
-    video_title?: string | null;
-    posted_at?: string | null;
-    status: string;
-    views_count?: number;
-    likes_count?: number;
-    comments_count?: number;
-    benchmark?: {
-        average_channel_views: number;
-        current_views: number;
-        ratio: number;
-        status: string;
-        label: string;
-    };
-}
-
-export interface CampaignCreatorPivot {
-    id: number;
-    campaign_id: number;
-    creator_id: number;
-    assigned_to: number | null;
-    status: string;
-    booking_fee: string | number;
-    commission_rate?: string | number;
-    portal_token: string | null;
-    portal_token_expires_at?: string | null;
-    notes: string | null;
-    sample_received_at?: string | null;
-    sample_sent_at?: string | null;
-    posted_at?: string | null;
-    creator: Creator;
-    assignee?: { id: number; name: string; email: string } | null;
-    deadline_info?: DeadlineInfo | null;
-    content_posts?: ContentPostItem[];
-    contentPosts?: ContentPostItem[];
-}
-
-export interface Campaign {
-    id: number;
-    name: string;
-    product_name: string;
-    budget: string | number;
-    target_creators_count: number;
-    video_deadline_days?: number;
-    status: string;
-}
+// Re-export types for backward compatibility
+export type {
+    Campaign,
+    CampaignCreatorPivot,
+    Creator,
+    CreatorAccount,
+    DeadlineInfo,
+    ContentPostItem,
+    StageType,
+    RiskFilterType,
+};
+export { STATUS_DEFINITIONS };
 
 interface Props {
     campaign: Campaign;
     items: CampaignCreatorPivot[];
     staffUsers: { id: number; name: string; email: string }[];
-    onOpenAddModal: () => void;
+    onOpenAddModal: (selectAllInDb?: boolean) => void;
+    totalAvailableCount?: number;
 }
-
-type StageType = 'all' | 'outreach' | 'shipping' | 'production' | 'completion';
-type RiskFilterType = 'all' | 'overdue' | 'warning' | 'missing_address' | 'no_phone';
-
-export const STATUS_DEFINITIONS: Record<
-    string,
-    { label: string; stage: 'outreach' | 'shipping' | 'production' | 'completion'; badge: BadgeVariant }
-> = {
-    new: { label: 'Mới thêm', stage: 'outreach', badge: 'default' },
-    contacted: { label: 'Đã liên hệ', stage: 'outreach', badge: 'primary' },
-    agreed: { label: 'Đã chốt hợp tác', stage: 'outreach', badge: 'primary' },
-    address_confirmed: { label: 'Đã chốt địa chỉ', stage: 'shipping', badge: 'primary' },
-    sample_sent: { label: 'Đã gửi mẫu', stage: 'shipping', badge: 'warning' },
-    sample_received: { label: 'Đã nhận mẫu (Đang làm video)', stage: 'shipping', badge: 'warning' },
-    posted: { label: 'Đã lên video', stage: 'production', badge: 'success' },
-    completed: { label: 'Nghiệm thu hoàn tất', stage: 'completion', badge: 'success' },
-    declined: { label: 'Từ chối', stage: 'completion', badge: 'danger' },
-    no_show: { label: 'Bom hàng / Mất tích', stage: 'completion', badge: 'danger' },
-};
 
 export default function KocMatrixTable({
     campaign,
     items,
     staffUsers,
     onOpenAddModal,
+    totalAvailableCount = 0,
 }: Props) {
     const [currentStage, setCurrentStage] = useState<StageType>('all');
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedStaffFilter, setSelectedStaffFilter] = useState<string>('all');
     const [riskFilter, setRiskFilter] = useState<RiskFilterType>('all');
 
+    const pageUrl = usePage().url;
+
+    // Lọc theo thông báo (focus_koc)
+    const [focusKocId, setFocusKocId] = useState<number | null>(() => {
+        if (typeof window !== 'undefined') {
+            const params = new URLSearchParams(window.location.search);
+            const id = params.get('focus_koc');
+            return id ? parseInt(id, 10) : null;
+        }
+        return null;
+    });
+
+    // Lắng nghe thay đổi URL khi người dùng bấm thông báo
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const params = new URLSearchParams(window.location.search);
+            const id = params.get('focus_koc');
+            setFocusKocId(id ? parseInt(id, 10) : null);
+            const stage = params.get('stage') as StageType | null;
+            if (stage && ['all', 'outreach', 'waiting_approval', 'shipping', 'production', 'completion'].includes(stage)) {
+                setCurrentStage(stage);
+            }
+        }
+    }, [pageUrl]);
+
+    const focusedItem = useMemo(() => {
+        if (!focusKocId) return null;
+        return items.find((item) => item.id === focusKocId) || null;
+    }, [focusKocId, items]);
+
+    const handleClearFocusKoc = () => {
+        setFocusKocId(null);
+        if (typeof window !== 'undefined') {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('focus_koc');
+            url.searchParams.delete('stage');
+            window.history.replaceState({}, '', url.toString());
+        }
+    };
+
     // Quản lý chọn hàng loạt
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
     const [isBulkStatusModalOpen, setIsBulkStatusModalOpen] = useState(false);
     const [bulkSelectedStatus, setBulkSelectedStatus] = useState<string>('contacted');
-    const [bulkSelectedStaff, setBulkSelectedStaff] = useState<string>('');
     const [bulkProcessing, setBulkProcessing] = useState(false);
 
     // Chốt hợp tác modal
@@ -166,6 +113,12 @@ export default function KocMatrixTable({
     const [dealFee, setDealFee] = useState<string>('0');
     const [quickZaloPivotId, setQuickZaloPivotId] = useState<number | null>(null);
     const [dealNotes, setDealNotes] = useState<string>('');
+
+    // Modal xác nhận Lãnh đạo đã duyệt chi phí cast
+    const [confirmApprovalItem, setConfirmApprovalItem] = useState<CampaignCreatorPivot | null>(null);
+    const [approverName, setApproverName] = useState<string>('');
+    const [approvalNotes, setApprovalNotes] = useState<string>('');
+    const [isConfirmingApproval, setIsConfirmingApproval] = useState<boolean>(false);
 
     // Inline edit fee
     const [editingFeeId, setEditingFeeId] = useState<number | null>(null);
@@ -226,6 +179,7 @@ export default function KocMatrixTable({
     const stageCounts = useMemo(() => {
         const counts = {
             all: items.length,
+            waiting_approval: 0,
             outreach: 0,
             shipping: 0,
             production: 0,
@@ -233,68 +187,116 @@ export default function KocMatrixTable({
         };
 
         items.forEach((item) => {
-            const st = item.status;
-            if (['new', 'contacted', 'agreed'].includes(st)) counts.outreach++;
-            if (['address_confirmed', 'sample_sent', 'sample_received'].includes(st)) counts.shipping++;
-            if (['sample_received', 'posted'].includes(st)) counts.production++;
-            if (['completed', 'declined', 'no_show'].includes(st)) counts.completion++;
+            if (item.status === 'waiting_approval') {
+                counts.waiting_approval += 1;
+            }
+            const stage = STATUS_DEFINITIONS[item.status]?.stage;
+            if (stage && stage in counts) {
+                counts[stage] += 1;
+            }
         });
 
         return counts;
     }, [items]);
 
-    // Lọc dữ liệu theo Stage, Tìm kiếm, Rủi ro và Nhân sự
+    // Lọc danh sách KOC theo đa tiêu chí
     const filteredItems = useMemo(() => {
-        return items.filter((item) => {
-            // Lọc theo Stage
-            if (currentStage === 'outreach' && !['new', 'contacted', 'agreed'].includes(item.status)) return false;
-            if (currentStage === 'shipping' && !['address_confirmed', 'sample_sent', 'sample_received'].includes(item.status)) return false;
-            if (currentStage === 'production' && !['sample_received', 'posted'].includes(item.status)) return false;
-            if (currentStage === 'completion' && !['completed', 'declined', 'no_show'].includes(item.status)) return false;
+        // Ưu tiên bộ lọc từ thông báo (focus_koc): Chỉ hiển thị đúng KOC cần xử lý
+        if (focusKocId) {
+            const focused = items.filter((item) => item.id === focusKocId);
+            if (focused.length > 0) {
+                return focused;
+            }
+        }
 
-            // Lọc theo Staff
-            if (selectedStaffFilter !== 'all') {
-                if (selectedStaffFilter === 'unassigned' && item.assigned_to) return false;
-                if (selectedStaffFilter !== 'unassigned' && String(item.assigned_to) !== selectedStaffFilter) return false;
+        return items.filter((item) => {
+            // Lọc theo Stage tab
+            if (currentStage === 'waiting_approval') {
+                if (item.status !== 'waiting_approval') return false;
+            } else if (currentStage !== 'all') {
+                const stage = STATUS_DEFINITIONS[item.status]?.stage;
+                if (stage !== currentStage) return false;
             }
 
-            // Lọc theo Risk Filter
-            if (riskFilter === 'overdue' && item.deadline_info?.status !== 'overdue') return false;
-            if (riskFilter === 'warning' && item.deadline_info?.status !== 'warning') return false;
-            if (riskFilter === 'missing_address' && Boolean(item.creator?.shipping_address)) return false;
-            if (riskFilter === 'no_phone' && Boolean(item.creator?.phone)) return false;
+            // Lọc theo Nhân viên phụ trách
+            if (selectedStaffFilter === 'unassigned') {
+                if (item.assigned_to !== null) return false;
+            } else if (selectedStaffFilter !== 'all') {
+                if (item.assigned_to !== parseInt(selectedStaffFilter, 10)) return false;
+            }
 
-            // Tìm kiếm Text
-            if (searchQuery.trim()) {
+            // Lọc theo Rủi ro
+            if (riskFilter === 'overdue') {
+                if (item.deadline_info?.status !== 'overdue') return false;
+            } else if (riskFilter === 'warning') {
+                if (item.deadline_info?.status !== 'warning') return false;
+            } else if (riskFilter === 'missing_address') {
+                if (Boolean(item.creator?.shipping_address?.trim())) return false;
+            } else if (riskFilter === 'no_phone') {
+                if (Boolean(item.creator?.phone?.trim())) return false;
+            }
+
+            // Lọc theo Từ khóa tìm kiếm
+            if (searchQuery.trim() !== '') {
                 const q = searchQuery.toLowerCase().trim();
-                const nameMatch = item.creator?.name?.toLowerCase().includes(q);
-                const phoneMatch = item.creator?.phone?.toLowerCase().includes(q);
-                const nicheMatch = item.creator?.niche?.toLowerCase().includes(q);
-                const handleMatch = item.creator?.accounts?.some((acc) =>
-                    acc.handle?.toLowerCase().includes(q)
-                );
-                if (!nameMatch && !phoneMatch && !nicheMatch && !handleMatch) return false;
+                const name = item.creator?.name?.toLowerCase() || '';
+                const phone = item.creator?.phone?.toLowerCase() || '';
+                const niche = item.creator?.niche?.toLowerCase() || '';
+                const tier = item.creator?.tier?.toLowerCase() || '';
+                const handle = item.creator?.accounts?.[0]?.handle?.toLowerCase() || '';
+
+                if (
+                    !name.includes(q) &&
+                    !phone.includes(q) &&
+                    !niche.includes(q) &&
+                    !tier.includes(q) &&
+                    !handle.includes(q)
+                ) {
+                    return false;
+                }
             }
 
             return true;
         });
     }, [items, currentStage, selectedStaffFilter, riskFilter, searchQuery]);
 
-    // Đếm số KOC chưa có địa chỉ trong số các KOC được chọn
-    const bulkMissingAddressCount = useMemo(() => {
-        return selectedIds.filter((id) => {
-            const item = items.find((c) => c.id === id);
-            return !item?.creator?.shipping_address?.trim();
-        }).length;
-    }, [selectedIds, items]);
+    // Virtual Scrolling
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
+    const [scrollTop, setScrollTop] = useState(0);
+    const ROW_HEIGHT = 72;
+    const OVERSCAN = 8;
+    const isVirtualEnabled = filteredItems.length > 30;
 
-    // Đếm số KOC chưa gửi mẫu trong số các KOC được chọn
-    const bulkNotSentCount = useMemo(() => {
-        return selectedIds.filter((id) => {
-            const item = items.find((c) => c.id === id);
-            return !item?.sample_sent_at && !['sample_sent', 'sample_received', 'posted', 'completed'].includes(item?.status || '');
-        }).length;
-    }, [selectedIds, items]);
+    const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+        setScrollTop(e.currentTarget.scrollTop);
+    };
+
+    useEffect(() => {
+        if (scrollContainerRef.current) {
+            scrollContainerRef.current.scrollTop = 0;
+            setScrollTop(0);
+        }
+    }, [currentStage, searchQuery, selectedStaffFilter, riskFilter]);
+
+    const { topPadding, bottomPadding, visibleItems } = useMemo(() => {
+        if (!isVirtualEnabled) {
+            return {
+                topPadding: 0,
+                bottomPadding: 0,
+                visibleItems: filteredItems,
+            };
+        }
+
+        const viewportHeight = 650;
+        const start = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+        const end = Math.min(filteredItems.length, Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN);
+
+        return {
+            topPadding: start * ROW_HEIGHT,
+            bottomPadding: Math.max(0, (filteredItems.length - end) * ROW_HEIGHT),
+            visibleItems: filteredItems.slice(start, end),
+        };
+    }, [filteredItems, scrollTop, isVirtualEnabled]);
 
     // Chọn / Bỏ chọn dòng
     const handleToggleSelect = (id: number) => {
@@ -333,20 +335,27 @@ export default function KocMatrixTable({
             : itemOrId;
         const pivotId = typeof itemOrId === 'number' ? itemOrId : itemOrId.id;
 
-        // RÀNG BUỘC NGHIỆP VỤ 1: Không thể chuyển sang "sample_sent" nếu chưa có địa chỉ nhận hàng
+        // Ràng buộc chi phí cast
+        const hasCastFee = parseFloat(String(item?.booking_fee || 0)) > 0;
+        const isCastApproved = Boolean(item?.approved_cost_at);
+        if (hasCastFee && !isCastApproved) {
+            if (['address_confirmed', 'sample_sent', 'sample_received', 'posted', 'completed'].includes(newStatus)) {
+                alert(`KOC ${item ? `[${item.creator.name}] ` : ''}có phát sinh chi phí cast (${formatCurrency(item?.booking_fee || 0)}) chưa được duyệt. Vui lòng bấm [Xác nhận Lãnh đạo đã duyệt] trước khi tiếp tục.`);
+                return;
+            }
+        }
+
+        // Ràng buộc địa chỉ khi chuyển sample_sent
         if (newStatus === 'sample_sent') {
             const hasAddress = Boolean(item?.creator?.shipping_address?.trim());
             if (!hasAddress) {
-                // Tự động mở Modal Gửi Mẫu kèm Form Nhập Nhanh Địa Chỉ
-                if (item) {
-                    handleOpenShipmentModal(item);
-                }
+                if (item) handleOpenShipmentModal(item);
                 showFeedback(`KOC ${item ? `[${item.creator.name}] ` : ''}chưa có địa chỉ nhận hàng. Vui lòng nhập địa chỉ trước khi xác nhận gửi mẫu.`);
                 return;
             }
         }
 
-        // RÀNG BUỘC NGHIỆP VỤ 2: Không thể chuyển sang "sample_received" hoặc "posted" nếu chưa gửi mẫu
+        // Ràng buộc gửi mẫu khi chuyển sample_received / posted
         if (['sample_received', 'posted'].includes(newStatus)) {
             const isSent = Boolean(item?.sample_sent_at) || ['sample_sent', 'sample_received', 'posted', 'completed'].includes(item?.status || '');
             if (!isSent) {
@@ -355,14 +364,11 @@ export default function KocMatrixTable({
             }
         }
 
-        // RÀNG BUỘC NGHIỆP VỤ 3: Không thể chuyển sang "posted" nếu chưa có link video
+        // Ràng buộc video khi chuyển posted
         if (newStatus === 'posted') {
             const hasVideo = Boolean((item?.content_posts && item.content_posts.length > 0) || (item?.contentPosts && item.contentPosts.length > 0));
             if (!hasVideo) {
-                // Tự động mở Modal Thêm Video để nhân viên điền link
-                if (item) {
-                    handleOpenVideoModal(item);
-                }
+                if (item) handleOpenVideoModal(item);
                 showFeedback(`KOC ${item ? `[${item.creator.name}] ` : ''}chưa có link video. Vui lòng nhập link video để chuyển sang trạng thái Đã lên video.`);
                 return;
             }
@@ -482,39 +488,98 @@ export default function KocMatrixTable({
         );
     };
 
-    // Copy danh sách số điện thoại đã chọn
+    // Sao chép danh sách SĐT KOC đã chọn
     const handleCopyPhones = () => {
         const phones = items
-            .filter((i) => selectedIds.includes(i.id) && i.creator?.phone)
-            .map((i) => i.creator.phone)
+            .filter((item) => selectedIds.includes(item.id))
+            .map((item) => item.creator.phone)
+            .filter(Boolean)
             .join(', ');
 
         if (!phones) {
-            alert('Các KOC đã chọn chưa có số điện thoại!');
+            alert('Các KOC đã chọn đều chưa có số điện thoại!');
             return;
         }
 
         navigator.clipboard.writeText(phones);
-        showFeedback(`Đã copy ${selectedIds.length} số điện thoại vào clipboard!`);
+        showFeedback(`Đã sao chép ${selectedIds.length} số điện thoại!`);
     };
 
-    // Chốt deal submit
+    // Chốt hợp tác với KOC (gửi form deal)
     const handleSubmitDeal = (e: React.FormEvent) => {
         e.preventDefault();
         if (!dealModalItem) return;
 
+        const fee = parseFloat(dealFee) || 0;
+        const targetStatus = fee > 0 ? 'waiting_approval' : 'agreed';
+
         router.patch(
-            route('campaigns.creators.quick-update', { id: campaign.id, pivotId: dealModalItem.id }),
+            route('pipeline.status.update', dealModalItem.id),
             {
-                status: 'agreed',
-                booking_fee: parseFloat(dealFee) || 0,
+                status: targetStatus,
+                booking_fee: fee,
                 notes: dealNotes,
             },
             {
                 preserveScroll: true,
                 onSuccess: () => {
                     setDealModalItem(null);
-                    showFeedback(`Đã chốt hợp tác với [${dealModalItem.creator.name}] thành công!`);
+                    showFeedback(
+                        fee > 0
+                            ? 'Đã lưu thỏa thuận & chuyển sang [Chờ duyệt chi phí]!'
+                            : 'Đã chốt hợp tác thành công!'
+                    );
+                },
+                onError: (err) => {
+                    alert(err.status || err.error || 'Không thể cập nhật hợp tác.');
+                },
+            }
+        );
+    };
+
+    // Xác nhận Lãnh đạo đã duyệt chi phí cast
+    const handleConfirmCastApproved = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!confirmApprovalItem) return;
+
+        setIsConfirmingApproval(true);
+        router.patch(
+            route('pipeline.cast.confirm', confirmApprovalItem.id),
+            {
+                approver_name: approverName.trim() || undefined,
+                approval_notes: approvalNotes.trim() || undefined,
+            },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setConfirmApprovalItem(null);
+                    setIsConfirmingApproval(false);
+                    showFeedback('Đã xác nhận phê duyệt chi phí cast! KOC đã chuyển sang [Đã chốt hợp tác].');
+                },
+                onError: (err) => {
+                    setIsConfirmingApproval(false);
+                    alert(err.error || 'Có lỗi xảy ra khi xác nhận phê duyệt.');
+                },
+            }
+        );
+    };
+
+    // Đàm phán lại mức phí
+    const handleReopenDeal = (item: CampaignCreatorPivot) => {
+        if (!window.confirm(`Đưa KOC [${item.creator.name}] về trạng thái [Đã liên hệ] để nhân viên thương thảo lại mức giá?`)) {
+            return;
+        }
+
+        router.patch(
+            route('pipeline.cast.reopen', item.id),
+            {},
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    showFeedback('Đã đưa KOC về trạng thái [Đã liên hệ] để đàm phán lại.');
+                },
+                onError: (err) => {
+                    alert(err.error || 'Có lỗi xảy ra.');
                 },
             }
         );
@@ -527,18 +592,22 @@ export default function KocMatrixTable({
         setShipmentDate(new Date().toISOString().split('T')[0]);
         setCopiedAddress(false);
 
-        // Khởi tạo các giá trị nhập nhanh từ Creator hiện tại
         setQuickAddress(item.creator?.shipping_address || '');
         setQuickCity(item.creator?.city_province || '');
         setQuickDistrict(item.creator?.district || '');
         setQuickWard(item.creator?.ward || '');
         setQuickPhone(item.creator?.phone || '');
 
-        // Tự động mở form nhập địa chỉ nếu Creator chưa có địa chỉ
-        setIsEditingAddress(!item.creator?.shipping_address?.trim());
+        const hasAllAddressFields = Boolean(
+            item.creator?.shipping_address?.trim() &&
+            item.creator?.phone?.trim() &&
+            item.creator?.city_province?.trim() &&
+            item.creator?.ward?.trim()
+        );
+        setIsEditingAddress(!hasAllAddressFields);
     };
 
-    // Sao chép thông tin nhận mẫu gửi cho bộ phận kho
+    // Sao chép thông tin nhận mẫu gửi kho
     const handleCopyWarehouseAddress = (item: CampaignCreatorPivot) => {
         const fullAddress = [
             item.creator.shipping_address,
@@ -556,14 +625,18 @@ export default function KocMatrixTable({
         setTimeout(() => setCopiedAddress(false), 2000);
     };
 
-    // Xác nhận gửi mẫu cho KOC (tinh giản: hỗ trợ nhập nhanh địa chỉ giao hàng)
+    // Xác nhận gửi mẫu cho KOC
     const handleSubmitShipment = (e: React.FormEvent) => {
         e.preventDefault();
         if (!shipmentModalItem) return;
 
         const effectiveAddress = (quickAddress.trim() || shipmentModalItem.creator?.shipping_address?.trim() || '');
-        if (!effectiveAddress) {
-            alert('Vui lòng nhập địa chỉ nhận hàng của KOC trước khi xác nhận gửi mẫu.');
+        const effectivePhone = (quickPhone.trim() || shipmentModalItem.creator?.phone?.trim() || '');
+        const effectiveCity = (quickCity.trim() || shipmentModalItem.creator?.city_province?.trim() || '');
+        const effectiveWard = (quickWard.trim() || shipmentModalItem.creator?.ward?.trim() || '');
+
+        if (!effectiveAddress || !effectivePhone || !effectiveCity || !effectiveWard) {
+            alert('Vui lòng nhập đầy đủ các thông tin bắt buộc: Số nhà/đường, Số điện thoại, Tỉnh/Thành phố và Phường/Xã trước khi xác nhận gửi mẫu.');
             return;
         }
 
@@ -643,212 +716,101 @@ export default function KocMatrixTable({
         );
     };
 
+    // Tính toán số KOC thiếu điều kiện khi bulk update
+    const bulkMissingAddressCount = useMemo(() => {
+        return items
+            .filter((item) => selectedIds.includes(item.id))
+            .filter((item) => !item.creator?.shipping_address?.trim()).length;
+    }, [items, selectedIds]);
+
+    const bulkNotSentCount = useMemo(() => {
+        return items
+            .filter((item) => selectedIds.includes(item.id))
+            .filter((item) => !item.sample_sent_at && !['sample_sent', 'sample_received', 'posted', 'completed'].includes(item.status)).length;
+    }, [items, selectedIds]);
+
     return (
         <div className="space-y-4 relative">
             {/* Toast Mini Feedback */}
             {feedbackMessage && (
-                <div className="fixed top-20 right-6 z-50 flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white shadow-xl animate-in fade-in slide-in-from-top-4">
+                <div className="fixed top-20 right-6 z-50 flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white shadow-xl animate-in fade-in slide-from-top-4">
                     <CheckCircle2 className="h-4 w-4 text-emerald-400" />
                     <span>{feedbackMessage}</span>
                 </div>
             )}
 
-            {/* PHẦN 1: BỘ CHUYỂN ĐỔI TAB 4 CHẶNG (STAGE FUNNEL TABS) */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5 p-1.5 rounded-2xl bg-slate-100/80 border border-slate-200">
-                <button
-                    type="button"
-                    onClick={() => setCurrentStage('all')}
-                    className={`flex flex-col items-start px-3.5 py-2.5 rounded-xl text-left transition-all ${currentStage === 'all'
-                            ? 'bg-white shadow-sm ring-1 ring-slate-200 text-slate-900'
-                            : 'text-slate-600 hover:bg-white/50'
-                        }`}
-                >
-                    <div className="flex items-center justify-between w-full">
-                        <span className="text-xs font-semibold">Tất Cả KOC</span>
-                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${currentStage === 'all' ? 'bg-primary-100 text-primary-700' : 'bg-slate-200 text-slate-600'}`}>
-                            {stageCounts.all}
-                        </span>
+            {/* Banner Lọc Theo Thông Báo (Focus Notification KOC) */}
+            {focusedItem && focusKocId && (
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-2xl border border-primary-200 bg-gradient-to-r from-primary-50 via-indigo-50/50 to-white p-4 shadow-sm animate-in fade-in slide-in-from-top-1 duration-200">
+                    <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-600 text-white shadow-xs">
+                            <Sparkles className="h-5 w-5" />
+                        </div>
+                        <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-xs font-bold text-slate-700">Đang lọc theo thông báo:</span>
+                                <span className="inline-flex items-center rounded-lg bg-primary-600 px-2.5 py-0.5 text-xs font-extrabold text-white shadow-2xs">
+                                    {focusedItem.creator?.name}
+                                </span>
+                                <span className="rounded-md bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 border border-slate-200">
+                                    {STATUS_DEFINITIONS[focusedItem.status]?.label || focusedItem.status}
+                                </span>
+                            </div>
+                            <p className="text-[12px] text-slate-500 mt-0.5">
+                                Hệ thống chỉ hiển thị đúng KOC trong thông báo để bạn thao tác nhanh mà không cần tìm kiếm lại.
+                            </p>
+                        </div>
                     </div>
-                    <span className="text-[11px] text-slate-400 mt-1">Toàn bộ danh sách</span>
-                </button>
-
-                <button
-                    type="button"
-                    onClick={() => setCurrentStage('outreach')}
-                    className={`flex flex-col items-start px-3.5 py-2.5 rounded-xl text-left transition-all ${currentStage === 'outreach'
-                            ? 'bg-white shadow-sm ring-1 ring-indigo-200 text-indigo-900'
-                            : 'text-slate-600 hover:bg-white/50'
-                        }`}
-                >
-                    <div className="flex items-center justify-between w-full">
-                        <span className="text-xs font-semibold flex items-center gap-1.5">
-                            <span className="h-2 w-2 rounded-full bg-blue-500" />
-                            1. Tiếp Cận & Chốt
-                        </span>
-                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${currentStage === 'outreach' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-600'}`}>
-                            {stageCounts.outreach}
-                        </span>
-                    </div>
-                    <span className="text-[11px] text-slate-400 mt-1">Mới ➔ Liên hệ ➔ Chốt</span>
-                </button>
-
-                <button
-                    type="button"
-                    onClick={() => setCurrentStage('shipping')}
-                    className={`flex flex-col items-start px-3.5 py-2.5 rounded-xl text-left transition-all ${currentStage === 'shipping'
-                            ? 'bg-white shadow-sm ring-1 ring-amber-200 text-amber-900'
-                            : 'text-slate-600 hover:bg-white/50'
-                        }`}
-                >
-                    <div className="flex items-center justify-between w-full">
-                        <span className="text-xs font-semibold flex items-center gap-1.5">
-                            <span className="h-2 w-2 rounded-full bg-amber-500" />
-                            2. Địa Chỉ & Gửi Mẫu
-                        </span>
-                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${currentStage === 'shipping' ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-600'}`}>
-                            {stageCounts.shipping}
-                        </span>
-                    </div>
-                    <span className="text-[11px] text-slate-400 mt-1">Địa chỉ ➔ Gửi ➔ Đã nhận</span>
-                </button>
-
-                <button
-                    type="button"
-                    onClick={() => setCurrentStage('production')}
-                    className={`flex flex-col items-start px-3.5 py-2.5 rounded-xl text-left transition-all ${currentStage === 'production'
-                            ? 'bg-white shadow-sm ring-1 ring-purple-200 text-purple-900'
-                            : 'text-slate-600 hover:bg-white/50'
-                        }`}
-                >
-                    <div className="flex items-center justify-between w-full">
-                        <span className="text-xs font-semibold flex items-center gap-1.5">
-                            <span className="h-2 w-2 rounded-full bg-purple-500" />
-                            3. Sản Xuất & Video
-                        </span>
-                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${currentStage === 'production' ? 'bg-purple-100 text-purple-800' : 'bg-slate-200 text-slate-600'}`}>
-                            {stageCounts.production}
-                        </span>
-                    </div>
-                    <span className="text-[11px] text-slate-400 mt-1">Hạn {campaign.video_deadline_days || 7} ngày ➔ Lên video</span>
-                </button>
-
-                <button
-                    type="button"
-                    onClick={() => setCurrentStage('completion')}
-                    className={`flex flex-col items-start px-3.5 py-2.5 rounded-xl text-left transition-all col-span-2 md:col-span-1 ${currentStage === 'completion'
-                            ? 'bg-white shadow-sm ring-1 ring-emerald-200 text-emerald-900'
-                            : 'text-slate-600 hover:bg-white/50'
-                        }`}
-                >
-                    <div className="flex items-center justify-between w-full">
-                        <span className="text-xs font-semibold flex items-center gap-1.5">
-                            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                            4. Hoàn Tất & Ngoại Lệ
-                        </span>
-                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${currentStage === 'completion' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'}`}>
-                            {stageCounts.completion}
-                        </span>
-                    </div>
-                    <span className="text-[11px] text-slate-400 mt-1">Nghiệm thu / Từ chối / Bom</span>
-                </button>
-            </div>
-
-            {/* PHẦN 2: BỘ LỌC TÌM KIẾM & BỘ LỌC RỦI RO (RISK FILTER PILLS) */}
-            <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
-                {/* Search Bar */}
-                <div className="relative flex-1 min-w-[240px]">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                    <input
-                        type="text"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Tìm KOC theo tên, SĐT, kênh TikTok, Niche..."
-                        className="w-full pl-9 pr-4 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500 focus:border-transparent placeholder:text-slate-400"
-                    />
-                    {searchQuery && (
-                        <button
-                            type="button"
-                            onClick={() => setSearchQuery('')}
-                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                        >
-                            <X className="h-3.5 w-3.5" />
-                        </button>
-                    )}
+                    <button
+                        type="button"
+                        onClick={handleClearFocusKoc}
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors shadow-2xs cursor-pointer"
+                    >
+                        <X className="h-4 w-4 text-slate-500" />
+                        <span>Xem toàn bộ ({items.length} KOC)</span>
+                    </button>
                 </div>
+            )}
 
-                {/* Filter Pills */}
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 text-xs">
-                    <button
-                        type="button"
-                        onClick={() => setRiskFilter('all')}
-                        className={`px-2.5 py-1 rounded-lg font-medium transition-colors whitespace-nowrap ${riskFilter === 'all'
-                                ? 'bg-slate-900 text-white'
-                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                            }`}
-                    >
-                        Tất cả rủi ro
-                    </button>
+            {/* BỘ LỌC TÌM KIẾM, PHÂN ĐOÀN VÀ RỦI RO */}
+            <KocMatrixFilterBar
+                currentStage={currentStage}
+                onStageChange={(st) => {
+                    if (focusKocId) handleClearFocusKoc();
+                    setCurrentStage(st);
+                }}
+                stageCounts={stageCounts}
+                searchQuery={searchQuery}
+                onSearchChange={(q) => {
+                    if (focusKocId) handleClearFocusKoc();
+                    setSearchQuery(q);
+                }}
+                riskFilter={riskFilter}
+                onRiskFilterChange={(rf) => {
+                    if (focusKocId) handleClearFocusKoc();
+                    setRiskFilter(rf);
+                }}
+                selectedStaffFilter={selectedStaffFilter}
+                onStaffFilterChange={(sf) => {
+                    if (focusKocId) handleClearFocusKoc();
+                    setSelectedStaffFilter(sf);
+                }}
+                staffUsers={staffUsers}
+                videoDeadlineDays={campaign.video_deadline_days}
+                isVirtualEnabled={isVirtualEnabled}
+                visibleCount={visibleItems.length}
+                filteredCount={filteredItems.length}
+            />
 
-                    <button
-                        type="button"
-                        onClick={() => setRiskFilter('overdue')}
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg font-medium transition-colors whitespace-nowrap ${riskFilter === 'overdue'
-                                ? 'bg-rose-600 text-white'
-                                : 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200/60'
-                            }`}
-                    >
-                        <Clock className="h-3 w-3" />
-                        Quá hạn video
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={() => setRiskFilter('warning')}
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg font-medium transition-colors whitespace-nowrap ${riskFilter === 'warning'
-                                ? 'bg-amber-600 text-white'
-                                : 'bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200/60'
-                            }`}
-                    >
-                        <AlertTriangle className="h-3 w-3" />
-                        Sắp đến hạn (&le; 2 ngày)
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={() => setRiskFilter('missing_address')}
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg font-medium transition-colors whitespace-nowrap ${riskFilter === 'missing_address'
-                                ? 'bg-indigo-600 text-white'
-                                : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200/60'
-                            }`}
-                    >
-                        <Package className="h-3 w-3" />
-                        Chưa có địa chỉ
-                    </button>
-
-                    {/* Filter Nhân viên */}
-                    <div className="border-l border-slate-200 pl-2 ml-1">
-                        <select
-                            value={selectedStaffFilter}
-                            onChange={(e) => setSelectedStaffFilter(e.target.value)}
-                            className="py-1 pl-2 pr-7 rounded-lg border border-slate-200 text-xs bg-slate-50 text-slate-700 focus:ring-1 focus:ring-primary-500 cursor-pointer"
-                        >
-                            <option value="all">Tất cả nhân sự</option>
-                            <option value="unassigned">Chưa phân công</option>
-                            {staffUsers.map((u) => (
-                                <option key={u.id} value={u.id}>
-                                    {u.name}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                </div>
-            </div>
-
-            {/* PHẦN 3: BẢNG DỮ LIỆU TIẾN ĐỘ 1-CHẠM (INTERACTIVE PROGRESS MATRIX) */}
+            {/* BẢNG DỮ LIỆU TIẾN ĐỘ MA TRẬN KOC */}
             <div className="rounded-2xl border border-slate-200 bg-white shadow-xs overflow-hidden">
-                <div className="overflow-x-auto min-h-[300px]">
+                <div
+                    ref={scrollContainerRef}
+                    onScroll={handleScroll}
+                    className="overflow-x-auto overflow-y-auto max-h-[680px] min-h-[300px]"
+                >
                     <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
-                        <thead className="bg-slate-50/90 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                        <thead className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur-xs text-[11px] font-bold uppercase tracking-wider text-slate-500 shadow-xs">
                             <tr>
                                 <th className="w-10 px-4 py-3.5 text-center">
                                     <input
@@ -874,487 +836,86 @@ export default function KocMatrixTable({
                         </thead>
 
                         <tbody className="divide-y divide-slate-100">
+                            {topPadding > 0 && (
+                                <tr style={{ height: `${topPadding}px` }} aria-hidden="true">
+                                    <td colSpan={10} className="p-0 border-0" />
+                                </tr>
+                            )}
                             {filteredItems.length > 0 ? (
-                                filteredItems.map((item) => {
-                                    const isSelected = selectedIds.includes(item.id);
-                                    const creator = item.creator;
-                                    const mainAccount = creator?.accounts?.[0];
-                                    const statusDef = STATUS_DEFINITIONS[item.status] || {
-                                        label: item.status,
-                                        stage: 'outreach',
-                                        badge: 'default',
-                                    };
-
-                                    return (
-                                        <tr
-                                            key={item.id}
-                                            className={`transition-colors hover:bg-slate-50/80 ${isSelected ? 'bg-primary-50/30' : ''
-                                                }`}
-                                        >
-                                            {/* Checkbox */}
-                                            <td className="px-4 py-3.5 text-center">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={isSelected}
-                                                    onChange={() => handleToggleSelect(item.id)}
-                                                    className="rounded border-slate-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
-                                                />
-                                            </td>
-
-                                            {/* Creator Info */}
-                                            <td className="px-4 py-3.5">
-                                                <div className="flex items-center gap-2.5">
-                                                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-100 font-bold text-primary-700 text-xs shadow-2xs">
-                                                        {creator?.name?.charAt(0).toUpperCase()}
-                                                    </div>
-                                                    <div>
-                                                        <div className="flex items-center gap-1.5">
-                                                            <Link
-                                                                href={route('creators.show', item.creator_id)}
-                                                                className="font-bold text-slate-900 hover:text-primary-600 transition-colors"
-                                                            >
-                                                                {creator?.name}
-                                                            </Link>
-                                                            <span className="text-[10px] px-1.5 py-0.2 rounded font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-                                                                {creator?.tier?.toUpperCase()}
-                                                            </span>
-                                                        </div>
-
-                                                        <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5">
-                                                            <span>{creator?.phone || 'Chưa có SĐT'}</span>
-                                                            {mainAccount && (
-                                                                <>
-                                                                    <span>•</span>
-                                                                    <span className="text-primary-600 font-medium">
-                                                                        @{mainAccount.handle}
-                                                                    </span>
-                                                                </>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </td>
-
-                                            {/* Trạng thái tiến độ với Dropdown chuyển nhanh */}
-                                            <td className="px-4 py-3.5">
-                                                <div className="relative inline-block">
-                                                    <select
-                                                        value={item.status}
-                                                        onChange={(e) =>
-                                                            handleQuickStatusChange(item, e.target.value)
-                                                        }
-                                                        className="py-1 pl-2.5 pr-7 text-xs font-semibold rounded-lg border border-slate-200 bg-white text-slate-800 shadow-2xs cursor-pointer focus:ring-2 focus:ring-primary-500 hover:border-slate-300"
-                                                    >
-                                                        {Object.entries(STATUS_DEFINITIONS).map(([stKey, stVal]) => {
-                                                            const isMissingAddressForSent = stKey === 'sample_sent' && !item.creator?.shipping_address?.trim();
-                                                            const isSent = Boolean(item.sample_sent_at) || ['sample_sent', 'sample_received', 'posted', 'completed'].includes(item.status);
-                                                            const cannotReceiveOrPostYet = ['sample_received', 'posted'].includes(stKey) && !isSent;
-                                                            const hasVideo = Boolean((item.content_posts && item.content_posts.length > 0) || (item.contentPosts && item.contentPosts.length > 0));
-                                                            const isMissingVideoForPosted = stKey === 'posted' && !hasVideo;
-
-                                                            return (
-                                                                <option
-                                                                    key={stKey}
-                                                                    value={stKey}
-                                                                    disabled={cannotReceiveOrPostYet}
-                                                                >
-                                                                    {stVal.label}
-                                                                    {isMissingAddressForSent ? ' ⚠️ (Thiếu Đ/c)' : ''}
-                                                                    {cannotReceiveOrPostYet ? ' ⛔ (Chưa gửi mẫu)' : ''}
-                                                                    {!cannotReceiveOrPostYet && isMissingVideoForPosted ? ' 🔗 (Cần link video)' : ''}
-                                                                </option>
-                                                            );
-                                                        })}
-                                                    </select>
-                                                </div>
-                                            </td>
-
-                                            {/* Hạn Video (Deadline đếm ngược) */}
-                                            <td className="px-4 py-3.5">
-                                                {item.deadline_info ? (
-                                                    <span
-                                                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold ${item.deadline_info.status === 'overdue'
-                                                                ? 'bg-rose-100 text-rose-800 animate-pulse'
-                                                                : item.deadline_info.status === 'warning'
-                                                                    ? 'bg-amber-100 text-amber-800'
-                                                                    : 'bg-emerald-50 text-emerald-700'
-                                                            }`}
-                                                    >
-                                                        <Clock className="h-3 w-3" />
-                                                        {item.deadline_info.text}
-                                                    </span>
-                                                ) : item.sample_sent_at && !item.sample_received_at ? (
-                                                    <span className="text-[11px] text-amber-600 font-medium flex items-center gap-1">
-                                                        <Truck className="h-3 w-3" />
-                                                        Đang giao hàng
-                                                    </span>
-                                                ) : ['posted', 'completed'].includes(item.status) ? (
-                                                    <span className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1">
-                                                        <CheckCircle2 className="h-3 w-3" />
-                                                        Đã lên video
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-[11px] text-slate-400 italic">
-                                                        Chưa nhận mẫu
-                                                    </span>
-                                                )}
-                                            </td>
-
-                                            {/* Gửi Mẫu KOC (Hỗ trợ xác nhận gửi mẫu tinh giản) */}
-                                            <td className="px-4 py-3.5">
-                                                {(() => {
-                                                    const isSent = Boolean(item.sample_sent_at) || ['sample_sent', 'sample_received', 'posted', 'completed'].includes(item.status);
-
-                                                    return (
-                                                        <div className="flex flex-col gap-1 items-start">
-                                                            <div className="flex items-center gap-1.5">
-                                                                    {
-                                                                        isSent?(
-                                                                    <button
-                                                                        type = "button"
-                                                                        onClick = {() => handleOpenShipmentModal(item)}
-                                                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200/60 hover:bg-amber-100 transition-colors"
-                                                                title="Xem thông tin hoặc gửi lại"
-                                                                    >
-                                                                <Package className="h-3 w-3" />
-                                                                <span>Đã gửi mẫu</span>
-                                                            </button>
-                                                            ) : (
-                                                            <span className="text-[11px] text-slate-400 italic">Chưa gửi</span>
-                                                                )}
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleOpenShipmentModal(item)}
-                                                                className="p-1 rounded-md bg-slate-100 hover:bg-amber-100 text-slate-600 hover:text-amber-800 transition-colors"
-                                                                title="Xác nhận gửi mẫu cho KOC"
-                                                            >
-                                                                <Plus className="h-3 w-3" />
-                                                            </button>
-                                                        </div>
-                                                                {item.sample_sent_at && (
-                                                                    <span className="text-[10px] text-slate-500 truncate max-w-[130px]">
-                                                                        Ngày {formatDate(item.sample_sent_at)}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        );
-                                                    })()}
-                                            </td>
-
-                                            {/* Video Đã Lên (Hỗ trợ 1 KOC nhiều video) */}
-                                            <td className="px-4 py-3.5">
-                                                {(() => {
-                                                    const posts = item.content_posts || item.contentPosts || [];
-                                                    const count = posts.length;
-                                                    const latest = count > 0 ? posts[posts.length - 1] : null;
-                                                    const isSent = Boolean(item.sample_sent_at) || ['sample_sent', 'sample_received', 'posted', 'completed'].includes(item.status);
-
-                                                    return (
-                                                        <div className="flex flex-col gap-1 items-start">
-                                                            <div className="flex items-center gap-1.5">
-                                                                {count > 0 ? (
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleOpenVideoModal(item)}
-                                                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-purple-50 text-purple-800 border border-purple-200/60 hover:bg-purple-100 transition-colors"
-                                                                        title="Xem chi tiết các video đã lên"
-                                                                    >
-                                                                        <Video className="h-3 w-3" />
-                                                                        <span>{count} video</span>
-                                                                    </button>
-                                                                ) : (
-                                                                    <span className="text-[11px] text-slate-400 italic">Chưa lên</span>
-                                                                )}
-                                                                {isSent && (
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleOpenVideoModal(item)}
-                                                                        className="p-1 rounded-md bg-slate-100 hover:bg-purple-100 text-slate-600 hover:text-purple-800 transition-colors"
-                                                                        title="Thêm link video mới"
-                                                                    >
-                                                                        <Plus className="h-3 w-3" />
-                                                                    </button>
-                                                                )}
-                                                            </div>
-                                                            {latest && latest.post_url && (
-                                                                <div className="flex flex-col gap-0.5 items-start">
-                                                                    <a
-                                                                        href={latest.post_url}
-                                                                        target="_blank"
-                                                                        rel="noreferrer"
-                                                                        className="inline-flex items-center gap-0.5 text-[10px] text-primary-600 hover:text-primary-800 font-medium truncate max-w-[120px]"
-                                                                        title={latest.video_title || latest.post_url}
-                                                                    >
-                                                                        <span>Xem video</span>
-                                                                        <ExternalLink className="h-2.5 w-2.5" />
-                                                                    </a>
-                                                                    {latest.benchmark && (
-                                                                        <span
-                                                                            title={`Lượt xem: ${(latest.views_count || 0).toLocaleString('vi-VN')} / TB kênh: ${latest.benchmark.average_channel_views.toLocaleString('vi-VN')}`}
-                                                                            className={`inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[9px] font-semibold border ${
-                                                                                latest.benchmark.status === 'viral'
-                                                                                    ? 'bg-purple-50 text-purple-700 border-purple-200'
-                                                                                    : latest.benchmark.status === 'exceeded'
-                                                                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                                                                    : latest.benchmark.status === 'expected'
-                                                                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                                                                    : latest.benchmark.status === 'below'
-                                                                                    ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                                                                    : 'bg-rose-50 text-rose-700 border-rose-200'
-                                                                            }`}
-                                                                        >
-                                                                            {latest.benchmark.label}
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    );
-                                                })()}
-                                            </td>
-
-                                            {/* Phí Booking (Inline Edit) */}
-                                            <td className="px-4 py-3.5">
-                                                {editingFeeId === item.id ? (
-                                                    <div className="flex items-center gap-1">
-                                                        <input
-                                                            type="number"
-                                                            value={tempFeeValue}
-                                                            onChange={(e) => setTempFeeValue(e.target.value)}
-                                                            onKeyDown={(e) => {
-                                                                if (e.key === 'Enter') handleSaveInlineFee(item.id);
-                                                                if (e.key === 'Escape') setEditingFeeId(null);
-                                                            }}
-                                                            autoFocus
-                                                            className="w-24 px-1.5 py-0.5 text-xs rounded border border-primary-500 focus:outline-hidden"
-                                                        />
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleSaveInlineFee(item.id)}
-                                                            className="p-1 rounded bg-emerald-600 text-white hover:bg-emerald-700"
-                                                        >
-                                                            <Check className="h-3 w-3" />
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setEditingFeeId(null)}
-                                                            className="p-1 rounded bg-slate-200 text-slate-600 hover:bg-slate-300"
-                                                        >
-                                                            <X className="h-3 w-3" />
-                                                        </button>
-                                                    </div>
-                                                ) : (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            setEditingFeeId(item.id);
-                                                            setTempFeeValue(String(item.booking_fee || 0));
-                                                        }}
-                                                        className="group flex items-center gap-1 font-bold text-slate-900 hover:text-primary-600"
-                                                        title="Bấm để sửa nhanh phí booking"
-                                                    >
-                                                        <span>{formatCurrency(item.booking_fee)}</span>
-                                                        <Edit3 className="h-3 w-3 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                                    </button>
-                                                )}
-                                            </td>
-
-                                            {/* Phụ trách (Inline Dropdown) */}
-                                            <td className="px-4 py-3.5">
-                                                <select
-                                                    value={item.assigned_to || ''}
-                                                    onChange={(e) => handleInlineAssign(item.id, e.target.value)}
-                                                    className="w-full max-w-[130px] py-0.5 px-1.5 text-[11px] rounded border border-slate-200 bg-slate-50/60 text-slate-700 focus:ring-1 focus:ring-primary-500 cursor-pointer"
+                                visibleItems.map((item) => (
+                                    <KocMatrixRow
+                                        key={item.id}
+                                        item={item}
+                                        isSelected={selectedIds.includes(item.id)}
+                                        isFocused={focusKocId === item.id}
+                                        onToggleSelect={handleToggleSelect}
+                                        staffUsers={staffUsers}
+                                        onInlineAssign={handleInlineAssign}
+                                        editingFeeId={editingFeeId}
+                                        tempFeeValue={tempFeeValue}
+                                        onStartEditFee={(id, currentFee) => {
+                                            setEditingFeeId(id);
+                                            setTempFeeValue(String(currentFee || 0));
+                                        }}
+                                        onTempFeeChange={setTempFeeValue}
+                                        onSaveInlineFee={handleSaveInlineFee}
+                                        onCancelEditFee={() => setEditingFeeId(null)}
+                                        onOpenDealModal={(it) => {
+                                            setDealModalItem(it);
+                                            setDealFee(String(it.booking_fee || 0));
+                                            setDealNotes(it.notes || '');
+                                        }}
+                                        onOpenConfirmApprovalModal={(it) => {
+                                            setConfirmApprovalItem(it);
+                                            setApproverName(it.approver_name || '');
+                                            setApprovalNotes(it.approval_notes || '');
+                                        }}
+                                        onReopenDeal={handleReopenDeal}
+                                        onCopyPortal={handleCopyPortal}
+                                        copiedToken={copiedToken}
+                                        onQuickStatusChange={handleQuickStatusChange}
+                                        onOpenShipmentModal={handleOpenShipmentModal}
+                                        onOpenVideoModal={handleOpenVideoModal}
+                                        onOpenZalo={handleOpenZalo}
+                                        onRemoveCreator={handleRemoveCreator}
+                                        formatCurrency={formatCurrency}
+                                        formatDate={formatDate}
+                                    />
+                                ))
+                            ) : items.length === 0 ? (
+                                <tr>
+                                    <td colSpan={10} className="py-14 text-center">
+                                        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-primary-600 mb-3 shadow-inner">
+                                            <Users className="h-7 w-7" />
+                                        </div>
+                                        <h3 className="text-base font-bold text-slate-800">
+                                            Chiến dịch này chưa có KOC nào
+                                        </h3>
+                                        <p className="text-xs text-slate-500 max-w-md mx-auto mt-1 mb-5">
+                                            Hãy bắt đầu quy trình bằng cách chọn các KOC mục tiêu từ kho dữ liệu CRM hoặc gán toàn bộ KOC khả dụng vào chiến dịch.
+                                        </p>
+                                        <div className="flex items-center justify-center gap-3">
+                                            <Button
+                                                variant="secondary"
+                                                size="sm"
+                                                onClick={() => onOpenAddModal(false)}
+                                                iconLeft={<Plus className="h-4 w-4" />}
+                                            >
+                                                Chọn KOC từ kho CRM
+                                            </Button>
+                                            {totalAvailableCount > 0 && (
+                                                <Button
+                                                    variant="primary"
+                                                    size="sm"
+                                                    onClick={() => onOpenAddModal(true)}
+                                                    iconLeft={<Database className="h-4 w-4" />}
                                                 >
-                                                    <option value="">-- Chưa gán --</option>
-                                                    {staffUsers.map((u) => (
-                                                        <option key={u.id} value={u.id}>
-                                                            {u.name}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            </td>
-
-                                            {/* Cổng Portal Tự Điền */}
-                                            <td className="px-4 py-3.5">
-                                                {item.portal_token ? (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleCopyPortal(item.portal_token)}
-                                                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50 shadow-2xs transition-colors"
-                                                        title="Sao chép link gửi cho Creator qua Zalo"
-                                                    >
-                                                        {copiedToken === item.portal_token ? (
-                                                            <Check className="h-3 w-3 text-emerald-600" />
-                                                        ) : (
-                                                            <Copy className="h-3 w-3 text-slate-500" />
-                                                        )}
-                                                        <span>
-                                                            {copiedToken === item.portal_token ? 'Đã chép!' : 'Copy Link'}
-                                                        </span>
-                                                    </button>
-                                                ) : (
-                                                    <span className="text-[11px] text-slate-400 italic">Chưa có link</span>
-                                                )}
-                                            </td>
-
-                                            {/* NÚT THAO TÁC 1-CHẠM THÔNG MINH (SMART ACTION PILLS) */}
-                                            <td className="px-4 py-3.5 text-right">
-                                                <div className="flex items-center justify-end gap-1.5">
-                                                    {/* KOC MỚI THÊM: Mở Zalo Tiếp Cận */}
-                                                    {item.status === 'new' && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleOpenZalo(item)}
-                                                            className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 shadow-2xs transition-all active:scale-95"
-                                                        >
-                                                            <MessageCircle className="h-3.5 w-3.5" />
-                                                            <span>Mở Zalo Tiếp Cận</span>
-                                                        </button>
-                                                    )}
-
-                                                    {/* ĐÃ LIÊN HỆ: Chốt Hợp Tác */}
-                                                    {item.status === 'contacted' && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setDealModalItem(item);
-                                                                setDealFee(String(item.booking_fee || 0));
-                                                                setDealNotes(item.notes || '');
-                                                            }}
-                                                            className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 shadow-2xs transition-all active:scale-95"
-                                                        >
-                                                            <Sparkles className="h-3.5 w-3.5" />
-                                                            <span>Chốt Hợp Tác</span>
-                                                        </button>
-                                                    )}
-
-                                                    {/* ĐÃ CHỐT HỢP TÁC: Chép Link Portal hoặc Đã Có Địa Chỉ */}
-                                                    {item.status === 'agreed' && (
-                                                        <div className="flex items-center gap-1">
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleCopyPortal(item.portal_token)}
-                                                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200"
-                                                                title="Chép link portal gửi cho bạn KOC điền địa chỉ"
-                                                            >
-                                                                <Copy className="h-3 w-3" />
-                                                                <span>Gửi Portal</span>
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() =>
-                                                                    handleQuickStatusChange(
-                                                                        item.id,
-                                                                        'address_confirmed'
-                                                                    )
-                                                                }
-                                                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-cyan-600 text-white hover:bg-cyan-700 shadow-2xs"
-                                                            >
-                                                                <Check className="h-3 w-3" />
-                                                                <span>Đã Có Đ/C</span>
-                                                            </button>
-                                                        </div>
-                                                    )}
-
-                                                    {/* ĐÃ CHỐT ĐỊA CHỈ: Mở Modal Xác Nhận Gửi Mẫu & Copy Thông Tin Kho */}
-                                                    {item.status === 'address_confirmed' && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleOpenShipmentModal(item)}
-                                                            className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold bg-amber-600 text-white hover:bg-amber-700 shadow-2xs transition-all active:scale-95"
-                                                        >
-                                                            <Package className="h-3.5 w-3.5" />
-                                                            <span>Xác Nhận Gửi Mẫu</span>
-                                                        </button>
-                                                    )}
-
-                                                    {/* ĐÃ GỬI MẪU: Báo Đã Nhận Hàng (Kích hoạt đếm ngược hạn ngày) */}
-                                                    {item.status === 'sample_sent' && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() =>
-                                                                handleQuickStatusChange(item.id, 'sample_received')
-                                                            }
-                                                            className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold bg-purple-600 text-white hover:bg-purple-700 shadow-2xs transition-all active:scale-95"
-                                                        >
-                                                            <Truck className="h-3.5 w-3.5" />
-                                                            <span>Đã Nhận Mẫu</span>
-                                                        </button>
-                                                    )}
-
-                                                    {/* ĐÃ NHẬN MẪU: Đang làm video -> Bấm Điền Link Video để chuyển Đã Lên Video */}
-                                                    {item.status === 'sample_received' && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleOpenVideoModal(item)}
-                                                            className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold bg-pink-600 text-white hover:bg-pink-700 shadow-2xs transition-all active:scale-95"
-                                                            title="Điền link video để chuyển sang trạng thái Đã lên video"
-                                                        >
-                                                            <Video className="h-3.5 w-3.5" />
-                                                            <span>Điền Link Video</span>
-                                                        </button>
-                                                    )}
-
-                                                    {/* ĐÃ LÊN VIDEO: Duyệt Nghiệm Thu */}
-                                                    {item.status === 'posted' && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() =>
-                                                                handleQuickStatusChange(item.id, 'completed')
-                                                            }
-                                                            className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 shadow-2xs transition-all active:scale-95"
-                                                        >
-                                                            <CheckCircle2 className="h-3.5 w-3.5" />
-                                                            <span>Nghiệm Thu</span>
-                                                        </button>
-                                                    )}
-
-                                                    {/* HOÀN TẤT */}
-                                                    {item.status === 'completed' && (
-                                                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-100 text-emerald-800">
-                                                            <CheckCircle2 className="h-3.5 w-3.5" />
-                                                            <span>Xong</span>
-                                                        </span>
-                                                    )}
-
-                                                    {/* NGOẠI LỆ: Từ chối / Bom hàng */}
-                                                    {['declined', 'no_show'].includes(item.status) && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleQuickStatusChange(item.id, 'new')}
-                                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200"
-                                                        >
-                                                            <span>Khôi phục</span>
-                                                        </button>
-                                                    )}
-
-                                                    {/* Nút Nhắc Zalo Thông Minh */}
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleOpenZalo(item)}
-                                                        className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-blue-600 hover:bg-blue-50/50 shadow-2xs transition-colors"
-                                                        title="Nhắc việc Zalo 1-chạm thông minh"
-                                                    >
-                                                        <MessageCircle className="h-3.5 w-3.5" />
-                                                    </button>
-
-                                                    {/* Nút Xóa (cho Mới thêm, Đã liên hệ hoặc Từ chối) */}
-                                                    {['new', 'contacted', 'declined'].includes(item.status) && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleRemoveCreator(item.id, creator?.name)}
-                                                            className="p-1 rounded text-slate-400 hover:text-rose-600 transition-colors"
-                                                            title="Xóa khỏi chiến dịch"
-                                                        >
-                                                            <Trash2 className="h-3.5 w-3.5" />
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    );
-                                })
+                                                    Gán Toàn Bộ Kho ({totalAvailableCount} KOC)
+                                                </Button>
+                                            )}
+                                        </div>
+                                    </td>
+                                </tr>
                             ) : (
                                 <tr>
                                     <td colSpan={10} className="py-12 text-center text-slate-400">
@@ -1368,701 +929,135 @@ export default function KocMatrixTable({
                                     </td>
                                 </tr>
                             )}
+                            {bottomPadding > 0 && (
+                                <tr style={{ height: `${bottomPadding}px` }} aria-hidden="true">
+                                    <td colSpan={10} className="p-0 border-0" />
+                                </tr>
+                            )}
                         </tbody>
                     </table>
                 </div>
 
                 {/* Footer Bảng */}
                 <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50/70 px-4 py-2.5 text-xs text-slate-500">
-                    <div>
-                        Hiển thị <span className="font-bold text-slate-800">{filteredItems.length}</span> / {items.length} KOC
+                    <div className="flex items-center gap-2">
+                        {isVirtualEnabled && (
+                            <span className="text-[11px] text-emerald-700 font-medium bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                ⚡ DOM ảo: {visibleItems.length}/{filteredItems.length} hàng
+                            </span>
+                        )}
+                        <span>
+                            Tổng: <span className="font-bold text-slate-800">{filteredItems.length}</span> / {items.length} KOC
+                        </span>
                     </div>
                     <div className="flex items-center gap-2">
                         <Button
                             variant="secondary"
                             size="sm"
-                            onClick={onOpenAddModal}
+                            onClick={() => onOpenAddModal(false)}
                             iconLeft={<Users className="h-3.5 w-3.5" />}
                         >
                             Gán Thêm KOC
                         </Button>
+                        {totalAvailableCount > 0 && (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => onOpenAddModal(true)}
+                                className="text-primary-600 hover:text-primary-700 hover:bg-primary-50 font-semibold"
+                                iconLeft={<Database className="h-3.5 w-3.5" />}
+                            >
+                                Gán Toàn Bộ Kho ({totalAvailableCount})
+                            </Button>
+                        )}
                     </div>
                 </div>
             </div>
 
-            {/* PHẦN 4: THANH TÁC VỤ HÀNG LOẠT NỔI (FLOATING BULK ACTION DOCK) */}
-            {selectedIds.length > 0 && (
-                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-2xl bg-slate-900/95 backdrop-blur-md px-5 py-3 text-white shadow-2xl border border-slate-700/60 animate-in fade-in slide-in-from-bottom-5">
-                    <div className="flex items-center gap-2 border-r border-slate-700 pr-3">
-                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-500 text-xs font-bold text-white">
-                            {selectedIds.length}
-                        </span>
-                        <span className="text-xs font-semibold">Đã chọn</span>
-                    </div>
+            {/* THANH TÁC VỤ HÀNG LOẠT NỔI */}
+            <KocMatrixBulkActions
+                selectedIds={selectedIds}
+                onOpenBulkStatusModal={() => setIsBulkStatusModalOpen(true)}
+                staffUsers={staffUsers}
+                onExecuteBulkAssign={handleExecuteBulkAssign}
+                onCopyPhones={handleCopyPhones}
+                onClearSelection={() => setSelectedIds([])}
+            />
 
-                    {/* Nút Chuyển Trạng Thái Đồng Loạt */}
-                    <button
-                        type="button"
-                        onClick={() => setIsBulkStatusModalOpen(true)}
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-primary-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-primary-500 transition-colors shadow-2xs"
-                    >
-                        <TrendingUp className="h-3.5 w-3.5" />
-                        <span>Đổi Trạng Thái ({selectedIds.length})</span>
-                    </button>
+            {/* MODALS NGHIỆP VỤ */}
+            <KocMatrixModals
+                isBulkStatusModalOpen={isBulkStatusModalOpen}
+                onCloseBulkStatusModal={() => setIsBulkStatusModalOpen(false)}
+                selectedCount={selectedIds.length}
+                bulkSelectedStatus={bulkSelectedStatus}
+                onBulkSelectedStatusChange={setBulkSelectedStatus}
+                bulkMissingAddressCount={bulkMissingAddressCount}
+                bulkNotSentCount={bulkNotSentCount}
+                bulkProcessing={bulkProcessing}
+                onExecuteBulkStatus={handleExecuteBulkStatus}
 
-                    {/* Dropdown Phân Bổ Nhân Viên Hàng Loạt */}
-                    <select
-                        onChange={(e) => {
-                            if (e.target.value) handleExecuteBulkAssign(e.target.value);
-                        }}
-                        defaultValue=""
-                        className="rounded-xl border-slate-700 bg-slate-800 text-xs font-semibold text-slate-200 py-1.5 px-2.5 focus:ring-primary-500 cursor-pointer"
-                    >
-                        <option value="" disabled>
-                            Gán Nhân Viên Phụ Trách...
-                        </option>
-                        {staffUsers.map((u) => (
-                            <option key={u.id} value={u.id}>
-                                Gán cho {u.name}
-                            </option>
-                        ))}
-                    </select>
+                dealModalItem={dealModalItem}
+                onCloseDealModal={() => setDealModalItem(null)}
+                dealFee={dealFee}
+                onDealFeeChange={setDealFee}
+                dealNotes={dealNotes}
+                onDealNotesChange={setDealNotes}
+                onSubmitDeal={handleSubmitDeal}
 
-                    {/* Copy Phone Numbers */}
-                    <button
-                        type="button"
-                        onClick={handleCopyPhones}
-                        className="inline-flex items-center gap-1 rounded-xl bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700 transition-colors"
-                        title="Sao chép danh sách SĐT"
-                    >
-                        <Copy className="h-3.5 w-3.5" />
-                        <span>Copy SĐT</span>
-                    </button>
+                confirmApprovalItem={confirmApprovalItem}
+                onCloseConfirmApprovalModal={() => setConfirmApprovalItem(null)}
+                approverName={approverName}
+                onApproverNameChange={setApproverName}
+                approvalNotes={approvalNotes}
+                onApprovalNotesChange={setApprovalNotes}
+                isConfirmingApproval={isConfirmingApproval}
+                onConfirmCastApproved={handleConfirmCastApproved}
 
-                    {/* Bỏ chọn */}
-                    <button
-                        type="button"
-                        onClick={() => setSelectedIds([])}
-                        className="ml-2 text-slate-400 hover:text-white transition-colors"
-                        title="Bỏ chọn tất cả"
-                    >
-                        <X className="h-4 w-4" />
-                    </button>
-                </div>
-            )}
+                shipmentModalItem={shipmentModalItem}
+                onCloseShipmentModal={() => setShipmentModalItem(null)}
+                shipmentNotes={shipmentNotes}
+                onShipmentNotesChange={setShipmentNotes}
+                shipmentDate={shipmentDate}
+                onShipmentDateChange={setShipmentDate}
+                shipmentSubmitting={shipmentSubmitting}
+                copiedAddress={copiedAddress}
+                onCopyWarehouseAddress={handleCopyWarehouseAddress}
+                quickAddress={quickAddress}
+                onQuickAddressChange={setQuickAddress}
+                quickCity={quickCity}
+                onQuickCityChange={setQuickCity}
+                quickDistrict={quickDistrict}
+                onQuickDistrictChange={setQuickDistrict}
+                quickWard={quickWard}
+                onQuickWardChange={setQuickWard}
+                quickPhone={quickPhone}
+                onQuickPhoneChange={setQuickPhone}
+                isEditingAddress={isEditingAddress}
+                onToggleEditingAddress={setIsEditingAddress}
+                onCopyPortal={handleCopyPortal}
+                copiedToken={copiedToken}
+                onSubmitShipment={handleSubmitShipment}
 
-            {/* MODAL ĐỔI TRẠNG THÁI HÀNG LOẠT */}
-            {isBulkStatusModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                    <div
-                        className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs"
-                        onClick={() => setIsBulkStatusModalOpen(false)}
-                    />
-                    <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-100 animate-in zoom-in-95">
-                        <h3 className="text-base font-bold text-slate-900 mb-1">
-                            Chuyển Trạng Thái Đồng Loạt
-                        </h3>
-                        <p className="text-xs text-slate-500 mb-4">
-                            Đang áp dụng cho <span className="font-bold text-primary-600">{selectedIds.length} KOC</span> đã chọn.
-                        </p>
+                videoModalItem={videoModalItem}
+                onCloseVideoModal={() => setVideoModalItem(null)}
+                videoPlatform={videoPlatform}
+                onVideoPlatformChange={setVideoPlatform}
+                videoUrl={videoUrl}
+                onVideoUrlChange={setVideoUrl}
+                videoTitle={videoTitle}
+                onVideoTitleChange={setVideoTitle}
+                videoPostedAt={videoPostedAt}
+                onVideoPostedAtChange={setVideoPostedAt}
+                videoSubmitting={videoSubmitting}
+                onSubmitVideo={handleSubmitVideo}
 
-                        <div className="space-y-3">
-                            <label className="block text-xs font-semibold text-slate-700">
-                                Chọn trạng thái đích:
-                            </label>
-                            <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto p-1">
-                                {Object.entries(STATUS_DEFINITIONS).map(([stKey, stVal]) => (
-                                    <button
-                                        key={stKey}
-                                        type="button"
-                                        onClick={() => setBulkSelectedStatus(stKey)}
-                                        className={`p-2.5 rounded-xl border text-left text-xs font-semibold transition-all ${bulkSelectedStatus === stKey
-                                                ? 'border-primary-600 bg-primary-50 text-primary-900 ring-2 ring-primary-500/20'
-                                                : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
-                                            }`}
-                                    >
-                                        {stVal.label}
-                                    </button>
-                                ))}
-                            </div>
+                quickZaloPivotId={quickZaloPivotId}
+                onCloseQuickZalo={() => setQuickZaloPivotId(null)}
+                onQuickZaloSuccess={showFeedback}
 
-                            {bulkSelectedStatus === 'sample_sent' && bulkMissingAddressCount > 0 && (
-                                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 leading-relaxed flex items-start gap-2">
-                                    <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
-                                    <div>
-                                        <strong>Cảnh báo ràng buộc địa chỉ:</strong> Có <strong>{bulkMissingAddressCount}</strong> trong tổng số {selectedIds.length} KOC chưa có địa chỉ nhận hàng. Hệ thống sẽ tự động bỏ qua các KOC này để tránh gửi hàng sai sót.
-                                    </div>
-                                </div>
-                            )}
-
-                            {['sample_received', 'posted'].includes(bulkSelectedStatus) && bulkNotSentCount > 0 && (
-                                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 leading-relaxed flex items-start gap-2">
-                                    <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
-                                    <div>
-                                        <strong>Cảnh báo ràng buộc gửi mẫu:</strong> Có <strong>{bulkNotSentCount}</strong> trong tổng số {selectedIds.length} KOC chưa được gửi mẫu sản phẩm. Hệ thống sẽ tự động bỏ qua các KOC này vì không thể nhận mẫu hoặc lên video khi chưa gửi mẫu.
-                                    </div>
-                                </div>
-                            )}
-
-                            <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
-                                <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    onClick={() => setIsBulkStatusModalOpen(false)}
-                                >
-                                    Hủy
-                                </Button>
-                                <Button
-                                    variant="primary"
-                                    size="sm"
-                                    loading={bulkProcessing}
-                                    onClick={handleExecuteBulkStatus}
-                                >
-                                    Xác Nhận Đổi ({selectedIds.length})
-                                </Button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* MODAL CHỐT HỢP TÁC VỚI KOC */}
-            {dealModalItem && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                    <div
-                        className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs"
-                        onClick={() => setDealModalItem(null)}
-                    />
-                    <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-100 animate-in zoom-in-95">
-                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                            <div>
-                                <h3 className="text-base font-bold text-slate-900">
-                                    Chốt Hợp Tác Với KOC
-                                </h3>
-                                <p className="text-xs text-slate-500">
-                                    {dealModalItem.creator.name} ({dealModalItem.creator.phone})
-                                </p>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => setDealModalItem(null)}
-                                className="text-slate-400 hover:text-slate-600"
-                            >
-                                <X className="h-5 w-5" />
-                            </button>
-                        </div>
-
-                        <form onSubmit={handleSubmitDeal} className="mt-4 space-y-4">
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                    Phí booking thỏa thuận (VND)
-                                </label>
-                                <input
-                                    type="number"
-                                    value={dealFee}
-                                    onChange={(e) => setDealFee(e.target.value)}
-                                    placeholder="0"
-                                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold text-slate-900 focus:ring-2 focus:ring-primary-500"
-                                />
-                                <span className="text-[11px] text-slate-400 mt-1 block">
-                                    Định dạng: {formatCurrency(dealFee)}
-                                </span>
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                    Ghi chú hợp tác / Cam kết video
-                                </label>
-                                <textarea
-                                    value={dealNotes}
-                                    onChange={(e) => setDealNotes(e.target.value)}
-                                    rows={3}
-                                    placeholder="Ví dụ: KOC đồng ý làm 1 video review 60s, gắn link bio..."
-                                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500"
-                                />
-                            </div>
-
-                            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-                                <Button
-                                    type="button"
-                                    variant="secondary"
-                                    size="sm"
-                                    onClick={() => setDealModalItem(null)}
-                                >
-                                    Hủy
-                                </Button>
-                                <Button
-                                    type="submit"
-                                    variant="primary"
-                                    size="sm"
-                                    iconLeft={<Check className="h-3.5 w-3.5" />}
-                                >
-                                    Xác Nhận Chốt Hợp Tác
-                                </Button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {/* MODAL XÁC NHẬN GỬI MẪU CHO KOC (TINH GIẢN CHO BOOKING) */}
-            {shipmentModalItem && (() => {
-                const hasOriginalAddress = Boolean(shipmentModalItem.creator?.shipping_address?.trim());
-                const hasQuickAddress = Boolean(quickAddress.trim());
-                const hasValidShippingAddress = hasOriginalAddress || hasQuickAddress;
-
-                return (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                        <div
-                            className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs"
-                            onClick={() => setShipmentModalItem(null)}
-                        />
-                        <div className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl border border-slate-100 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
-                            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                                <div>
-                                    <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                                        <Package className="h-5 w-5 text-amber-500" />
-                                        Xác Nhận Đã Gửi Mẫu Cho KOC
-                                    </h3>
-                                    <p className="text-xs text-slate-500">
-                                        {shipmentModalItem.creator?.name} • {shipmentModalItem.creator?.phone || quickPhone || 'Chưa có SĐT'}
-                                    </p>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() => setShipmentModalItem(null)}
-                                    className="text-slate-400 hover:text-slate-600"
-                                >
-                                    <X className="h-5 w-5" />
-                                </button>
-                            </div>
-
-                            {/* Cảnh báo nếu KOC chưa có địa chỉ */}
-                            {!hasValidShippingAddress && (
-                                <div className="mt-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-start gap-2.5">
-                                    <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
-                                    <div className="flex-1">
-                                        <div className="font-bold">KOC chưa có địa chỉ nhận hàng trong hồ sơ!</div>
-                                        <div className="mt-0.5 text-rose-700 text-[11px] leading-relaxed">
-                                            Hệ thống <strong>chặn gửi mẫu khi thiếu địa chỉ</strong>. Vui lòng nhập nhanh địa chỉ bên dưới (nếu đã nhận qua chat) hoặc gửi link Portal cho KOC tự điền.
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Hiển thị địa chỉ hiện tại (nếu có và không trong chế độ sửa) */}
-                            {hasOriginalAddress && !isEditingAddress && (
-                                <div className="mt-4 p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-                                    <div className="flex items-center justify-between mb-1.5">
-                                        <span className="font-bold text-slate-800 flex items-center gap-1.5">
-                                            <Truck className="h-3.5 w-3.5 text-slate-500" />
-                                            Địa chỉ nhận mẫu của KOC:
-                                        </span>
-                                        <div className="flex items-center gap-1.5">
-                                            <button
-                                                type="button"
-                                                onClick={() => setIsEditingAddress(true)}
-                                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 shadow-2xs"
-                                                title="Sửa hoặc cập nhật địa chỉ mới"
-                                            >
-                                                <Edit3 className="h-3 w-3 text-slate-500" />
-                                                Sửa
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => handleCopyWarehouseAddress(shipmentModalItem)}
-                                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all shadow-2xs ${copiedAddress
-                                                        ? 'bg-emerald-600 text-white'
-                                                        : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-300'
-                                                    }`}
-                                                title="Chép họ tên, SĐT và địa chỉ để gửi cho bộ phận kho"
-                                            >
-                                                {copiedAddress ? (
-                                                    <>
-                                                        <Check className="h-3 w-3" />
-                                                        <span>Đã sao chép!</span>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <Copy className="h-3 w-3" />
-                                                        <span>Sao chép gửi kho</span>
-                                                    </>
-                                                )}
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <p className="text-slate-700 leading-relaxed font-medium">
-                                        {[
-                                            shipmentModalItem.creator?.shipping_address,
-                                            shipmentModalItem.creator?.ward,
-                                            shipmentModalItem.creator?.district,
-                                            shipmentModalItem.creator?.city_province,
-                                        ]
-                                            .filter(Boolean)
-                                            .join(', ')}
-                                    </p>
-                                </div>
-                            )}
-
-                            {/* Form Nhập Nhanh Địa Chỉ (khi chưa có địa chỉ hoặc khi bấm Sửa) */}
-                            {(!hasOriginalAddress || isEditingAddress) && (
-                                <div className="mt-4 p-3.5 rounded-xl bg-indigo-50/60 border border-indigo-200/80 text-xs animate-in fade-in duration-200">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <span className="font-bold text-indigo-950 flex items-center gap-1.5">
-                                            <MapPin className="h-4 w-4 text-indigo-600" />
-                                            Nhập nhanh địa chỉ nhận hàng (Lưu vào hồ sơ KOC):
-                                        </span>
-                                        {hasOriginalAddress && (
-                                            <button
-                                                type="button"
-                                                onClick={() => setIsEditingAddress(false)}
-                                                className="text-[11px] font-medium text-slate-500 hover:text-slate-700 underline"
-                                            >
-                                                Hủy sửa
-                                            </button>
-                                        )}
-                                    </div>
-
-                                    <div className="space-y-2.5">
-                                        <div>
-                                            <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
-                                                Địa chỉ chi tiết (Số nhà, đường, ngõ, tòa nhà...) <span className="text-rose-500">*</span>
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={quickAddress}
-                                                onChange={(e) => setQuickAddress(e.target.value)}
-                                                placeholder="Ví dụ: 123 Đường Nguyễn Trãi"
-                                                className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500 bg-white"
-                                            />
-                                        </div>
-
-                                        <div className="grid grid-cols-3 gap-2">
-                                            <div>
-                                                <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
-                                                    Tỉnh / TP
-                                                </label>
-                                                <input
-                                                    type="text"
-                                                    value={quickCity}
-                                                    onChange={(e) => setQuickCity(e.target.value)}
-                                                    placeholder="Hà Nội / TP.HCM"
-                                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500 bg-white"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
-                                                    Quận / Huyện
-                                                </label>
-                                                <input
-                                                    type="text"
-                                                    value={quickDistrict}
-                                                    onChange={(e) => setQuickDistrict(e.target.value)}
-                                                    placeholder="Quận Thanh Xuân"
-                                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500 bg-white"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
-                                                    Phường / Xã
-                                                </label>
-                                                <input
-                                                    type="text"
-                                                    value={quickWard}
-                                                    onChange={(e) => setQuickWard(e.target.value)}
-                                                    placeholder="Phường Khương Trung"
-                                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500 bg-white"
-                                                />
-                                            </div>
-                                        </div>
-
-                                        <div>
-                                            <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
-                                                Số điện thoại nhận hàng
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={quickPhone}
-                                                onChange={(e) => setQuickPhone(e.target.value)}
-                                                placeholder="Ví dụ: 0988123456"
-                                                className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500 bg-white"
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Tiện ích Copy Link Portal */}
-                            {shipmentModalItem.portal_token && (
-                                <div className="mt-2.5 flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-                                    <span className="text-slate-600 text-[11px]">
-                                        Hoặc gửi link cho KOC tự điền:
-                                    </span>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleCopyPortal(shipmentModalItem.portal_token)}
-                                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all shadow-2xs ${copiedToken === shipmentModalItem.portal_token
-                                                ? 'bg-emerald-600 text-white'
-                                                : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-300'
-                                            }`}
-                                    >
-                                        {copiedToken === shipmentModalItem.portal_token ? (
-                                            <>
-                                                <Check className="h-3 w-3" />
-                                                <span>Đã sao chép link Portal!</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Copy className="h-3 w-3" />
-                                                <span>Sao chép link Portal</span>
-                                            </>
-                                        )}
-                                    </button>
-                                </div>
-                            )}
-
-                            {/* Trạng thái gửi mẫu hiện tại */}
-                            {shipmentModalItem.sample_sent_at && (
-                                <div className="mt-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">
-                                    <strong>Trạng thái:</strong> Đã gửi mẫu vào ngày {formatDate(shipmentModalItem.sample_sent_at)}.
-                                    {shipmentModalItem.notes && <span className="block mt-0.5 text-slate-600">Ghi chú: {shipmentModalItem.notes}</span>}
-                                </div>
-                            )}
-
-                            {/* Form xác nhận gửi mẫu tinh giản */}
-                            <form onSubmit={handleSubmitShipment} className="mt-4 space-y-3.5 pt-3 border-t border-slate-100">
-                                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 leading-relaxed">
-                                    💡 <strong>Quy trình tinh gọn:</strong> Nhân viên Booking chỉ cần bấm sao chép thông tin địa chỉ gửi cho kho và xác nhận ngày gửi mẫu. Kho bên ngoài sẽ chịu trách nhiệm đóng gói và vận chuyển.
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                            Ngày gửi mẫu
-                                        </label>
-                                        <input
-                                            type="date"
-                                            value={shipmentDate}
-                                            onChange={(e) => setShipmentDate(e.target.value)}
-                                            className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                            Ghi chú mẫu / sản phẩm gửi
-                                        </label>
-                                        <input
-                                            type="text"
-                                            value={shipmentNotes}
-                                            onChange={(e) => setShipmentNotes(e.target.value)}
-                                            placeholder="Ví dụ: 1 Hộp kem + Quà tặng kèm"
-                                            className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                                    <span className="text-xs text-rose-600 font-medium">
-                                        {!hasValidShippingAddress && '⚠️ Cần có địa chỉ để gửi mẫu'}
-                                    </span>
-                                    <div className="flex items-center gap-2 ml-auto">
-                                        <Button
-                                            type="button"
-                                            variant="secondary"
-                                            size="sm"
-                                            onClick={() => setShipmentModalItem(null)}
-                                        >
-                                            Đóng
-                                        </Button>
-                                        <Button
-                                            type="submit"
-                                            variant="primary"
-                                            size="sm"
-                                            disabled={!hasValidShippingAddress || shipmentSubmitting}
-                                            loading={shipmentSubmitting}
-                                            iconLeft={<CheckCircle2 className="h-3.5 w-3.5" />}
-                                            title={!hasValidShippingAddress ? 'Vui lòng nhập địa chỉ nhận hàng trước khi xác nhận' : undefined}
-                                        >
-                                            Xác Nhận Đã Gửi Mẫu
-                                        </Button>
-                                    </div>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                );
-            })()}
-
-                    {/* MODAL QUẢN LÝ & THÊM VIDEO CHO KOC (HỖ TRỢ NHIỀU VIDEO) */}
-                    {videoModalItem && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                            <div
-                                className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs"
-                                onClick={() => setVideoModalItem(null)}
-                            />
-                            <div className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl border border-slate-100 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
-                                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                                    <div>
-                                        <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                                            <Video className="h-5 w-5 text-purple-600" />
-                                            Video Bài Đăng Của KOC
-                                        </h3>
-                                        <p className="text-xs text-slate-500">
-                                            {videoModalItem.creator.name} • {videoModalItem.creator.phone || 'Chưa có SĐT'}
-                                        </p>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => setVideoModalItem(null)}
-                                        className="text-slate-400 hover:text-slate-600"
-                                    >
-                                        <X className="h-5 w-5" />
-                                    </button>
-                                </div>
-
-                                {/* Danh sách video đã đăng trước đó */}
-                                {(() => {
-                                    const posts = videoModalItem.content_posts || videoModalItem.contentPosts || [];
-                                    if (posts.length === 0) return null;
-
-                                    return (
-                                        <div className="mt-4">
-                                            <h4 className="text-xs font-bold text-slate-700 mb-2">
-                                                Video đã nộp ({posts.length} video):
-                                            </h4>
-                                            <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                                                {posts.map((post, idx) => (
-                                                    <div
-                                                        key={post.id || idx}
-                                                        className="p-2.5 rounded-lg border border-slate-200 bg-white text-xs flex items-center justify-between shadow-2xs"
-                                                    >
-                                                        <div className="min-w-0 pr-2">
-                                                            <div className="font-semibold text-slate-800 flex items-center gap-1.5">
-                                                                <span className="px-1.5 py-0.5 rounded text-[10px] bg-purple-100 text-purple-800 font-bold uppercase">
-                                                                    {post.platform}
-                                                                </span>
-                                                                <span className="truncate max-w-[200px] text-slate-700">
-                                                                    {post.video_title || 'Bài đăng video'}
-                                                                </span>
-                                                            </div>
-                                                            {post.posted_at && (
-                                                                <span className="text-[10px] text-slate-400 block mt-0.5">
-                                                                    Đăng ngày: {post.posted_at}
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                        <a
-                                                            href={post.post_url}
-                                                            target="_blank"
-                                                            rel="noreferrer"
-                                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-primary-50 text-primary-700 hover:bg-primary-100"
-                                                        >
-                                                            <span>Xem</span>
-                                                            <ExternalLink className="h-3 w-3" />
-                                                        </a>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    );
-                                })()}
-
-                                {/* Form thêm video mới */}
-                                <form onSubmit={handleSubmitVideo} className="mt-4 space-y-3 pt-3 border-t border-slate-100">
-                                    <h4 className="text-xs font-bold text-slate-900">
-                                        + Thêm Video Mới:
-                                    </h4>
-
-                                    <div className="grid grid-cols-3 gap-3">
-                                        <div>
-                                            <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                                Nền tảng <span className="text-rose-500">*</span>
-                                            </label>
-                                            <select
-                                                value={videoPlatform}
-                                                onChange={(e) => setVideoPlatform(e.target.value)}
-                                                className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500"
-                                            >
-                                                <option value="tiktok">TikTok</option>
-                                                <option value="facebook">Facebook</option>
-                                                <option value="instagram">Instagram</option>
-                                                <option value="youtube">YouTube</option>
-                                            </select>
-                                        </div>
-
-                                        <div className="col-span-2">
-                                            <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                                Link bài đăng / video <span className="text-rose-500">*</span>
-                                            </label>
-                                            <input
-                                                type="url"
-                                                required
-                                                value={videoUrl}
-                                                onChange={(e) => setVideoUrl(e.target.value)}
-                                                placeholder="https://www.tiktok.com/@.../video/..."
-                                                className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div>
-                                            <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                                Tiêu đề video
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={videoTitle}
-                                                onChange={(e) => setVideoTitle(e.target.value)}
-                                                placeholder="Ví dụ: Review son dưỡng màu cam đào"
-                                                className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                                Ngày đăng
-                                            </label>
-                                            <input
-                                                type="date"
-                                                value={videoPostedAt}
-                                                onChange={(e) => setVideoPostedAt(e.target.value)}
-                                                className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-                                        <Button
-                                            type="button"
-                                            variant="secondary"
-                                            size="sm"
-                                            onClick={() => setVideoModalItem(null)}
-                                        >
-                                            Đóng
-                                        </Button>
-                                        <Button
-                                            type="submit"
-                                            variant="primary"
-                                            size="sm"
-                                            loading={videoSubmitting}
-                                            iconLeft={<Video className="h-3.5 w-3.5" />}
-                                        >
-                                            Lưu Link & Đánh Dấu Đã Lên Video
-                                        </Button>
-                                    </div>
-                                </form>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Modal Nhắc Zalo Thông Minh 1-Chạm */}
-                    <QuickZaloReminderModal
-                        isOpen={quickZaloPivotId !== null}
-                        campaignCreatorId={quickZaloPivotId}
-                        onClose={() => setQuickZaloPivotId(null)}
-                        onSuccess={(msg) => showFeedback(msg)}
-                    />
-                </div>
-            );
+                formatCurrency={formatCurrency}
+                formatDate={formatDate}
+            />
+        </div>
+    );
 }

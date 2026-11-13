@@ -5,6 +5,13 @@ namespace Modules\Creator\Services;
 use Modules\Creator\Enums\CreatorTierEnum;
 use Modules\Creator\Enums\PlatformEnum;
 
+/**
+ * Class KolDataAdapter (Module Creator)
+ * 
+ * Adapter chuẩn hóa payload từ Official Data Provider thành dữ liệu hồ sơ Creator,
+ * tài khoản mạng xã hội và phân tích chỉ số video chuẩn mực.
+ * (Khác với App\Services\Kol\KolDataAdapter chuyên xử lý telemetry từ Playwright).
+ */
 class KolDataAdapter
 {
     /**

@@ -100,7 +100,11 @@ class CreatorDataInputTest extends TestCase
         $csvContent = "\xEF\xBB\xBF" . "Tên KOC,Số điện thoại,Email,Kênh,Link,Followers,Ngành hàng\n"
             . "Trần Văn Bình,0901234567,binh.tran@gmail.com,@binhtranvlog,https://www.tiktok.com/@binhtranvlog,50000,lifestyle\n";
 
-        $tempFile = tempnam(sys_get_temp_dir(), 'csv_import_');
+        $tempDir = storage_path('framework/testing');
+        if (!is_dir($tempDir)) {
+            mkdir($tempDir, 0777, true);
+        }
+        $tempFile = $tempDir . '/csv_import_' . uniqid() . '.csv';
         file_put_contents($tempFile, $csvContent);
 
         $uploadedFile = new UploadedFile(

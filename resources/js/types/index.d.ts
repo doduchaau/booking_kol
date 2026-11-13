@@ -10,5 +10,6 @@ export type PageProps<
 > = T & {
     auth: {
         user: User;
+        unread_notifications_count?: number;
     };
 };

@@ -77,6 +77,11 @@ class ContentMetricsSyncService
                 ]
             );
 
+            if (class_exists(\Modules\Report\Services\ReportCalculationService::class)) {
+                $campaignId = $post->campaignCreator?->campaign_id;
+                \Modules\Report\Services\ReportCalculationService::flushReportCache($campaignId);
+            }
+
             return [
                 'post' => $post->fresh(),
                 'metric' => $metric,

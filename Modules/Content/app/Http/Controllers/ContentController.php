@@ -13,6 +13,7 @@ use Modules\Campaign\Models\Campaign;
 use Modules\Content\Models\ContentPost;
 use Modules\Content\Models\ContentPostMetric;
 use Modules\Content\Services\ContentMetricsSyncService;
+use Modules\Content\Services\VideoComplianceService;
 
 class ContentController extends Controller
 {
@@ -21,7 +22,7 @@ class ContentController extends Controller
      */
     public function index(Request $request): Response
     {
-        $filters = $request->only(['search', 'platform', 'status', 'campaign_id']);
+        $filters = $request->only(['search', 'platform', 'status', 'compliance_status', 'health_status', 'campaign_id']);
 
         $query = ContentPost::query()
             ->with([
@@ -52,6 +53,16 @@ class ContentController extends Controller
             $query->where('status', $filters['status']);
         }
 
+        // Lọc theo trạng thái tuân thủ
+        if (!empty($filters['compliance_status'])) {
+            $query->where('compliance_status', $filters['compliance_status']);
+        }
+
+        // Lọc theo tình trạng sức khỏe video
+        if (!empty($filters['health_status'])) {
+            $query->where('health_status', $filters['health_status']);
+        }
+
         // Lọc theo chiến dịch
         if (!empty($filters['campaign_id'])) {
             $query->whereHas('campaignCreator', function ($qc) use ($filters) {
@@ -61,12 +72,19 @@ class ContentController extends Controller
 
         $posts = $query->latest('id')->paginate(15)->withQueryString();
 
-        // Tính toán thống kê tổng quan
-        $totalPosts = ContentPost::count();
-        $approvedPosts = ContentPost::where('status', 'approved')->count();
-        $pendingPosts = ContentPost::where('status', 'pending_approval')->count();
-        $totalViews = (int) ContentPost::sum('views_count');
-        $totalGmv = (float) ContentPost::sum('gmv_amount');
+        // Tính toán thống kê tổng quan (Hợp nhất vào 1 câu SQL Aggregation duy nhất)
+        $stats = ContentPost::query()
+            ->whereNull('deleted_at')
+            ->selectRaw("
+                COUNT(*) as total_posts,
+                COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved_posts,
+                COUNT(CASE WHEN status = 'pending_approval' THEN 1 END) as pending_posts,
+                COUNT(CASE WHEN compliance_status = 'passed' THEN 1 END) as passed_compliance,
+                COUNT(CASE WHEN compliance_status = 'warning' THEN 1 END) as warning_compliance,
+                COUNT(CASE WHEN health_status = 'unavailable' THEN 1 END) as unhealthy_count,
+                COALESCE(SUM(views_count), 0) as total_views,
+                COALESCE(SUM(gmv_amount), 0) as total_gmv
+            ")->first();
 
         // Danh sách chiến dịch để lọc
         $campaigns = Campaign::select('id', 'name')->latest('id')->take(20)->get();
@@ -76,11 +94,14 @@ class ContentController extends Controller
             'filters' => $filters,
             'campaigns' => $campaigns,
             'stats' => [
-                'total_posts' => $totalPosts,
-                'approved_posts' => $approvedPosts,
-                'pending_posts' => $pendingPosts,
-                'total_views' => $totalViews,
-                'total_gmv' => $totalGmv,
+                'total_posts' => (int) ($stats->total_posts ?? 0),
+                'approved_posts' => (int) ($stats->approved_posts ?? 0),
+                'pending_posts' => (int) ($stats->pending_posts ?? 0),
+                'passed_compliance' => (int) ($stats->passed_compliance ?? 0),
+                'warning_compliance' => (int) ($stats->warning_compliance ?? 0),
+                'unhealthy_count' => (int) ($stats->unhealthy_count ?? 0),
+                'total_views' => (int) ($stats->total_views ?? 0),
+                'total_gmv' => (float) ($stats->total_gmv ?? 0),
             ],
         ]);
     }
@@ -110,6 +131,12 @@ class ContentController extends Controller
         // Nếu vừa duyệt xong, tự động đồng bộ chỉ số khởi điểm
         if ($newStatus === 'approved') {
             $syncService->syncPost($post);
+        }
+
+        // Tự động làm mới cache Dashboard và Workspace
+        if (class_exists(\App\Services\SystemCacheService::class)) {
+            \App\Services\SystemCacheService::flushDashboardCache();
+            \App\Services\SystemCacheService::flushWorkspaceCache();
         }
 
         $statusLabel = match ($newStatus) {
@@ -180,5 +207,50 @@ class ContentController extends Controller
             ],
             'history' => $history,
         ]);
+    }
+
+    /**
+     * Chạy kiểm tra tuân thủ kịch bản cho 1 video
+     */
+    public function checkCompliance(int $id, VideoComplianceService $complianceService): RedirectResponse
+    {
+        $post = ContentPost::with(['campaignCreator.campaign', 'campaignCreator.creator.accounts'])->findOrFail($id);
+        $result = $complianceService->evaluatePost($post);
+
+        $statusLabel = match ($result['status']) {
+            'passed' => 'Đạt chuẩn 100%',
+            'warning' => 'Cảnh báo (' . count($result['issues']) . ' lưu ý)',
+            default => 'Không đạt yêu cầu',
+        };
+
+        return back()->with('success', "Đã kiểm tra tuân thủ video #{$post->id}: {$statusLabel} (Điểm: {$result['score']}/100).");
+    }
+
+    /**
+     * API Pre-check tuân thủ nhanh khi nhập link (dùng cho modal và portal)
+     */
+    public function precheck(Request $request, VideoComplianceService $complianceService, \Modules\Content\Services\VideoMetadataExtractorService $extractor): JsonResponse
+    {
+        $request->validate([
+            'post_url' => ['required', 'url'],
+            'platform' => ['required', 'string'],
+            'campaign_id' => ['nullable', 'integer'],
+        ]);
+
+        $url = $request->input('post_url');
+        $platform = $request->input('platform');
+        $campaignId = $request->input('campaign_id');
+
+        $campaign = $campaignId ? Campaign::find($campaignId) : null;
+        $metadata = $extractor->extract($platform, $url);
+
+        $result = $complianceService->evaluate(
+            platform: $platform,
+            url: $url,
+            metadata: $metadata,
+            campaign: $campaign
+        );
+
+        return response()->json($result);
     }
 }

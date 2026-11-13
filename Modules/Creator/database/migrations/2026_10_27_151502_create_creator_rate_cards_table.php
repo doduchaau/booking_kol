@@ -14,14 +14,7 @@ return new class extends Migration
         Schema::create('creator_rate_cards', function (Blueprint $table) {
             $table->id();
             $table->foreignId('creator_id')->constrained('creators')->cascadeOnDelete();
-            $table->enum('content_type', [
-                'tiktok_video',
-                'facebook_post',
-                'youtube_video',
-                'shopee_video',
-                'reels',
-                'livestream'
-            ]);
+            $table->string('content_type', 100)->default('tiktok_video');
             $table->decimal('price', 14, 2)->default(0.00);
             $table->string('currency', 10)->default('VND');
             $table->string('notes', 255)->nullable();

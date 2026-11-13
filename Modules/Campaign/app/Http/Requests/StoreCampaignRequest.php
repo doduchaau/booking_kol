@@ -18,7 +18,8 @@ class StoreCampaignRequest extends FormRequest
             'product_name' => ['required', 'string', 'max:200'],
             'product_sku' => ['nullable', 'string', 'max:100'],
             'budget' => ['required', 'numeric', 'min:0'],
-            'target_creators_count' => ['required', 'integer', 'min:1', 'max:1000'],
+            'target_creators_count' => ['required', 'integer', 'min:1', 'max:100000'],
+            'assign_all_creators' => ['nullable', 'boolean'],
             'start_date' => ['required', 'date'],
             'end_date' => ['required', 'date', 'after_or_equal:start_date'],
             'content_guidelines' => ['nullable', 'string'],
@@ -32,6 +33,7 @@ class StoreCampaignRequest extends FormRequest
             'sample_requirement_file' => ['nullable', 'file', 'max:20480', 'mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,png,jpg,jpeg,webp,txt,zip'],
             'video_deadline_days' => ['nullable', 'integer', 'min:1', 'max:90'],
             'commission_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'ads_commission_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'status' => ['nullable', 'in:draft,active,completed,paused'],
         ];
     }
@@ -52,6 +54,8 @@ class StoreCampaignRequest extends FormRequest
             'end_date.after_or_equal' => 'Ngày kết thúc phải bằng hoặc sau ngày bắt đầu.',
             'commission_rate.numeric' => 'Tỷ lệ hoa hồng phải là số.',
             'commission_rate.max' => 'Tỷ lệ hoa hồng không được vượt quá 100%.',
+            'ads_commission_rate.numeric' => 'Tỷ lệ hoa hồng ADS phải là số.',
+            'ads_commission_rate.max' => 'Tỷ lệ hoa hồng ADS không được vượt quá 100%.',
         ];
     }
 }

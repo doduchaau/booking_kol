@@ -38,6 +38,7 @@ class Campaign extends Model
         'sample_requirement_file',
         'video_deadline_days',
         'commission_rate',
+        'ads_commission_rate',
         'status',
         'created_by',
     ];
@@ -52,6 +53,7 @@ class Campaign extends Model
     protected $casts = [
         'budget' => 'decimal:2',
         'commission_rate' => 'decimal:2',
+        'ads_commission_rate' => 'decimal:2',
         'target_creators_count' => 'integer',
         'video_deadline_days' => 'integer',
         'start_date' => 'date',

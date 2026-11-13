@@ -24,10 +24,15 @@ class CampaignCreator extends Model
         'status',
         'booking_fee',
         'commission_rate',
+        'ads_commission_rate',
         'portal_token',
         'portal_token_expires_at',
         'notes',
         'contacted_at',
+        'waiting_approval_at',
+        'approved_cost_at',
+        'approver_name',
+        'approval_notes',
         'agreed_at',
         'address_confirmed_at',
         'sample_sent_at',
@@ -42,8 +47,11 @@ class CampaignCreator extends Model
         'status' => PipelineStatusEnum::class,
         'booking_fee' => 'decimal:2',
         'commission_rate' => 'decimal:2',
+        'ads_commission_rate' => 'decimal:2',
         'portal_token_expires_at' => 'datetime',
         'contacted_at' => 'datetime',
+        'waiting_approval_at' => 'datetime',
+        'approved_cost_at' => 'datetime',
         'agreed_at' => 'datetime',
         'address_confirmed_at' => 'datetime',
         'sample_sent_at' => 'datetime',
@@ -105,5 +113,26 @@ class CampaignCreator extends Model
         ]);
 
         return $token;
+    }
+
+    /**
+     * Kiểm tra KOC có đang ở trạng thái chờ duyệt chi phí hay không
+     */
+    public function isWaitingApproval(): bool
+    {
+        return $this->status === PipelineStatusEnum::WAITING_APPROVAL;
+    }
+
+    /**
+     * Kiểm tra chi phí cast đã được xác nhận duyệt hay chưa
+     * (Miễn phí = true; Có phí thì cần approved_cost_at != null)
+     */
+    public function hasApprovedCost(): bool
+    {
+        if ((float) $this->booking_fee <= 0) {
+            return true;
+        }
+
+        return !is_null($this->approved_cost_at);
     }
 }

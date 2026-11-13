@@ -3,6 +3,7 @@
 namespace Modules\Creator\Services;
 
 use App\Models\User;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Modules\Creator\Models\Creator;
 use Modules\Creator\Models\CreatorAccount;
@@ -17,14 +18,19 @@ class CreatorDeduplicationService
         ?string $phone = null,
         ?string $email = null,
         ?string $platform = null,
-        ?string $handle = null
+        ?string $handle = null,
+        ?int $excludeCreatorId = null
     ): ?Creator {
         $normalizedPhone = CreatorNormalizationService::normalizePhone($phone);
         $normalizedHandle = CreatorNormalizationService::normalizeHandle($handle);
 
         // 1. Kiểm tra trùng SĐT
         if (!empty($normalizedPhone)) {
-            $match = Creator::where('phone', $normalizedPhone)->first();
+            $query = Creator::where('phone', $normalizedPhone);
+            if ($excludeCreatorId) {
+                $query->where('id', '!=', $excludeCreatorId);
+            }
+            $match = $query->first();
             if ($match) {
                 return $match;
             }
@@ -32,10 +38,13 @@ class CreatorDeduplicationService
 
         // 2. Kiểm tra trùng (platform, handle)
         if (!empty($platform) && !empty($normalizedHandle)) {
-            $matchedAccount = CreatorAccount::where('platform', $platform)
+            $query = CreatorAccount::where('platform', $platform)
                 ->where('handle', $normalizedHandle)
-                ->with('creator')
-                ->first();
+                ->with('creator');
+            if ($excludeCreatorId) {
+                $query->where('creator_id', '!=', $excludeCreatorId);
+            }
+            $matchedAccount = $query->first();
 
             if ($matchedAccount && $matchedAccount->creator) {
                 return $matchedAccount->creator;
@@ -44,7 +53,11 @@ class CreatorDeduplicationService
 
         // 3. Kiểm tra trùng Email
         if (!empty($email)) {
-            $match = Creator::where('email', strtolower(trim($email)))->first();
+            $query = Creator::where('email', strtolower(trim($email)));
+            if ($excludeCreatorId) {
+                $query->where('id', '!=', $excludeCreatorId);
+            }
+            $match = $query->first();
             if ($match) {
                 return $match;
             }
@@ -62,7 +75,10 @@ class CreatorDeduplicationService
             throw new \InvalidArgumentException('Không thể gộp một hồ sơ vào chính nó.');
         }
 
-        return DB::transaction(function () use ($master, $duplicate, $performedBy) {
+        $lockKey = 'creator_merge_lock:' . min($master->id, $duplicate->id) . '_' . max($master->id, $duplicate->id);
+
+        return Cache::lock($lockKey, 10)->block(5, function () use ($master, $duplicate, $performedBy) {
+            return DB::transaction(function () use ($master, $duplicate, $performedBy) {
             // 1. Cập nhật các trường còn trống ở Master từ Duplicate
             $updates = [];
             foreach (['phone', 'email', 'shipping_address', 'city_province', 'district', 'ward'] as $field) {
@@ -131,6 +147,7 @@ class CreatorDeduplicationService
             }
 
             return true;
+        });
         });
     }
 }

@@ -8,6 +8,7 @@ import FormField from '@/Components/Form/FormField';
 import TextInput from '@/Components/Form/TextInput';
 import Select from '@/Components/Form/Select';
 import Textarea from '@/Components/Form/Textarea';
+import PlatformIcon from '@/Components/Common/PlatformIcon';
 
 interface Props {
     platforms: { value: string; label: string }[];
@@ -285,14 +286,19 @@ export default function Create({ platforms, tiers }: Props) {
                                             className="rounded-lg border border-slate-200 bg-slate-50/60 p-3 space-y-2"
                                         >
                                             <div className="flex flex-col sm:flex-row items-center gap-3">
-                                                <div className="w-full sm:w-36 shrink-0">
-                                                    <Select
-                                                        value={acc.platform}
-                                                        onChange={(e) =>
-                                                            handleAccountChange(index, 'platform', e.target.value)
-                                                        }
-                                                        options={platforms}
-                                                    />
+                                                <div className="w-full sm:w-44 shrink-0 flex items-center gap-2">
+                                                    <div className="p-2 rounded-lg bg-white border border-slate-200 shadow-2xs shrink-0 flex items-center justify-center">
+                                                        <PlatformIcon platform={acc.platform} className="h-4 w-4" />
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <Select
+                                                            value={acc.platform}
+                                                            onChange={(e) =>
+                                                                handleAccountChange(index, 'platform', e.target.value)
+                                                            }
+                                                            options={platforms}
+                                                        />
+                                                    </div>
                                                 </div>
 
                                                 <div className="w-full sm:flex-1">

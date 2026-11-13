@@ -35,6 +35,7 @@ import {
 import PageHeader from '@/Components/Common/PageHeader';
 import Button from '@/Components/Common/Button';
 import Badge, { BadgeVariant } from '@/Components/Common/Badge';
+import PlatformBadge from '@/Components/Common/PlatformBadge';
 import Modal from '@/Components/Modal';
 import FormField from '@/Components/Form/FormField';
 import TextInput from '@/Components/Form/TextInput';
@@ -1351,25 +1352,13 @@ export default function OutreachIndex({
                                                                             <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                                                                                 {cc.creator?.accounts && cc.creator.accounts.length > 0 ? (
                                                                                     cc.creator.accounts.map((acc: any) => (
-                                                                                        <span
+                                                                                        <PlatformBadge
                                                                                             key={acc.id}
-                                                                                            className={`inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-md font-semibold ${
-                                                                                                isSelected
-                                                                                                    ? 'bg-primary-100/90 text-primary-800 border border-primary-200'
-                                                                                                    : 'bg-violet-50 text-violet-700 border border-violet-200/60'
-                                                                                            }`}
-                                                                                            title={`${acc.platform}: @${acc.handle}`}
-                                                                                        >
-                                                                                            <span className="text-[9px] uppercase font-bold opacity-75">{acc.platform}</span>
-                                                                                            <span>@{acc.handle.replace(/^@/, '')}</span>
-                                                                                            {acc.followers_count ? (
-                                                                                                <span className="text-[10px] opacity-75">
-                                                                                                    ({acc.followers_count >= 1000000
-                                                                                                        ? (acc.followers_count / 1000000).toFixed(1) + 'M'
-                                                                                                        : (acc.followers_count / 1000).toFixed(0) + 'k'})
-                                                                                                </span>
-                                                                                            ) : null}
-                                                                                        </span>
+                                                                                            platform={acc.platform}
+                                                                                            handle={acc.handle}
+                                                                                            followersCount={acc.followers_count}
+                                                                                            size="xs"
+                                                                                        />
                                                                                     ))
                                                                                 ) : (
                                                                                     <span className="text-[11px] font-mono text-slate-400 italic">
@@ -1479,20 +1468,13 @@ export default function OutreachIndex({
                                                     <div className="flex items-center gap-1.5 flex-wrap mt-1">
                                                         {selectedKoc.creator?.accounts && selectedKoc.creator.accounts.length > 0 ? (
                                                             selectedKoc.creator.accounts.map((acc: any) => (
-                                                                <span
+                                                                <PlatformBadge
                                                                     key={acc.id}
-                                                                    className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold px-2 py-0.5 rounded bg-violet-100/70 text-violet-800 border border-violet-200"
-                                                                >
-                                                                    <span className="text-[9px] uppercase font-bold text-violet-600">{acc.platform}</span>
-                                                                    <span>@{acc.handle.replace(/^@/, '')}</span>
-                                                                    {acc.followers_count ? (
-                                                                        <span className="text-[10px] text-violet-500">
-                                                                            ({acc.followers_count >= 1000000
-                                                                                ? (acc.followers_count / 1000000).toFixed(1) + 'M'
-                                                                                : (acc.followers_count / 1000).toFixed(0) + 'k'})
-                                                                        </span>
-                                                                    ) : null}
-                                                                </span>
+                                                                    platform={acc.platform}
+                                                                    handle={acc.handle}
+                                                                    followersCount={acc.followers_count}
+                                                                    size="xs"
+                                                                />
                                                             ))
                                                         ) : (
                                                             <span className="text-xs font-mono text-slate-400 italic">

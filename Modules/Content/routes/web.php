@@ -10,5 +10,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/contents/sync-all', [ContentController::class, 'syncAll'])->name('content.sync_all');
     Route::post('/contents/{id}/sync', [ContentController::class, 'syncMetrics'])->name('content.sync');
     Route::patch('/contents/{id}/status', [ContentController::class, 'updateStatus'])->name('content.status');
+    Route::post('/contents/{id}/compliance', [ContentController::class, 'checkCompliance'])->name('content.compliance');
+    Route::post('/contents/precheck', [ContentController::class, 'precheck'])->name('content.precheck');
     Route::get('/contents/{id}/history', [ContentController::class, 'metricsHistory'])->name('content.history');
 });

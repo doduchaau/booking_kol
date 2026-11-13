@@ -7,7 +7,7 @@ import {
     Shield,
     Clock,
     Key,
-    Truck,
+    PackageCheck,
     MessageSquare,
     Plus,
     Check,
@@ -36,12 +36,10 @@ export interface UserItem {
 export interface SettingsData {
     default_video_deadline_days: number;
     blacklist_penalty_score: number;
+    default_sample_shipping_note?: string;
     zalo_oa_app_id: string;
     zalo_oa_secret_key: string;
     zalo_oa_id: string;
-    ghn_token: string;
-    ghn_shop_id: string;
-    ghtk_token: string;
     groq_api_key?: string;
     openai_api_key?: string;
 }
@@ -63,8 +61,6 @@ export default function SettingsIndex({
 
     // Visibility toggles for sensitive fields
     const [showZaloSecret, setShowZaloSecret] = useState(false);
-    const [showGhnToken, setShowGhnToken] = useState(false);
-    const [showGhtkToken, setShowGhtkToken] = useState(false);
     const [showGroqKey, setShowGroqKey] = useState(false);
     const [showOpenaiKey, setShowOpenaiKey] = useState(false);
 
@@ -72,6 +68,7 @@ export default function SettingsIndex({
     const generalForm = useForm({
         default_video_deadline_days: settings.default_video_deadline_days || 7,
         blacklist_penalty_score: settings.blacklist_penalty_score || 30,
+        default_sample_shipping_note: settings.default_sample_shipping_note || 'Hàng mẫu tặng KOC quay video review - Không thu tiền COD',
     });
 
     // Form: Integrations
@@ -79,9 +76,6 @@ export default function SettingsIndex({
         zalo_oa_app_id: settings.zalo_oa_app_id || '',
         zalo_oa_secret_key: settings.zalo_oa_secret_key ? '••••••••••••••••' : '',
         zalo_oa_id: settings.zalo_oa_id || '',
-        ghn_token: settings.ghn_token ? '••••••••••••••••' : '',
-        ghn_shop_id: settings.ghn_shop_id || '',
-        ghtk_token: settings.ghtk_token ? '••••••••••••••••' : '',
         groq_api_key: settings.groq_api_key ? '••••••••••••••••' : '',
         openai_api_key: settings.openai_api_key ? '••••••••••••••••' : '',
     });
@@ -441,6 +435,25 @@ export default function SettingsIndex({
                                 </p>
                             </div>
 
+                            {/* Ghi chú xuất mẫu kho mặc định */}
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-800 mb-1">
+                                    Ghi chú xuất mẫu mặc định (Kho nội bộ)
+                                </label>
+                                <textarea
+                                    rows={2}
+                                    value={generalForm.data.default_sample_shipping_note}
+                                    onChange={(e) =>
+                                        generalForm.setData('default_sample_shipping_note', e.target.value)
+                                    }
+                                    placeholder="Ví dụ: Hàng mẫu tặng KOC quay video review - Không thu tiền COD"
+                                    className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500"
+                                />
+                                <p className="text-xs text-slate-400 mt-1">
+                                    * Tự động hiển thị làm ghi chú khi nhân viên xác nhận chuyển mẫu hoặc sao chép thông tin gửi cho bộ phận kho.
+                                </p>
+                            </div>
+
                             <div className="pt-4 border-t border-slate-100 flex items-center justify-end">
                                 <Button
                                     type="submit"
@@ -541,82 +554,35 @@ export default function SettingsIndex({
                                 </div>
                             </div>
 
-                            {/* Section 2: Tài khoản Hãng vận chuyển GHN / GHTK */}
+                            {/* Section 2: Quy Chuẩn Quản Lý Mẫu Thử Tinh Gọn (Zero-Shipment Standard) */}
                             <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
-                                <div className="border-b border-slate-100 pb-3">
-                                    <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                                        <Truck className="h-5 w-5 text-indigo-600" />
-                                        <span>Cấu Hình Tài Khoản Hãng Vận Chuyển (GHN / GHTK)</span>
-                                    </h2>
-                                    <p className="text-xs text-slate-500 mt-0.5">
-                                        Lưu thông tin xác thực tài khoản kho đối tác chuyển phát phục vụ tra cứu thông tin vận chuyển khi cần.
-                                    </p>
+                                <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
+                                    <div>
+                                        <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                            <PackageCheck className="h-5 w-5 text-emerald-600" />
+                                            <span>Quy Chuẩn Quản Lý Mẫu Thử Tinh Gọn (Zero-Shipment Standard)</span>
+                                        </h2>
+                                        <p className="text-xs text-slate-500 mt-0.5">
+                                            Hệ thống quản lý quy trình gửi mẫu nội bộ tinh gọn, không tích hợp hãng vận chuyển thứ ba.
+                                        </p>
+                                    </div>
+                                    <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                        Chuẩn Tinh Gọn
+                                    </span>
                                 </div>
 
-                                <div className="space-y-4">
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                        <div className="sm:col-span-2">
-                                            <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                                Giao Hàng Nhanh (GHN) API Token
-                                            </label>
-                                            <div className="relative">
-                                                <input
-                                                    type={showGhnToken ? 'text' : 'password'}
-                                                    placeholder="Nhập GHN Token"
-                                                    value={integrationForm.data.ghn_token}
-                                                    onChange={(e) =>
-                                                        integrationForm.setData('ghn_token', e.target.value)
-                                                    }
-                                                    className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500 font-mono pr-10"
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setShowGhnToken(!showGhnToken)}
-                                                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
-                                                >
-                                                    {showGhnToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        <div>
-                                            <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                                GHN Shop ID
-                                            </label>
-                                            <input
-                                                type="text"
-                                                placeholder="Ví dụ: 123456"
-                                                value={integrationForm.data.ghn_shop_id}
-                                                onChange={(e) =>
-                                                    integrationForm.setData('ghn_shop_id', e.target.value)
-                                                }
-                                                className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500 font-mono"
-                                            />
-                                        </div>
-
-                                        <div className="sm:col-span-2">
-                                            <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                                Giao Hàng Tiết Kiệm (GHTK) API Token
-                                            </label>
-                                            <div className="relative">
-                                                <input
-                                                    type={showGhtkToken ? 'text' : 'password'}
-                                                    placeholder="Nhập GHTK Token"
-                                                    value={integrationForm.data.ghtk_token}
-                                                    onChange={(e) =>
-                                                        integrationForm.setData('ghtk_token', e.target.value)
-                                                    }
-                                                    className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500 font-mono pr-10"
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setShowGhtkToken(!showGhtkToken)}
-                                                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
-                                                >
-                                                    {showGhtkToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                                </button>
-                                            </div>
-                                        </div>
+                                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600 space-y-2">
+                                    <div className="flex items-start gap-2">
+                                        <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                                        <p>
+                                            <strong className="text-slate-800">Quy trình 3 bước khép kín:</strong> KOC xác nhận địa chỉ qua Portal (<code className="text-primary-700 bg-primary-50 px-1 py-0.5 rounded font-mono">address_confirmed</code>) → Nhân viên sao chép thông tin gửi bộ phận Kho nội bộ đóng gói & xuất mẫu (<code className="text-primary-700 bg-primary-50 px-1 py-0.5 rounded font-mono">sample_sent</code>) → KOC xác nhận 1-chạm đã nhận mẫu trên điện thoại (<code className="text-primary-700 bg-primary-50 px-1 py-0.5 rounded font-mono">sample_received</code>) để kích hoạt đếm ngược hạn chót lên video.
+                                        </p>
+                                    </div>
+                                    <div className="flex items-start gap-2">
+                                        <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                                        <p>
+                                            <strong className="text-slate-800">Không tạo mã vận đơn:</strong> Nhân viên booking tập trung 100% vào quan hệ hợp tác và đôn đốc chất lượng video, việc giao vận thực tế do bộ phận kho hoặc đối tác fulfillment bên ngoài độc lập xử lý.
+                                        </p>
                                     </div>
                                 </div>
                             </div>

@@ -28,6 +28,15 @@ class ContentPost extends Model
         'shares_count',
         'gmv_amount',
         'last_synced_at',
+        'compliance_status',
+        'compliance_score',
+        'compliance_checklist',
+        'raw_caption',
+        'extracted_hashtags',
+        'compliance_checked_at',
+        'health_status',
+        'health_error_message',
+        'health_last_checked_at',
     ];
 
     protected $casts = [
@@ -38,6 +47,11 @@ class ContentPost extends Model
         'comments_count' => 'integer',
         'shares_count' => 'integer',
         'gmv_amount' => 'decimal:2',
+        'compliance_score' => 'integer',
+        'compliance_checklist' => 'array',
+        'extracted_hashtags' => 'array',
+        'compliance_checked_at' => 'datetime',
+        'health_last_checked_at' => 'datetime',
     ];
 
     protected $appends = [

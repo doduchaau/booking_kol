@@ -29,6 +29,8 @@ export interface CampaignBriefData {
     dos_and_donts?: string | null;
     discount_code?: string | null;
     affiliate_link?: string | null;
+    commission_rate?: string | number | null;
+    ads_commission_rate?: string | number | null;
 }
 
 interface Props {
@@ -60,6 +62,13 @@ export default function CampaignBriefCard({ campaign, onCopyBriefSuccess }: Prop
 
         if (campaign.affiliate_link) {
             text += `🛒 LINK SẢN PHẨM / GIỎ HÀNG GẮN KÈM:\n${campaign.affiliate_link}\n\n`;
+        }
+
+        if (campaign.commission_rate || campaign.ads_commission_rate) {
+            text += `💰 CHÍNH SÁCH HOA HỒNG DÀNH CHO BẠN:\n`;
+            if (campaign.commission_rate) text += `• Hoa hồng Affiliate (đơn tự nhiên): ${campaign.commission_rate}%\n`;
+            if (campaign.ads_commission_rate) text += `• Hoa hồng chạy ADS (khi nhãn hàng chạy ads): ${campaign.ads_commission_rate}%\n`;
+            text += `\n`;
         }
 
         if (campaign.dos_and_donts) {

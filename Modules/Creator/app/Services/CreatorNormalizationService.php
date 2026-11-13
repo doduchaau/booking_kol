@@ -39,6 +39,40 @@ class CreatorNormalizationService
     }
 
     /**
+     * Che mờ số điện thoại bảo vệ dữ liệu cá nhân theo Nghị Định 13/2023/NĐ-CP (091****789)
+     */
+    public static function maskPhone(?string $phone): ?string
+    {
+        $normalized = self::normalizePhone($phone);
+        if (empty($normalized)) {
+            return null;
+        }
+
+        if (strlen($normalized) === 10) {
+            return substr($normalized, 0, 3) . '****' . substr($normalized, 7);
+        }
+
+        return substr($normalized, 0, 2) . '****' . substr($normalized, -2);
+    }
+
+    /**
+     * Che mờ địa chỉ bảo vệ dữ liệu cá nhân theo Nghị Định 13/2023/NĐ-CP
+     */
+    public static function maskAddress(?string $address): ?string
+    {
+        if (empty($address)) {
+            return null;
+        }
+
+        $parts = explode(',', $address);
+        if (count($parts) >= 2) {
+            return '*** ' . trim(end($parts));
+        }
+
+        return mb_substr($address, 0, 5) . '*****';
+    }
+
+    /**
      * Chuẩn hóa username / handle mạng xã hội
      */
     public static function normalizeHandle(?string $handle): string

@@ -26,6 +26,7 @@ import {
 import PageHeader from '@/Components/Common/PageHeader';
 import Button from '@/Components/Common/Button';
 import Badge from '@/Components/Common/Badge';
+import PlatformBadge from '@/Components/Common/PlatformBadge';
 import QuickZaloReminderModal from '@/Components/Outreach/QuickZaloReminderModal';
 
 export interface DashboardProps {
@@ -468,9 +469,7 @@ export default function Dashboard({ stats, action_center, active_campaigns }: Da
                                                         <Badge variant="warning" size="sm">
                                                             Chờ duyệt
                                                         </Badge>
-                                                        <span className="text-xs uppercase font-bold text-primary-600 bg-primary-50 px-1.5 py-0.5 rounded">
-                                                            {post.platform}
-                                                        </span>
+                                                        <PlatformBadge platform={post.platform} size="xs" />
                                                     </div>
                                                     <div className="mt-1 flex items-center gap-3 text-xs text-slate-500">
                                                         <span>

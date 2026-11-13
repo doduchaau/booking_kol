@@ -306,7 +306,12 @@ class PipelineConstraintTest extends TestCase
 
         $this->assertEquals(2500000, (float) $updated->booking_fee);
         $this->assertEquals('Đã chốt giá hữu nghị', $updated->notes);
-        $this->assertEquals(PipelineStatusEnum::AGREED, $updated->status);
+        // Có phát sinh chi phí cast > 0 nên tự động chuyển sang WAITING_APPROVAL
+        $this->assertEquals(PipelineStatusEnum::WAITING_APPROVAL, $updated->status);
+
+        // Sau khi nhân viên xác nhận duyệt chi phí -> chuyển sang AGREED
+        $approved = $this->pipelineService->confirmCastApproved($updated, ['approver_name' => 'Lãnh đạo']);
+        $this->assertEquals(PipelineStatusEnum::AGREED, $approved->status);
     }
 
     /**

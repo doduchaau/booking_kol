@@ -4,6 +4,7 @@ namespace Modules\Portal\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use Exception;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -37,6 +38,8 @@ class PortalController extends Controller
                     'dos_and_donts' => $campaignCreator->campaign->dos_and_donts,
                     'discount_code' => $campaignCreator->campaign->discount_code,
                     'affiliate_link' => $campaignCreator->campaign->affiliate_link,
+                    'commission_rate' => $campaignCreator->commission_rate !== null ? (float) $campaignCreator->commission_rate : (float) ($campaignCreator->campaign->commission_rate ?? 0),
+                    'ads_commission_rate' => $campaignCreator->ads_commission_rate !== null ? (float) $campaignCreator->ads_commission_rate : (float) ($campaignCreator->campaign->ads_commission_rate ?? 0),
                     'content_guidelines_file_url' => $campaignCreator->campaign->content_guidelines_file_url,
                     'content_guidelines_file_name' => $campaignCreator->campaign->content_guidelines_file_name,
                     'sample_requirement_file_url' => $campaignCreator->campaign->sample_requirement_file_url,
@@ -63,6 +66,7 @@ class PortalController extends Controller
                     'shipping_address' => $campaignCreator->creator->shipping_address,
                     'city_province' => $campaignCreator->creator->city_province,
                     'district' => $campaignCreator->creator->district,
+                    'ward' => $campaignCreator->creator->ward,
                 ],
                 'pipeline' => [
                     'status' => $campaignCreator->status->value,
@@ -87,12 +91,16 @@ class PortalController extends Controller
         $campaignCreator = $portalService->getValidCampaignCreator($token);
 
         $validated = $request->validate([
-            'phone' => ['nullable', 'string', 'max:20'],
+            'phone' => ['required', 'string', 'max:20'],
             'shipping_address' => ['required', 'string', 'max:255'],
-            'city_province' => ['nullable', 'string', 'max:100'],
+            'city_province' => ['required', 'string', 'max:100'],
+            'ward' => ['required', 'string', 'max:100'],
             'district' => ['nullable', 'string', 'max:100'],
         ], [
+            'phone.required' => 'Vui lòng cung cấp số điện thoại nhận hàng.',
             'shipping_address.required' => 'Vui lòng điền địa chỉ giao nhận hàng cụ thể (số nhà, tên đường).',
+            'city_province.required' => 'Vui lòng điền Tỉnh / Thành phố nhận hàng.',
+            'ward.required' => 'Vui lòng điền Phường / Xã nhận hàng.',
         ]);
 
         $portalService->updateShippingAddress($campaignCreator, $validated);
@@ -109,6 +117,23 @@ class PortalController extends Controller
         $portalService->confirmReceipt($campaignCreator);
 
         return back()->with('success', 'Cảm ơn bạn! Hệ thống đã ghi nhận bạn đã nhận được gói hàng trải nghiệm. Vui lòng chuẩn bị kịch bản và đăng video trong 7 ngày tới.');
+    }
+
+    /**
+     * Pre-check kiểm tra video trước khi nộp
+     */
+    public function precheckVideo(Request $request, string $token, PortalService $portalService): JsonResponse
+    {
+        $campaignCreator = $portalService->getValidCampaignCreator($token);
+
+        $validated = $request->validate([
+            'post_url' => ['required', 'url', 'max:500'],
+            'platform' => ['required', 'in:tiktok,facebook,youtube,shopee,instagram'],
+        ]);
+
+        $result = $portalService->precheckVideo($campaignCreator, $validated);
+
+        return response()->json($result);
     }
 
     /**

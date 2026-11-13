@@ -2,7 +2,11 @@
 
 namespace Modules\Portal\Services;
 
+use App\Models\User;
+use App\Notifications\KocAddressConfirmedNotification;
+use App\Notifications\KocVideoSubmittedNotification;
 use Exception;
+use Illuminate\Support\Facades\Log;
 use Modules\Campaign\Enums\PipelineStatusEnum;
 use Modules\Campaign\Models\CampaignCreator;
 use Modules\Content\Models\ContentPost;
@@ -49,6 +53,7 @@ class PortalService
             'shipping_address' => $data['shipping_address'],
             'city_province' => $data['city_province'] ?? $creator->city_province,
             'district' => $data['district'] ?? $creator->district,
+            'ward' => $data['ward'] ?? $creator->ward,
         ]);
 
         // Cập nhật trạng thái Pipeline sang "address_confirmed" nếu chưa sang các bước sau
@@ -58,6 +63,25 @@ class PortalService
                 'status' => PipelineStatusEnum::ADDRESS_CONFIRMED,
                 'address_confirmed_at' => now(),
             ]);
+
+            // Gửi thông báo cho Staff phụ trách hoặc Quản lý
+            try {
+                $campaignCreator->loadMissing(['assignee', 'campaign', 'creator']);
+                $recipient = $campaignCreator->assignee;
+                if (!$recipient) {
+                    $recipient = User::whereHas('roles', fn($q) => $q->where('name', 'Admin'))->first() ?? User::first();
+                }
+                if ($recipient) {
+                    $recipient->notify(new KocAddressConfirmedNotification($campaignCreator));
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Lỗi gửi thông báo xác nhận địa chỉ: ' . $e->getMessage());
+            }
+
+            if (class_exists(\App\Services\SystemCacheService::class)) {
+                \App\Services\SystemCacheService::flushDashboardCache();
+                \App\Services\SystemCacheService::flushWorkspaceCache();
+            }
         }
 
         return $campaignCreator;
@@ -77,6 +101,11 @@ class PortalService
             'status' => PipelineStatusEnum::SAMPLE_RECEIVED,
             'sample_received_at' => now(),
         ]);
+
+        if (class_exists(\App\Services\SystemCacheService::class)) {
+            \App\Services\SystemCacheService::flushDashboardCache();
+            \App\Services\SystemCacheService::flushWorkspaceCache();
+        }
 
         return $campaignCreator;
     }
@@ -107,12 +136,66 @@ class PortalService
             'status' => 'pending_approval',
         ]);
 
+        // Tự động kiểm tra và chấm điểm tuân thủ ngay khi nộp
+        try {
+            if (class_exists(\Modules\Content\Services\VideoComplianceService::class)) {
+                app(\Modules\Content\Services\VideoComplianceService::class)->evaluatePost($post);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Lỗi tự động kiểm tra tuân thủ khi KOC nộp video: ' . $e->getMessage());
+        }
+
         // Chuyển trạng thái Pipeline sang "posted"
         $campaignCreator->update([
             'status' => PipelineStatusEnum::POSTED,
             'posted_at' => now(),
         ]);
 
+        // Gửi thông báo nộp video cho Staff phụ trách hoặc Quản lý
+        try {
+            $campaignCreator->loadMissing(['assignee', 'campaign', 'creator']);
+            $recipient = $campaignCreator->assignee;
+            if (!$recipient) {
+                $recipient = User::whereHas('roles', fn($q) => $q->where('name', 'Admin'))->first() ?? User::first();
+            }
+            if ($recipient) {
+                $recipient->notify(new KocVideoSubmittedNotification($campaignCreator, $post));
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Lỗi gửi thông báo nộp video: ' . $e->getMessage());
+        }
+
+        if (class_exists(\App\Services\SystemCacheService::class)) {
+            \App\Services\SystemCacheService::flushDashboardCache();
+            \App\Services\SystemCacheService::flushWorkspaceCache();
+        }
+
         return $post;
+    }
+
+    /**
+     * Pre-check kiểm tra video trước khi KOC bấm nộp
+     */
+    public function precheckVideo(CampaignCreator $campaignCreator, array $data): array
+    {
+        $platform = $data['platform'] ?? 'tiktok';
+        $postUrl = $data['post_url'] ?? '';
+
+        $campaignCreator->loadMissing(['campaign', 'creator.accounts']);
+        $campaign = $campaignCreator->campaign;
+        $creator = $campaignCreator->creator;
+
+        $extractor = app(\Modules\Content\Services\VideoMetadataExtractorService::class);
+        $complianceService = app(\Modules\Content\Services\VideoComplianceService::class);
+
+        $metadata = $extractor->extract($platform, $postUrl);
+
+        return $complianceService->evaluate(
+            platform: $platform,
+            url: $postUrl,
+            metadata: $metadata,
+            campaign: $campaign,
+            creator: $creator
+        );
     }
 }

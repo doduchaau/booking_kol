@@ -32,4 +32,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/campaigns/{id}/pipeline', [PipelineController::class, 'index'])->name('pipeline.index');
     Route::patch('/pipeline/{id}/status', [PipelineController::class, 'updateStatus'])->name('pipeline.status.update');
     Route::patch('/pipeline/{id}/assign', [PipelineController::class, 'assignStaff'])->name('pipeline.assign');
+    Route::patch('/pipeline/{id}/confirm-cast-approved', [PipelineController::class, 'confirmCastApproved'])->name('pipeline.cast.confirm');
+    Route::patch('/pipeline/{id}/reopen-deal', [PipelineController::class, 'reopenDeal'])->name('pipeline.cast.reopen');
 });

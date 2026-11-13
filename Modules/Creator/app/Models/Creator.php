@@ -40,6 +40,18 @@ class Creator extends Model
         'blacklist_status' => 'boolean',
     ];
 
+    protected $appends = [
+        'masked_phone',
+    ];
+
+    /**
+     * Thuộc tính che mờ số điện thoại (Nghị định 13/2023/NĐ-CP)
+     */
+    public function getMaskedPhoneAttribute(): ?string
+    {
+        return \Modules\Creator\Services\CreatorNormalizationService::maskPhone($this->phone);
+    }
+
     /**
      * Danh sách tài khoản mạng xã hội của Creator
      */

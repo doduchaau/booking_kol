@@ -7,15 +7,24 @@ use App\Http\Controllers\Auth\EmailVerificationPromptController;
 use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
-use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Auth\VerifyEmailController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function () {
-    Route::get('register', [RegisteredUserController::class, 'create'])
-        ->name('register');
+    // Mô hình B: Hệ thống quản trị nội bộ - Khóa hoàn toàn đăng ký tự do
+    Route::get('register', function () {
+        return redirect()->route('login')->with(
+            'warning',
+            'Hệ thống quản trị nội bộ không mở đăng ký tự do. Vui lòng liên hệ Quản trị viên để được cấp tài khoản nhân sự.'
+        );
+    })->name('register');
 
-    Route::post('register', [RegisteredUserController::class, 'store']);
+    Route::post('register', function () {
+        return redirect()->route('login')->with(
+            'warning',
+            'Hệ thống quản trị nội bộ không mở đăng ký tự do. Vui lòng liên hệ Quản trị viên để được cấp tài khoản nhân sự.'
+        );
+    });
 
     Route::get('login', [AuthenticatedSessionController::class, 'create'])
         ->name('login');

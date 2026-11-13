@@ -35,6 +35,7 @@ import {
 import PageHeader from '@/Components/Common/PageHeader';
 import Button from '@/Components/Common/Button';
 import Badge from '@/Components/Common/Badge';
+import PlatformBadge from '@/Components/Common/PlatformBadge';
 
 interface CreatorAccount {
     id: number;
@@ -66,6 +67,9 @@ interface PipelineItem {
     assigned_to: number | null;
     status: string;
     booking_fee: string | number;
+    approved_cost_at?: string | null;
+    approver_name?: string | null;
+    approval_notes?: string | null;
     portal_token: string | null;
     notes: string | null;
     creator: Creator;
@@ -157,9 +161,14 @@ function CardInner({ item }: { item: PipelineItem }) {
                         {item.creator?.name}
                     </span>
                     {mainAccount && (
-                        <span className="text-[11px] text-slate-500 block truncate">
-                            {mainAccount.platform}: @{mainAccount.handle}
-                        </span>
+                        <div className="mt-1">
+                            <PlatformBadge
+                                platform={mainAccount.platform}
+                                handle={mainAccount.handle}
+                                followersCount={mainAccount.followers_count}
+                                size="xs"
+                            />
+                        </div>
                     )}
                 </div>
                 <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-700 shrink-0">

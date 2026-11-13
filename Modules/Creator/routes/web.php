@@ -18,6 +18,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/creators/import', [CreatorController::class, 'importView'])->name('creators.import.view');
     Route::post('/creators/import', [CreatorController::class, 'import'])->name('creators.import');
     Route::post('/creators/import/analyze', [CreatorController::class, 'analyzeImport'])->name('creators.import.analyze');
+    Route::post('/creators/import/chunk', [CreatorController::class, 'processChunk'])->name('creators.import.chunk');
+    Route::post('/creators/import/queue', [CreatorController::class, 'queueImport'])->name('creators.import.queue');
+    Route::get('/creators/import/progress/{fileToken}', [CreatorController::class, 'getImportProgress'])->name('creators.import.progress');
+    Route::post('/creators/import/cancel/{fileToken}', [CreatorController::class, 'cancelImport'])->name('creators.import.cancel');
     Route::post('/creators/import/confirm', [CreatorController::class, 'confirmImport'])->name('creators.import.confirm');
     Route::post('/creators/import/batch-urls', [CreatorController::class, 'importBatchUrls'])->name('creators.import.batch-urls');
     Route::get('/creators/discovery', [CreatorController::class, 'discoveryView'])->name('creators.discovery');
@@ -25,5 +29,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/creators/{id}/accounts/{accountId}/sync', [CreatorController::class, 'syncAccount'])->name('creators.accounts.sync');
     Route::post('/creators/merge', [CreatorController::class, 'merge'])->name('creators.merge');
     Route::get('/creators/{id}', [CreatorController::class, 'show'])->name('creators.show');
+    Route::get('/creators/{id}/edit', [CreatorController::class, 'edit'])->name('creators.edit');
+    Route::put('/creators/{id}', [CreatorController::class, 'update'])->name('creators.update');
     Route::delete('/creators/{id}', [CreatorController::class, 'destroy'])->name('creators.destroy');
 });

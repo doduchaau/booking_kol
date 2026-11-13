@@ -64,3 +64,12 @@ If you discover a security vulnerability within Laravel, please send an e-mail t
 ## License
 
 The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+
+
+
+
+Thử nghiệm Command quét sức khỏe video bị xóa/ẩn:
+Chạy lệnh terminal:
+powershell
+php artisan content:check-video-health --days=60
+Hệ thống quét và thông báo chi tiết danh sách video khả dụng hoặc bị xóa/ẩn.
