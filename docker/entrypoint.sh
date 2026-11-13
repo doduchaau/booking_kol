@@ -1,10 +1,13 @@
 #!/bin/sh
 set -e
 
-# Đổi port Nginx theo biến môi trường $PORT của Render (nếu có)
+# Đổi port Nginx theo biến môi trường $PORT của Render (Render thường bind port động như 10000)
 if [ -n "$PORT" ]; then
     sed -i "s/listen 80;/listen $PORT;/g" /etc/nginx/sites-available/default
 fi
+
+# Chạy package:discover của Laravel
+php /var/www/html/artisan package:discover --ansi || true
 
 # Liên kết storage công khai
 php /var/www/html/artisan storage:link || true
