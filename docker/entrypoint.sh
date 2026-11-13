@@ -15,6 +15,10 @@ php /var/www/html/artisan storage:link || true
 # Tối ưu hóa cấu hình Laravel production
 php /var/www/html/artisan config:cache || true
 php /var/www/html/artisan route:cache || true
+
+for d in Modules/*/; do
+    mkdir -p "${d}resources/views"
+done
 php /var/www/html/artisan view:cache || true
 
 # Tự động chạy migration database
