@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Facades\URL;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -26,5 +27,9 @@ class AppServiceProvider extends ServiceProvider
         \Illuminate\Support\Facades\RateLimiter::for('social-data-provider', function ($job) {
             return \Illuminate\Cache\RateLimiting\Limit::perMinute(60)->by('provider-global-quota');
         });
+
+            if (config('app.env') === 'production') {
+        URL::forceScheme('https');
+    }
     }
 }
