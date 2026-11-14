@@ -400,7 +400,7 @@ class CreatorImportService
             ? CreatorAccount::whereIn('handle', $uniqueHandles)
                 ->with('creator')
                 ->get()
-                ->keyBy(fn ($acc) => $acc->platform . ':' . $acc->handle)
+                ->keyBy(fn ($acc) => ($acc->platform instanceof PlatformEnum ? $acc->platform->value : (string) $acc->platform) . ':' . $acc->handle)
             : collect();
 
         // Thực hiện Upsert trong một Transaction duy nhất cho toàn bộ Batch

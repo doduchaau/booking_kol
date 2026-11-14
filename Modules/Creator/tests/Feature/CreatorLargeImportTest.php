@@ -174,5 +174,58 @@ class CreatorLargeImportTest extends TestCase
             'status' => 'cancelled',
         ]);
     }
+
+    public function test_can_process_chunk_when_matching_creator_accounts_already_exist_in_database(): void
+    {
+        // Tạo sẵn Creator và CreatorAccount với PlatformEnum::TIKTOK
+        $existingCreator = Creator::create([
+            'name' => 'Existing KOC',
+            'phone' => '0999888777',
+            'email' => 'existing@test.com',
+            'tier' => \Modules\Creator\Enums\CreatorTierEnum::MICRO,
+            'niche' => 'beauty',
+            'created_by' => $this->user->id,
+        ]);
+        CreatorAccount::create([
+            'creator_id' => $existingCreator->id,
+            'platform' => \Modules\Creator\Enums\PlatformEnum::TIKTOK,
+            'handle' => 'existing_handle',
+            'followers_count' => 50000,
+        ]);
+
+        $csv = "Ten,Kenh TikTok,Followers\n"
+            . "Existing KOC Updated,@existing_handle,120k\n"
+            . "Brand New KOC,@brand_new_handle,30k\n";
+
+        $file = UploadedFile::fake()->createWithContent('koc_existing_account.csv', $csv);
+
+        $analyzeRes = $this->actingAs($this->user)
+            ->postJson(route('creators.import.analyze'), [
+                'file' => $file,
+            ]);
+
+        $analyzeRes->assertOk();
+        $fileToken = $analyzeRes->json('data.file_token');
+
+        // Xử lý chunk - trước đây bước này throw "Object of class Modules\Creator\Enums\PlatformEnum could not be converted to string"
+        $chunkRes = $this->actingAs($this->user)
+            ->postJson(route('creators.import.chunk'), [
+                'file_token' => $fileToken,
+                'chunk_index' => 0,
+                'chunk_size' => 100,
+                'auto_enrich' => false,
+            ]);
+
+        $chunkRes->assertOk();
+        $chunkRes->assertJsonPath('success', true);
+        $chunkRes->assertJsonPath('data.updated_in_chunk', 1);
+        $chunkRes->assertJsonPath('data.imported_in_chunk', 1);
+
+        // Kiểm tra account đã được cập nhật followers
+        $this->assertDatabaseHas('creator_accounts', [
+            'handle' => 'existing_handle',
+            'followers_count' => 120000,
+        ]);
+    }
 }
 
