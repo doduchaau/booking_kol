@@ -22,7 +22,7 @@ class PortalService
     public function getValidCampaignCreator(string $token): CampaignCreator
     {
         $campaignCreator = CampaignCreator::where('portal_token', $token)
-            ->with(['campaign', 'creator.accounts'])
+            ->with(['campaign.products', 'creator.accounts', 'creatorProducts.campaignProduct'])
             ->first();
 
         if (!$campaignCreator) {
@@ -101,6 +101,15 @@ class PortalService
             'status' => PipelineStatusEnum::SAMPLE_RECEIVED,
             'sample_received_at' => now(),
         ]);
+
+        // Đánh dấu tất cả sản phẩm mẫu của KOC này sang trạng thái "received"
+        $campaignCreator->loadMissing('creatorProducts');
+        foreach ($campaignCreator->creatorProducts as $cp) {
+            $cp->update([
+                'sample_status' => \Modules\Campaign\Enums\SampleStatusEnum::RECEIVED,
+                'received_at' => now(),
+            ]);
+        }
 
         if (class_exists(\App\Services\SystemCacheService::class)) {
             \App\Services\SystemCacheService::flushDashboardCache();

@@ -16,6 +16,7 @@ import {
     Database,
     Info,
     X,
+    Package,
 } from 'lucide-react';
 import PageHeader from '@/Components/Common/PageHeader';
 import Button from '@/Components/Common/Button';
@@ -28,6 +29,7 @@ import KocMatrixTable, {
     CampaignCreatorPivot,
     Creator,
 } from './Partials/KocMatrixTable';
+import { CampaignProduct } from './Partials/KocMatrix/types';
 
 interface CampaignStats {
     total_assigned: number;
@@ -62,6 +64,7 @@ interface Campaign {
     commission_rate: string | number;
     ads_commission_rate?: string | number;
     status: 'draft' | 'active' | 'completed' | 'paused';
+    products?: CampaignProduct[];
     campaign_creators: CampaignCreatorPivot[];
 }
 
@@ -96,10 +99,12 @@ export default function Show({
 
     const handleOpenAddModal = (allDb: boolean = false) => {
         setSelectAllInDb(allDb);
-        addForm.setData((prev) => ({
-            ...prev,
+        addForm.setData({
             select_all_in_db: allDb,
-        }));
+            creator_ids: [],
+            assigned_to: '',
+            booking_fee: '0',
+        });
         if (!allDb && (!availableCreators || availableCreators.length === 0)) {
             router.reload({ only: ['availableCreators'] });
         }

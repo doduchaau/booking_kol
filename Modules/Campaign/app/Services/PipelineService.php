@@ -126,6 +126,33 @@ class PipelineService
             $updates['notes'] = $notes;
         }
 
+        // Tự động đồng bộ trạng thái sản phẩm mẫu
+        if ($newStatus === PipelineStatusEnum::SAMPLE_SENT) {
+            $campaignCreator->loadMissing('creatorProducts');
+            foreach ($campaignCreator->creatorProducts as $cp) {
+                if ($cp->sample_status === \Modules\Campaign\Enums\SampleStatusEnum::ASSIGNED) {
+                    $qty = $cp->quantity_assigned ?: 1;
+                    $cp->update([
+                        'quantity_sent' => $qty,
+                        'sample_status' => \Modules\Campaign\Enums\SampleStatusEnum::SENT,
+                        'sent_at' => now(),
+                    ]);
+                }
+            }
+            $totalSent = (int) $campaignCreator->creatorProducts()->sum('quantity_sent');
+            $updates['total_samples_sent'] = $totalSent ?: 1;
+        }
+
+        if ($newStatus === PipelineStatusEnum::SAMPLE_RECEIVED) {
+            $campaignCreator->loadMissing('creatorProducts');
+            foreach ($campaignCreator->creatorProducts as $cp) {
+                $cp->update([
+                    'sample_status' => \Modules\Campaign\Enums\SampleStatusEnum::RECEIVED,
+                    'received_at' => now(),
+                ]);
+            }
+        }
+
         $campaignCreator->update($updates);
 
         // Tự động làm mới cache báo cáo ROI / Phễu của chiến dịch, Dashboard và Workspace
@@ -273,6 +300,10 @@ class PipelineService
 
         if (array_key_exists('assigned_to', $data)) {
             $fillableData['assigned_to'] = $data['assigned_to'] ? (int) $data['assigned_to'] : null;
+        }
+
+        if (array_key_exists('collaboration_type', $data)) {
+            $fillableData['collaboration_type'] = $data['collaboration_type'];
         }
 
         if (!empty($fillableData)) {

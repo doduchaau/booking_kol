@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
+use Modules\Campaign\Enums\CollaborationTypeEnum;
 use Modules\Campaign\Enums\PipelineStatusEnum;
 use Modules\Creator\Models\Creator;
 
@@ -22,6 +23,10 @@ class CampaignCreator extends Model
         'creator_id',
         'assigned_to',
         'status',
+        'collaboration_type',
+        'total_samples_assigned',
+        'total_samples_sent',
+        'live_target_gmv',
         'booking_fee',
         'commission_rate',
         'ads_commission_rate',
@@ -45,6 +50,10 @@ class CampaignCreator extends Model
 
     protected $casts = [
         'status' => PipelineStatusEnum::class,
+        'collaboration_type' => CollaborationTypeEnum::class,
+        'total_samples_assigned' => 'integer',
+        'total_samples_sent' => 'integer',
+        'live_target_gmv' => 'decimal:2',
         'booking_fee' => 'decimal:2',
         'commission_rate' => 'decimal:2',
         'ads_commission_rate' => 'decimal:2',
@@ -91,6 +100,14 @@ class CampaignCreator extends Model
     public function outreachMessages(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(\Modules\Outreach\Models\OutreachMessage::class, 'campaign_creator_id')->latest('sent_at');
+    }
+
+    /**
+     * Danh sách sản phẩm mẫu KOC được phân bổ & gửi trong chiến dịch
+     */
+    public function creatorProducts(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(CampaignCreatorProduct::class, 'campaign_creator_id')->with('campaignProduct');
     }
 
     /**

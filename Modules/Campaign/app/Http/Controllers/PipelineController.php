@@ -217,6 +217,7 @@ class PipelineController extends Controller
             'notes' => ['nullable', 'string', 'max:1000'],
             'assigned_to' => ['nullable', 'exists:users,id'],
             'status' => ['nullable', 'string', 'in:' . implode(',', array_column(PipelineStatusEnum::cases(), 'value'))],
+            'collaboration_type' => ['nullable', 'string', 'in:video,livestream,both'],
         ]);
 
         $campaignCreator = CampaignCreator::where('campaign_id', $campaignId)->findOrFail($pivotId);
@@ -238,6 +239,7 @@ class PipelineController extends Controller
                 'notes',
                 'assigned_to',
                 'status',
+                'collaboration_type',
             ]));
 
             if ($request->wantsJson()) {

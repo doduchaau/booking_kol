@@ -12,6 +12,7 @@ import {
     MapPin,
     Video,
     ExternalLink,
+    FileText,
 } from 'lucide-react';
 import Button from '@/Components/Common/Button';
 import QuickZaloReminderModal from '@/Components/Outreach/QuickZaloReminderModal';
@@ -75,6 +76,17 @@ interface Props {
     onCopyPortal: (token: string | null) => void;
     copiedToken: string | null;
     onSubmitShipment: (e: React.FormEvent) => void;
+    shipmentProducts?: Array<{
+        product_id: number;
+        name: string;
+        sku?: string;
+        quantity: number;
+        variant: string;
+        selected: boolean;
+    }>;
+    onToggleShipmentProduct?: (productId: number) => void;
+    onChangeShipmentProductQty?: (productId: number, delta: number) => void;
+    onChangeShipmentProductVariant?: (productId: number, variant: string) => void;
 
     // Video Modal
     videoModalItem: CampaignCreatorPivot | null;
@@ -89,6 +101,14 @@ interface Props {
     onVideoPostedAtChange: (date: string) => void;
     videoSubmitting: boolean;
     onSubmitVideo: (e: React.FormEvent) => void;
+
+    // Note Modal (Popup ghi chú dài)
+    noteModalItem?: CampaignCreatorPivot | null;
+    onCloseNoteModal?: () => void;
+    noteModalContent?: string;
+    onNoteModalContentChange?: (val: string) => void;
+    onSaveNoteModal?: () => void;
+    noteSubmitting?: boolean;
 
     // Zalo Reminder
     quickZaloPivotId: number | null;
@@ -151,6 +171,10 @@ export default React.memo(function KocMatrixModals({
     onCopyPortal,
     copiedToken,
     onSubmitShipment,
+    shipmentProducts = [],
+    onToggleShipmentProduct = () => {},
+    onChangeShipmentProductQty = () => {},
+    onChangeShipmentProductVariant = () => {},
 
     videoModalItem,
     onCloseVideoModal,
@@ -164,6 +188,13 @@ export default React.memo(function KocMatrixModals({
     onVideoPostedAtChange,
     videoSubmitting,
     onSubmitVideo,
+
+    noteModalItem = null,
+    onCloseNoteModal = () => {},
+    noteModalContent = '',
+    onNoteModalContentChange = () => {},
+    onSaveNoteModal = () => {},
+    noteSubmitting = false,
 
     quickZaloPivotId,
     onCloseQuickZalo,
@@ -623,6 +654,88 @@ export default React.memo(function KocMatrixModals({
                                     💡 <strong>Quy trình tinh gọn:</strong> Nhân viên Booking chỉ cần bấm sao chép thông tin địa chỉ gửi cho kho và xác nhận ngày gửi mẫu. Kho bên ngoài sẽ chịu trách nhiệm đóng gói và vận chuyển.
                                 </div>
 
+                                {/* Khối Lựa Chọn Sản Phẩm Mẫu Gửi Cho KOC */}
+                                {shipmentProducts && shipmentProducts.length > 0 && (
+                                    <div className="space-y-2 p-3 rounded-xl border border-amber-200/80 bg-amber-50/40">
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                                                <Package className="h-4 w-4 text-amber-600" />
+                                                <span>Lựa chọn sản phẩm mẫu gửi cho KOC này</span>
+                                            </label>
+                                            <span className="text-[11px] font-semibold text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded">
+                                                Đã chọn: {shipmentProducts.filter((p) => p.selected).reduce((sum, p) => sum + p.quantity, 0)} món
+                                            </span>
+                                        </div>
+
+                                        <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+                                            {shipmentProducts.map((prod) => (
+                                                <div
+                                                    key={prod.product_id}
+                                                    className={`p-2.5 rounded-lg border text-xs transition-colors ${
+                                                        prod.selected
+                                                            ? 'bg-white border-amber-300 shadow-2xs'
+                                                            : 'bg-slate-50/80 border-slate-200 opacity-70'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={prod.selected}
+                                                                onChange={() => onToggleShipmentProduct(prod.product_id)}
+                                                                className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 h-4 w-4"
+                                                            />
+                                                            <span className="font-bold text-slate-800 truncate block">
+                                                                {prod.name}
+                                                            </span>
+                                                            {prod.sku && (
+                                                                <span className="text-[10px] font-mono text-slate-400">
+                                                                    ({prod.sku})
+                                                                </span>
+                                                            )}
+                                                        </label>
+
+                                                        {prod.selected && (
+                                                            <div className="flex items-center gap-1 shrink-0">
+                                                                <span className="text-[11px] text-slate-500">SL:</span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => onChangeShipmentProductQty(prod.product_id, -1)}
+                                                                    className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center font-bold"
+                                                                >
+                                                                    -
+                                                                </button>
+                                                                <span className="w-6 text-center font-bold text-slate-900">
+                                                                    {prod.quantity}
+                                                                </span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => onChangeShipmentProductQty(prod.product_id, 1)}
+                                                                    className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center font-bold"
+                                                                >
+                                                                    +
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    {prod.selected && (
+                                                        <div className="mt-2 pl-6">
+                                                            <input
+                                                                type="text"
+                                                                value={prod.variant || ''}
+                                                                onChange={(e) => onChangeShipmentProductVariant(prod.product_id, e.target.value)}
+                                                                placeholder="Ghi chú phân loại (Màu sắc, Size, Dung tích...)"
+                                                                className="w-full px-2.5 py-1 text-[11px] rounded border border-slate-200 bg-slate-50/60 focus:bg-white focus:ring-1 focus:ring-amber-500"
+                                                            />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
                                 <div className="grid grid-cols-2 gap-3">
                                     <div>
                                         <label className="block text-xs font-semibold text-slate-700 mb-1">Ngày gửi mẫu</label>
@@ -826,6 +939,73 @@ export default React.memo(function KocMatrixModals({
                 onClose={onCloseQuickZalo}
                 onSuccess={onQuickZaloSuccess}
             />
+
+            {/* MODAL GHI CHÚ KOC (POPUP CHI TIẾT) */}
+            {noteModalItem && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs" onClick={onCloseNoteModal} />
+                    <div className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl border border-slate-100 animate-in zoom-in-95">
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <div>
+                                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                    <FileText className="h-5 w-5 text-primary-600" />
+                                    Ghi Chú KOC: {noteModalItem.creator.name}
+                                </h3>
+                                <p className="text-xs text-slate-500 mt-0.5">
+                                    {noteModalItem.creator.phone || 'Chưa có SĐT'} • {noteModalItem.creator.tier?.toUpperCase()}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={onCloseNoteModal}
+                                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        <form
+                            onSubmit={(e) => {
+                                e.preventDefault();
+                                onSaveNoteModal();
+                            }}
+                            className="mt-4 space-y-4"
+                        >
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                                    Nội dung ghi chú riêng của nhân viên cho KOC này:
+                                </label>
+                                <textarea
+                                    value={noteModalContent}
+                                    onChange={(e) => onNoteModalContentChange(e.target.value)}
+                                    rows={5}
+                                    placeholder="Ví dụ: KOC hẹn tối thứ 7 chốt kịch bản, thích gửi tông màu tự nhiên, chỉ nhận hàng vào giờ hành chính..."
+                                    className="w-full rounded-xl border border-slate-200 p-3 text-xs text-slate-800 placeholder-slate-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 bg-slate-50/50 focus:bg-white transition-all resize-y"
+                                    autoFocus
+                                />
+                                <span className="text-[11px] text-slate-400 mt-1 block">
+                                    💡 Ghi chú nội bộ giúp cả team nắm được tiến độ trao đổi và yêu cầu riêng của KOC.
+                                </span>
+                            </div>
+
+                            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                                <Button type="button" variant="secondary" size="sm" onClick={onCloseNoteModal}>
+                                    Hủy bỏ
+                                </Button>
+                                <Button
+                                    type="submit"
+                                    variant="primary"
+                                    size="sm"
+                                    loading={noteSubmitting}
+                                    iconLeft={<Check className="h-4 w-4" />}
+                                >
+                                    Lưu Ghi Chú
+                                </Button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </>
     );
 });

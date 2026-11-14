@@ -22,6 +22,10 @@ import {
     ShieldCheck,
     AlertTriangle,
     RefreshCw,
+    Radio,
+    Layers,
+    ChevronDown,
+    ChevronUp,
 } from 'lucide-react';
 import Button from '@/Components/Common/Button';
 import FormField from '@/Components/Form/FormField';
@@ -36,6 +40,38 @@ export interface CampaignFileItem {
     title: string;
     file_name: string;
     url: string;
+}
+
+export interface CampaignProductItem {
+    id: number;
+    product_name: string;
+    product_sku?: string | null;
+    product_url?: string | null;
+    retail_price?: number;
+    brief_content?: string | null;
+    brief_file_url?: string | null;
+    brief_file_name?: string | null;
+    hashtags?: string | null;
+    sample_requirement?: string | null;
+}
+
+export interface CreatorProductItem {
+    id: number;
+    campaign_product_id: number;
+    product_name: string;
+    product_sku?: string | null;
+    product_url?: string | null;
+    retail_price?: number;
+    brief_content?: string | null;
+    brief_file_url?: string | null;
+    brief_file_name?: string | null;
+    hashtags?: string | null;
+    sample_requirement?: string | null;
+    sample_variant?: string | null;
+    quantity_assigned: number;
+    quantity_sent: number;
+    sample_status: string;
+    sample_status_label: string;
 }
 
 interface CampaignInfo {
@@ -56,6 +92,7 @@ interface CampaignInfo {
     content_guidelines_file_name?: string | null;
     sample_requirement_file_url?: string | null;
     sample_requirement_file_name?: string | null;
+    products?: CampaignProductItem[];
     files?: CampaignFileItem[];
 }
 
@@ -72,9 +109,14 @@ interface CreatorInfo {
 interface PipelineInfo {
     status: string;
     status_label: string;
+    collaboration_type?: string;
+    collaboration_type_label?: string;
+    total_samples_assigned?: number;
+    total_samples_sent?: number;
     sample_sent_at?: string;
     sample_received_at?: string;
     posted_at?: string;
+    creator_products?: CreatorProductItem[];
 }
 
 interface Props {
@@ -148,12 +190,21 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
     const [copiedHashtags, setCopiedHashtags] = useState(false);
     const [copiedCode, setCopiedCode] = useState(false);
     const [showBrief, setShowBrief] = useState(true);
+    const [copiedProductHashtagId, setCopiedProductHashtagId] = useState<number | null>(null);
+    const [expandedProductBriefId, setExpandedProductBriefId] = useState<number | null>(null);
 
     const handleCopyHashtags = async () => {
         if (!campaign.hashtags) return;
         await navigator.clipboard.writeText(campaign.hashtags);
         setCopiedHashtags(true);
         setTimeout(() => setCopiedHashtags(false), 2500);
+    };
+
+    const handleCopyProductHashtags = async (prodId: number, hashtags: string) => {
+        if (!hashtags) return;
+        await navigator.clipboard.writeText(hashtags);
+        setCopiedProductHashtagId(prodId);
+        setTimeout(() => setCopiedProductHashtagId(null), 2500);
     };
 
     const handleCopyDiscountCode = async () => {
@@ -188,6 +239,14 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
     const isSampleReceivedDone = ['sample_received', 'posted', 'completed'].includes(pipeline.status);
     const isPostedDone = ['posted', 'completed'].includes(pipeline.status);
 
+    // Danh sách sản phẩm hiển thị (Ưu tiên creator_products được gán riêng, fallback sang campaign.products)
+    const assignedProducts = pipeline.creator_products && pipeline.creator_products.length > 0
+        ? pipeline.creator_products
+        : [];
+    const campaignProducts = campaign.products && campaign.products.length > 0
+        ? campaign.products
+        : [];
+
     return (
         <div className="min-h-screen bg-slate-50 text-slate-800 antialiased py-6 px-4 sm:px-6">
             <Head title={`Cổng Hợp Tác KOC - ${campaign.name}`} />
@@ -206,10 +265,27 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
                         <Sparkles className="h-6 w-6" />
                     </div>
                     <div>
-                        <span className="text-xs font-bold uppercase tracking-wider text-primary-600">
-                            Cổng Tiếp Nhận Dành Cho KOC / KOL
-                        </span>
-                        <h1 className="mt-1 text-xl font-bold tracking-tight text-slate-900">
+                        <div className="flex items-center justify-center gap-1.5 mb-2 flex-wrap">
+                            <span className="text-xs font-bold uppercase tracking-wider text-primary-600">
+                                Cổng Tiếp Nhận Dành Cho KOC / KOL
+                            </span>
+                            {pipeline.collaboration_type === 'livestream' && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 shadow-2xs">
+                                    <Radio className="h-3 w-3 text-amber-600" /> Livestream
+                                </span>
+                            )}
+                            {pipeline.collaboration_type === 'both' && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200 shadow-2xs">
+                                    <Sparkles className="h-3 w-3 text-purple-600" /> Video + Live
+                                </span>
+                            )}
+                            {(!pipeline.collaboration_type || pipeline.collaboration_type === 'video') && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary-100 text-primary-800 border border-primary-200 shadow-2xs">
+                                    <Video className="h-3 w-3 text-primary-600" /> Lên Video
+                                </span>
+                            )}
+                        </div>
+                        <h1 className="text-xl font-bold tracking-tight text-slate-900">
                             {campaign.name}
                         </h1>
                         <p className="text-xs text-slate-500 mt-1">
@@ -266,6 +342,224 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
                         </div>
                     </div>
                 </div>
+
+                {/* Khối Danh Sách Sản Phẩm & Mẫu Trải Nghiệm Của Bạn */}
+                {(assignedProducts.length > 0 || campaignProducts.length > 0) && (
+                    <div className="rounded-2xl border border-sky-100 bg-white p-5 shadow-sm space-y-3.5">
+                        <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+                            <div className="flex items-center gap-2">
+                                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-50 text-sky-600 shrink-0">
+                                    <Layers className="h-4 w-4" />
+                                </div>
+                                <div>
+                                    <h2 className="text-sm font-bold text-slate-900">
+                                        {assignedProducts.length > 0 ? 'Sản Phẩm Mẫu Phân Bổ Cho Bạn' : 'Danh Sách Sản Phẩm Chiến Dịch'}
+                                    </h2>
+                                    <p className="text-[11px] text-slate-500">
+                                        {assignedProducts.length > 0
+                                            ? `Tổng cộng ${pipeline.total_samples_sent || pipeline.total_samples_assigned || assignedProducts.length} sản phẩm mẫu được gửi tới bạn`
+                                            : `${campaignProducts.length} sản phẩm áp dụng trong chiến dịch này`}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="space-y-3">
+                            {assignedProducts.length > 0 ? (
+                                assignedProducts.map((p) => {
+                                    const isExpanded = expandedProductBriefId === p.id;
+                                    const qty = isSampleSent ? (p.quantity_sent || p.quantity_assigned || 1) : (p.quantity_assigned || 1);
+                                    const hasCustomBrief = Boolean(p.brief_content || p.brief_file_url || p.hashtags);
+
+                                    return (
+                                        <div key={p.id} className="rounded-xl border border-slate-200 bg-slate-50/60 p-3.5 space-y-2.5">
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                        <span className="text-xs font-bold text-slate-900 block">
+                                                            {p.product_name}
+                                                        </span>
+                                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-primary-100 text-primary-800">
+                                                            SL: {qty} món
+                                                        </span>
+                                                    </div>
+                                                    {p.sample_variant && (
+                                                        <span className="text-[11px] text-slate-500 block mt-0.5">
+                                                            Phân loại: <strong className="text-slate-700">{p.sample_variant}</strong>
+                                                        </span>
+                                                    )}
+                                                    {p.retail_price ? (
+                                                        <span className="text-[11px] text-slate-500 block">
+                                                            Giá bán: {p.retail_price.toLocaleString('vi-VN')} đ
+                                                        </span>
+                                                    ) : null}
+                                                </div>
+
+                                                {p.product_url && (
+                                                    <a
+                                                        href={p.product_url}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-600 bg-white border border-slate-200 px-2 py-1 rounded-lg hover:bg-primary-50 transition-colors shrink-0 shadow-2xs"
+                                                    >
+                                                        <span>Link SP</span>
+                                                        <ExternalLink className="h-3 w-3" />
+                                                    </a>
+                                                )}
+                                            </div>
+
+                                            {/* Nút Xem Brief Riêng của từng sản phẩm nếu có */}
+                                            {hasCustomBrief && (
+                                                <div className="pt-2 border-t border-slate-200/80">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setExpandedProductBriefId(isExpanded ? null : p.id)}
+                                                        className="flex items-center justify-between w-full text-xs font-semibold text-primary-700 hover:text-primary-800"
+                                                    >
+                                                        <span className="flex items-center gap-1">
+                                                            <FileText className="h-3.5 w-3.5 text-primary-600" />
+                                                            {isExpanded ? 'Đóng Brief riêng của sản phẩm này' : 'Xem Brief riêng cho sản phẩm này'}
+                                                        </span>
+                                                        {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                                                    </button>
+
+                                                    {isExpanded && (
+                                                        <div className="mt-2.5 p-3 rounded-lg bg-white border border-primary-100 space-y-2.5 text-xs animate-in fade-in duration-150">
+                                                            {p.brief_content && (
+                                                                <div>
+                                                                    <div className="font-bold text-slate-800 mb-1">
+                                                                        Yêu cầu kịch bản & điểm nổi bật:
+                                                                    </div>
+                                                                    <p className="text-slate-700 leading-relaxed whitespace-pre-line text-[11px]">
+                                                                        {p.brief_content}
+                                                                    </p>
+                                                                </div>
+                                                            )}
+
+                                                            {p.hashtags && (
+                                                                <div>
+                                                                    <div className="flex items-center justify-between mb-1">
+                                                                        <span className="font-bold text-slate-800 flex items-center gap-1 text-[11px]">
+                                                                            <Hash className="h-3 w-3 text-primary-600" />
+                                                                            Hashtags riêng của sản phẩm:
+                                                                        </span>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleCopyProductHashtags(p.id, p.hashtags!)}
+                                                                            className="text-primary-600 hover:text-primary-700 font-semibold flex items-center gap-1 text-[10px]"
+                                                                        >
+                                                                            {copiedProductHashtagId === p.id ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
+                                                                            <span>{copiedProductHashtagId === p.id ? 'Đã sao chép' : 'Sao chép'}</span>
+                                                                        </button>
+                                                                    </div>
+                                                                    <div className="font-mono text-[11px] text-primary-700 bg-slate-50 p-1.5 rounded border border-slate-200">
+                                                                        {p.hashtags}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+
+                                                            {p.brief_file_url && (
+                                                                <div className="pt-1">
+                                                                    <a
+                                                                        href={p.brief_file_url}
+                                                                        target="_blank"
+                                                                        rel="noreferrer"
+                                                                        download
+                                                                        className="inline-flex items-center gap-1.5 font-semibold text-primary-700 bg-primary-50 border border-primary-200 px-2.5 py-1.5 rounded-lg hover:bg-primary-100 shadow-2xs text-[11px] transition-colors"
+                                                                    >
+                                                                        <Download className="h-3.5 w-3.5 text-primary-600" />
+                                                                        <span>Tải file Brief: {p.brief_file_name || 'Tệp đính kèm'}</span>
+                                                                    </a>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })
+                            ) : (
+                                campaignProducts.map((p) => {
+                                    const isExpanded = expandedProductBriefId === p.id;
+                                    const hasCustomBrief = Boolean(p.brief_content || p.brief_file_url || p.hashtags);
+
+                                    return (
+                                        <div key={p.id} className="rounded-xl border border-slate-200 bg-slate-50/60 p-3.5 space-y-2">
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="min-w-0 flex-1">
+                                                    <span className="text-xs font-bold text-slate-900 block">
+                                                        {p.product_name}
+                                                    </span>
+                                                    {p.retail_price ? (
+                                                        <span className="text-[11px] text-slate-500 block">
+                                                            Giá bán: {p.retail_price.toLocaleString('vi-VN')} đ
+                                                        </span>
+                                                    ) : null}
+                                                </div>
+
+                                                {p.product_url && (
+                                                    <a
+                                                        href={p.product_url}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-600 bg-white border border-slate-200 px-2 py-1 rounded-lg hover:bg-primary-50 transition-colors shrink-0 shadow-2xs"
+                                                    >
+                                                        <span>Link SP</span>
+                                                        <ExternalLink className="h-3 w-3" />
+                                                    </a>
+                                                )}
+                                            </div>
+
+                                            {hasCustomBrief && (
+                                                <div className="pt-2 border-t border-slate-200/80">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setExpandedProductBriefId(isExpanded ? null : p.id)}
+                                                        className="flex items-center justify-between w-full text-xs font-semibold text-primary-700 hover:text-primary-800"
+                                                    >
+                                                        <span className="flex items-center gap-1">
+                                                            <FileText className="h-3.5 w-3.5 text-primary-600" />
+                                                            {isExpanded ? 'Đóng Brief sản phẩm' : 'Xem Brief riêng sản phẩm'}
+                                                        </span>
+                                                        {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                                                    </button>
+
+                                                    {isExpanded && (
+                                                        <div className="mt-2.5 p-3 rounded-lg bg-white border border-primary-100 space-y-2 text-xs">
+                                                            {p.brief_content && (
+                                                                <p className="text-slate-700 leading-relaxed whitespace-pre-line text-[11px]">
+                                                                    {p.brief_content}
+                                                                </p>
+                                                            )}
+                                                            {p.hashtags && (
+                                                                <div className="font-mono text-[11px] text-primary-700 bg-slate-50 p-1.5 rounded border border-slate-200">
+                                                                    {p.hashtags}
+                                                                </div>
+                                                            )}
+                                                            {p.brief_file_url && (
+                                                                <a
+                                                                    href={p.brief_file_url}
+                                                                    target="_blank"
+                                                                    rel="noreferrer"
+                                                                    download
+                                                                    className="inline-flex items-center gap-1.5 font-semibold text-primary-700 bg-primary-50 border border-primary-200 px-2.5 py-1.5 rounded-lg hover:bg-primary-100 text-[11px]"
+                                                                >
+                                                                    <Download className="h-3.5 w-3.5 text-primary-600" />
+                                                                    <span>Tải Brief ({p.brief_file_name || 'Tệp'})</span>
+                                                                </a>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+                    </div>
+                )}
 
                 {/* Thanh Chỉ Báo Tiến Trình 3 Bước */}
                 <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -639,6 +933,38 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
                             </span>
                         )}
                     </div>
+
+                    {/* Bảng kê danh mục món hàng mẫu trong kiện hàng */}
+                    {assignedProducts.length > 0 && (
+                        <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 space-y-2">
+                            <span className="font-bold text-slate-700 flex items-center gap-1.5 text-xs">
+                                <PackageCheck className="h-4 w-4 text-primary-600" />
+                                {isSampleSent ? 'Kiện hàng gửi tới bạn gồm có:' : 'Danh mục mẫu dự kiến chuẩn bị gửi:'}
+                            </span>
+                            <div className="space-y-1.5 pt-1">
+                                {assignedProducts.map((p) => {
+                                    const qty = isSampleSent ? (p.quantity_sent || p.quantity_assigned || 1) : (p.quantity_assigned || 1);
+                                    return (
+                                        <div key={p.id} className="flex items-center justify-between text-xs py-1.5 px-2 bg-white rounded-lg border border-slate-200/70 shadow-2xs">
+                                            <div className="min-w-0 pr-2">
+                                                <span className="font-semibold text-slate-800 truncate block">
+                                                    {p.product_name}
+                                                </span>
+                                                {p.sample_variant && (
+                                                    <span className="text-[11px] text-slate-500 block">
+                                                        Phân loại: {p.sample_variant}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <span className="font-bold text-primary-700 bg-primary-50 px-2 py-0.5 rounded text-[11px] shrink-0 border border-primary-200/60">
+                                                SL: {qty} món
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
 
                     {isSampleReceivedDone ? (
                         <div className="rounded-lg bg-emerald-50 p-3.5 text-xs text-emerald-800 leading-relaxed border border-emerald-100">

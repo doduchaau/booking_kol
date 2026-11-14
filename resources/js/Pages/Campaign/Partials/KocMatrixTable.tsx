@@ -130,6 +130,14 @@ export default function KocMatrixTable({
     const [shipmentDate, setShipmentDate] = useState<string>('');
     const [shipmentSubmitting, setShipmentSubmitting] = useState<boolean>(false);
     const [copiedAddress, setCopiedAddress] = useState<boolean>(false);
+    const [shipmentProducts, setShipmentProducts] = useState<Array<{
+        product_id: number;
+        name: string;
+        sku?: string;
+        quantity: number;
+        variant: string;
+        selected: boolean;
+    }>>([]);
 
     // Form Nhập Nhanh Địa Chỉ nhận hàng ngay tại Modal Gửi Mẫu
     const [quickAddress, setQuickAddress] = useState<string>('');
@@ -146,6 +154,11 @@ export default function KocMatrixTable({
     const [videoTitle, setVideoTitle] = useState<string>('');
     const [videoPostedAt, setVideoPostedAt] = useState<string>('');
     const [videoSubmitting, setVideoSubmitting] = useState<boolean>(false);
+
+    // Modal Ghi chú chi tiết cho KOC (Popup)
+    const [noteModalItem, setNoteModalItem] = useState<CampaignCreatorPivot | null>(null);
+    const [noteModalContent, setNoteModalContent] = useState<string>('');
+    const [noteSubmitting, setNoteSubmitting] = useState<boolean>(false);
 
     // Feedback copy link portal
     const [copiedToken, setCopiedToken] = useState<string | null>(null);
@@ -424,6 +437,59 @@ export default function KocMatrixTable({
         );
     };
 
+    // Cập nhật nhanh hình thức hợp tác (Video / Live / Both)
+    const handleInlineCollaborationTypeChange = (pivotId: number, type: string) => {
+        router.patch(
+            route('campaigns.creators.quick-update', { id: campaign.id, pivotId }),
+            { collaboration_type: type },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    showFeedback('Đã cập nhật hình thức hợp tác!');
+                },
+            }
+        );
+    };
+
+    // Cập nhật nhanh ghi chú nội bộ cho KOC
+    const handleInlineNoteChange = (pivotId: number, note: string) => {
+        router.patch(
+            route('campaigns.creators.quick-update', { id: campaign.id, pivotId }),
+            { notes: note },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    showFeedback('Đã lưu ghi chú KOC!');
+                },
+            }
+        );
+    };
+
+    // Mở popup modal ghi chú chi tiết
+    const handleOpenNoteModal = (item: CampaignCreatorPivot) => {
+        setNoteModalItem(item);
+        setNoteModalContent(item.notes || '');
+    };
+
+    // Lưu ghi chú từ popup modal
+    const handleSaveNoteModal = () => {
+        if (!noteModalItem) return;
+        setNoteSubmitting(true);
+        router.patch(
+            route('campaigns.creators.quick-update', { id: campaign.id, pivotId: noteModalItem.id }),
+            { notes: noteModalContent },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setNoteModalItem(null);
+                    setNoteSubmitting(false);
+                    showFeedback('Đã cập nhật ghi chú KOC thành công!');
+                },
+                onError: () => setNoteSubmitting(false),
+            }
+        );
+    };
+
     // Xóa KOC khỏi chiến dịch
     const handleRemoveCreator = (pivotId: number, name: string) => {
         if (!window.confirm(`Bạn có chắc chắn muốn xóa KOC [${name}] khỏi chiến dịch này?`)) {
@@ -592,6 +658,23 @@ export default function KocMatrixTable({
         setShipmentDate(new Date().toISOString().split('T')[0]);
         setCopiedAddress(false);
 
+        // Chuẩn bị danh sách sản phẩm mẫu để nhân viên tích chọn
+        const existingCreatorProds = item.creatorProducts || item.creator_products || [];
+        const campaignProds = campaign.products || [];
+
+        const mapped = campaignProds.map((cp) => {
+            const existing = existingCreatorProds.find((p) => p.campaign_product_id === cp.id);
+            return {
+                product_id: cp.id,
+                name: cp.name || cp.product_name || 'Sản phẩm',
+                sku: cp.sku || cp.product_sku || '',
+                quantity: existing ? (existing.quantity_sent || existing.quantity_assigned || 1) : 1,
+                variant: existing?.sample_variant || '',
+                selected: existing ? true : campaignProds.length === 1 ? true : false,
+            };
+        });
+        setShipmentProducts(mapped);
+
         setQuickAddress(item.creator?.shipping_address || '');
         setQuickCity(item.creator?.city_province || '');
         setQuickDistrict(item.creator?.district || '');
@@ -605,6 +688,29 @@ export default function KocMatrixTable({
             item.creator?.ward?.trim()
         );
         setIsEditingAddress(!hasAllAddressFields);
+    };
+
+    const handleToggleShipmentProduct = (productId: number) => {
+        setShipmentProducts((prev) =>
+            prev.map((p) => (p.product_id === productId ? { ...p, selected: !p.selected } : p))
+        );
+    };
+
+    const handleChangeShipmentProductQty = (productId: number, delta: number) => {
+        setShipmentProducts((prev) =>
+            prev.map((p) => {
+                if (p.product_id === productId) {
+                    return { ...p, quantity: Math.max(1, p.quantity + delta) };
+                }
+                return p;
+            })
+        );
+    };
+
+    const handleChangeShipmentProductVariant = (productId: number, variant: string) => {
+        setShipmentProducts((prev) =>
+            prev.map((p) => (p.product_id === productId ? { ...p, variant } : p))
+        );
     };
 
     // Sao chép thông tin nhận mẫu gửi kho
@@ -640,6 +746,19 @@ export default function KocMatrixTable({
             return;
         }
 
+        const selectedProductsToSend = shipmentProducts
+            .filter((p) => p.selected)
+            .map((p) => ({
+                product_id: p.product_id,
+                quantity: p.quantity,
+                variant: p.variant.trim() || undefined,
+            }));
+
+        if (shipmentProducts.length > 0 && selectedProductsToSend.length === 0) {
+            alert('Vui lòng tích chọn ít nhất 1 sản phẩm mẫu để gửi cho KOC!');
+            return;
+        }
+
         setShipmentSubmitting(true);
         router.post(
             route('campaigns.creators.shipments.store', { id: campaign.id, pivotId: shipmentModalItem.id }),
@@ -651,6 +770,7 @@ export default function KocMatrixTable({
                 district: quickDistrict.trim() || undefined,
                 ward: quickWard.trim() || undefined,
                 phone: quickPhone.trim() || undefined,
+                products: selectedProductsToSend,
             },
             {
                 preserveScroll: true,
@@ -812,7 +932,7 @@ export default function KocMatrixTable({
                     <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
                         <thead className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur-xs text-[11px] font-bold uppercase tracking-wider text-slate-500 shadow-xs">
                             <tr>
-                                <th className="w-10 px-4 py-3.5 text-center">
+                                <th className="w-9 px-2.5 py-3 text-center">
                                     <input
                                         type="checkbox"
                                         checked={
@@ -823,22 +943,24 @@ export default function KocMatrixTable({
                                         className="rounded border-slate-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
                                     />
                                 </th>
-                                <th className="px-4 py-3.5 min-w-[200px]">Creator / KOC</th>
-                                <th className="px-4 py-3.5 min-w-[170px]">Trạng thái tiến độ</th>
-                                <th className="px-4 py-3.5 min-w-[120px]">Hạn video</th>
-                                <th className="px-4 py-3.5 min-w-[130px]">Gửi mẫu KOC</th>
-                                <th className="px-4 py-3.5 min-w-[130px]">Video đã lên</th>
-                                <th className="px-4 py-3.5 min-w-[120px]">Phí booking</th>
-                                <th className="px-4 py-3.5 min-w-[130px]">Phụ trách</th>
-                                <th className="px-4 py-3.5 min-w-[100px]">Cổng Portal</th>
-                                <th className="px-4 py-3.5 min-w-[180px] text-right">Hành động 1-Chạm</th>
+                                <th className="px-2.5 py-3 min-w-[170px]">Creator / KOC</th>
+                                <th className="px-2.5 py-3 min-w-[115px]">Hình thức HT</th>
+                                <th className="px-2.5 py-3 min-w-[130px]">Trạng thái tiến độ</th>
+                                <th className="px-2.5 py-3 min-w-[105px]">Hạn video</th>
+                                <th className="px-2.5 py-3 min-w-[115px]">Gửi mẫu KOC</th>
+                                <th className="px-2.5 py-3 min-w-[105px]">Video đã lên</th>
+                                <th className="px-2.5 py-3 min-w-[105px]">Phí booking</th>
+                                <th className="px-2.5 py-3 min-w-[120px]">Ghi chú</th>
+                                <th className="px-2.5 py-3 min-w-[95px]">Cổng Portal</th>
+                                <th className="px-2.5 py-3 min-w-[115px]">Phụ trách</th>
+                                <th className="px-2.5 py-3 min-w-[160px] text-right">Hành động 1-Chạm</th>
                             </tr>
                         </thead>
 
                         <tbody className="divide-y divide-slate-100">
                             {topPadding > 0 && (
                                 <tr style={{ height: `${topPadding}px` }} aria-hidden="true">
-                                    <td colSpan={10} className="p-0 border-0" />
+                                    <td colSpan={12} className="p-0 border-0" />
                                 </tr>
                             )}
                             {filteredItems.length > 0 ? (
@@ -851,6 +973,8 @@ export default function KocMatrixTable({
                                         onToggleSelect={handleToggleSelect}
                                         staffUsers={staffUsers}
                                         onInlineAssign={handleInlineAssign}
+                                        onInlineCollaborationTypeChange={handleInlineCollaborationTypeChange}
+                                        onInlineNoteChange={handleInlineNoteChange}
                                         editingFeeId={editingFeeId}
                                         tempFeeValue={tempFeeValue}
                                         onStartEditFee={(id, currentFee) => {
@@ -876,6 +1000,7 @@ export default function KocMatrixTable({
                                         onQuickStatusChange={handleQuickStatusChange}
                                         onOpenShipmentModal={handleOpenShipmentModal}
                                         onOpenVideoModal={handleOpenVideoModal}
+                                        onOpenNoteModal={handleOpenNoteModal}
                                         onOpenZalo={handleOpenZalo}
                                         onRemoveCreator={handleRemoveCreator}
                                         formatCurrency={formatCurrency}
@@ -884,7 +1009,7 @@ export default function KocMatrixTable({
                                 ))
                             ) : items.length === 0 ? (
                                 <tr>
-                                    <td colSpan={10} className="py-14 text-center">
+                                    <td colSpan={12} className="py-14 text-center">
                                         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-primary-600 mb-3 shadow-inner">
                                             <Users className="h-7 w-7" />
                                         </div>
@@ -918,7 +1043,7 @@ export default function KocMatrixTable({
                                 </tr>
                             ) : (
                                 <tr>
-                                    <td colSpan={10} className="py-12 text-center text-slate-400">
+                                    <td colSpan={12} className="py-12 text-center text-slate-400">
                                         <Users className="mx-auto h-8 w-8 text-slate-300 mb-2" />
                                         <p className="font-semibold text-slate-700">
                                             Không tìm thấy KOC nào phù hợp bộ lọc
@@ -931,7 +1056,7 @@ export default function KocMatrixTable({
                             )}
                             {bottomPadding > 0 && (
                                 <tr style={{ height: `${bottomPadding}px` }} aria-hidden="true">
-                                    <td colSpan={10} className="p-0 border-0" />
+                                    <td colSpan={12} className="p-0 border-0" />
                                 </tr>
                             )}
                         </tbody>
@@ -1037,6 +1162,10 @@ export default function KocMatrixTable({
                 onCopyPortal={handleCopyPortal}
                 copiedToken={copiedToken}
                 onSubmitShipment={handleSubmitShipment}
+                shipmentProducts={shipmentProducts}
+                onToggleShipmentProduct={handleToggleShipmentProduct}
+                onChangeShipmentProductQty={handleChangeShipmentProductQty}
+                onChangeShipmentProductVariant={handleChangeShipmentProductVariant}
 
                 videoModalItem={videoModalItem}
                 onCloseVideoModal={() => setVideoModalItem(null)}
@@ -1050,6 +1179,13 @@ export default function KocMatrixTable({
                 onVideoPostedAtChange={setVideoPostedAt}
                 videoSubmitting={videoSubmitting}
                 onSubmitVideo={handleSubmitVideo}
+
+                noteModalItem={noteModalItem}
+                onCloseNoteModal={() => setNoteModalItem(null)}
+                noteModalContent={noteModalContent}
+                onNoteModalContentChange={setNoteModalContent}
+                onSaveNoteModal={handleSaveNoteModal}
+                noteSubmitting={noteSubmitting}
 
                 quickZaloPivotId={quickZaloPivotId}
                 onCloseQuickZalo={() => setQuickZaloPivotId(null)}

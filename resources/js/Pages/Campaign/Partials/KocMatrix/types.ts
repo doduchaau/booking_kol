@@ -49,12 +49,46 @@ export interface ContentPostItem {
     };
 }
 
+export interface CampaignProduct {
+    id: number;
+    campaign_id?: number;
+    name?: string;
+    product_name?: string;
+    sku?: string | null;
+    product_sku?: string | null;
+    product_url?: string | null;
+    thumbnail_url?: string | null;
+    retail_price?: number | string;
+    brief_content?: string | null;
+    brief_file_url?: string | null;
+    brief_file_name?: string | null;
+    hashtags?: string | null;
+    sample_requirement?: string | null;
+}
+
+export interface CampaignCreatorProductItem {
+    id: number;
+    campaign_creator_id: number;
+    campaign_product_id: number;
+    quantity_assigned: number;
+    quantity_sent: number;
+    sample_variant?: string | null;
+    sample_status: 'assigned' | 'sent' | 'received';
+    sent_at?: string | null;
+    received_at?: string | null;
+    campaign_product?: CampaignProduct;
+    campaignProduct?: CampaignProduct;
+}
+
 export interface CampaignCreatorPivot {
     id: number;
     campaign_id: number;
     creator_id: number;
     assigned_to: number | null;
     status: string;
+    collaboration_type?: 'video' | 'livestream' | 'both';
+    total_samples_assigned?: number;
+    total_samples_sent?: number;
     booking_fee: string | number;
     commission_rate?: string | number;
     portal_token: string | null;
@@ -72,6 +106,8 @@ export interface CampaignCreatorPivot {
     deadline_info?: DeadlineInfo | null;
     content_posts?: ContentPostItem[];
     contentPosts?: ContentPostItem[];
+    creator_products?: CampaignCreatorProductItem[];
+    creatorProducts?: CampaignCreatorProductItem[];
 }
 
 export interface Campaign {
@@ -82,6 +118,7 @@ export interface Campaign {
     target_creators_count: number;
     video_deadline_days?: number;
     status: string;
+    products?: CampaignProduct[];
 }
 
 export type StageType = 'all' | 'waiting_approval' | 'outreach' | 'shipping' | 'production' | 'completion';

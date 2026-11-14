@@ -8,6 +8,7 @@ import FormField from '@/Components/Form/FormField';
 import TextInput from '@/Components/Form/TextInput';
 import Select from '@/Components/Form/Select';
 import Textarea from '@/Components/Form/Textarea';
+import CampaignProductsBuilder, { CampaignProductFormItem } from './Partials/CampaignProductsBuilder';
 
 interface Props {
     statuses: { value: string; label: string }[];
@@ -22,6 +23,18 @@ export default function Create({ statuses, totalCreatorsCount = 0 }: Props) {
         name: '',
         product_name: '',
         product_sku: '',
+        products: [
+            {
+                name: '',
+                sku: '',
+                product_url: '',
+                retail_price: '',
+                brief_content: '',
+                brief_file: null,
+                hashtags: '',
+                sample_requirement: '',
+            },
+        ] as CampaignProductFormItem[],
         budget: '',
         target_creators_count: 10,
         assign_all_creators: false,
@@ -81,25 +94,39 @@ export default function Create({ statuses, totalCreatorsCount = 0 }: Props) {
                             </FormField>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <FormField label="Tên sản phẩm chính" required error={errors.product_name}>
+                                <FormField label="Tên sản phẩm đại diện" required error={errors.product_name} hint="Tên hiển thị chung của chiến dịch (tự đồng bộ từ SP đầu tiên)">
                                     <TextInput
                                         value={data.product_name}
                                         onChange={(e) => setData('product_name', e.target.value)}
-                                        placeholder="Ví dụ: Son Kem Lì Velvet Lip Tint"
+                                        placeholder="Ví dụ: Combo Skincare Phục Hồi B5"
                                         error={!!errors.product_name}
                                     />
                                 </FormField>
 
-                                <FormField label="Mã SKU sản phẩm" error={errors.product_sku}>
+                                <FormField label="Mã SKU đại diện" error={errors.product_sku}>
                                     <TextInput
                                         value={data.product_sku}
                                         onChange={(e) => setData('product_sku', e.target.value)}
-                                        placeholder="Ví dụ: SKU-LIP-001"
+                                        placeholder="Ví dụ: SKU-COMBO-001"
                                         error={!!errors.product_sku}
                                     />
                                 </FormField>
                             </div>
                         </div>
+
+                        {/* Khối Sản phẩm & Brief độc lập từng món */}
+                        <CampaignProductsBuilder
+                            products={data.products}
+                            onChange={(newProds) => {
+                                setData((prev) => ({
+                                    ...prev,
+                                    products: newProds,
+                                    product_name: prev.product_name || newProds[0]?.name || '',
+                                    product_sku: prev.product_sku || newProds[0]?.sku || '',
+                                }));
+                            }}
+                            errors={errors}
+                        />
 
                         {/* Khối 2: Guideline & Mẫu sản phẩm */}
                         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm space-y-5">

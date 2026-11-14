@@ -91,6 +91,8 @@ class WorkspaceController extends Controller
                 'creator:id,name,phone,shipping_address,city_province,district,ward,niche,tier,trust_score,blacklist_status',
                 'creator.accounts:id,creator_id,platform,handle,followers_count,url',
                 'campaign:id,name,product_name,video_deadline_days,status,hashtags,discount_code',
+                'campaign.products',
+                'creatorProducts.campaignProduct',
                 'assignee:id,name,email',
                 'contentPosts:id,campaign_creator_id,platform,post_url,video_title,status,views_count,likes_count,comments_count,gmv_amount,posted_at',
             ]);

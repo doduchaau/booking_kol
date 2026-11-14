@@ -27,6 +27,10 @@ class AddCreatorsToCampaignRequest extends FormRequest
             'creator_ids.*' => ['exists:creators,id'],
             'assigned_to' => ['nullable', 'exists:users,id'],
             'booking_fee' => ['nullable', 'numeric', 'min:0'],
+            'collaboration_type' => ['nullable', 'in:video,livestream,both'],
+            'product_ids' => ['nullable', 'array'],
+            'product_ids.*' => ['exists:campaign_products,id'],
+            'product_quantities' => ['nullable', 'array'],
         ];
     }
 

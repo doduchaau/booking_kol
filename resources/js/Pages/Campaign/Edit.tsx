@@ -8,6 +8,20 @@ import FormField from '@/Components/Form/FormField';
 import TextInput from '@/Components/Form/TextInput';
 import Select from '@/Components/Form/Select';
 import Textarea from '@/Components/Form/Textarea';
+import CampaignProductsBuilder, { CampaignProductFormItem } from './Partials/CampaignProductsBuilder';
+
+interface CampaignProduct {
+    id: number;
+    name: string;
+    sku?: string | null;
+    product_url?: string | null;
+    retail_price?: number | string | null;
+    brief_content?: string | null;
+    brief_file_url?: string | null;
+    brief_file_name?: string | null;
+    hashtags?: string | null;
+    sample_requirement?: string | null;
+}
 
 interface Campaign {
     id: number;
@@ -33,6 +47,7 @@ interface Campaign {
     commission_rate: string | number;
     ads_commission_rate?: string | number;
     status: string;
+    products?: CampaignProduct[];
 }
 
 interface Props {
@@ -44,11 +59,40 @@ export default function Edit({ campaign, statuses }: Props) {
     const guidelineFileInputRef = useRef<HTMLInputElement>(null);
     const sampleFileInputRef = useRef<HTMLInputElement>(null);
 
+    const initialProducts: CampaignProductFormItem[] = (campaign.products && campaign.products.length > 0)
+        ? campaign.products.map((p) => ({
+            id: p.id,
+            name: p.name,
+            sku: p.sku || '',
+            product_url: p.product_url || '',
+            retail_price: p.retail_price ? p.retail_price.toString() : '',
+            brief_content: p.brief_content || '',
+            brief_file: null,
+            brief_file_url: p.brief_file_url || null,
+            brief_file_name: p.brief_file_name || null,
+            remove_brief_file: false,
+            hashtags: p.hashtags || '',
+            sample_requirement: p.sample_requirement || '',
+        }))
+        : [
+            {
+                name: campaign.product_name,
+                sku: campaign.product_sku || '',
+                product_url: campaign.affiliate_link || '',
+                retail_price: '',
+                brief_content: campaign.content_guidelines || '',
+                brief_file: null,
+                hashtags: campaign.hashtags || '',
+                sample_requirement: campaign.sample_requirement || '',
+            },
+        ];
+
     const { data, setData, post, processing, errors } = useForm({
         _method: 'PUT',
         name: campaign.name,
         product_name: campaign.product_name,
         product_sku: campaign.product_sku || '',
+        products: initialProducts,
         budget: campaign.budget.toString(),
         target_creators_count: campaign.target_creators_count,
         start_date: campaign.start_date.split('T')[0],
@@ -108,7 +152,7 @@ export default function Edit({ campaign, statuses }: Props) {
                             </FormField>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <FormField label="Tên sản phẩm chính" required error={errors.product_name}>
+                                <FormField label="Tên sản phẩm đại diện" required error={errors.product_name} hint="Tên hiển thị chung của chiến dịch">
                                     <TextInput
                                         value={data.product_name}
                                         onChange={(e) => setData('product_name', e.target.value)}
@@ -116,7 +160,7 @@ export default function Edit({ campaign, statuses }: Props) {
                                     />
                                 </FormField>
 
-                                <FormField label="Mã SKU sản phẩm" error={errors.product_sku}>
+                                <FormField label="Mã SKU đại diện" error={errors.product_sku}>
                                     <TextInput
                                         value={data.product_sku}
                                         onChange={(e) => setData('product_sku', e.target.value)}
@@ -125,6 +169,20 @@ export default function Edit({ campaign, statuses }: Props) {
                                 </FormField>
                             </div>
                         </div>
+
+                        {/* Khối Sản phẩm & Brief độc lập từng món */}
+                        <CampaignProductsBuilder
+                            products={data.products}
+                            onChange={(newProds) => {
+                                setData((prev) => ({
+                                    ...prev,
+                                    products: newProds,
+                                    product_name: prev.product_name || newProds[0]?.name || '',
+                                    product_sku: prev.product_sku || newProds[0]?.sku || '',
+                                }));
+                            }}
+                            errors={errors}
+                        />
 
                         {/* Khối 2: Guideline & Mẫu sản phẩm */}
                         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm space-y-5">

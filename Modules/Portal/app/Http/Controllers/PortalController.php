@@ -22,7 +22,7 @@ class PortalController extends Controller
             $campaignCreator = $portalService->getValidCampaignCreator($token);
 
             // Nạp thông tin bài đăng nếu đã nộp
-            $campaignCreator->load(['campaign']);
+            $campaignCreator->load(['campaign.products', 'creatorProducts.campaignProduct']);
 
             return Inertia::render('Portal/Index', [
                 'token' => $token,
@@ -44,6 +44,18 @@ class PortalController extends Controller
                     'content_guidelines_file_name' => $campaignCreator->campaign->content_guidelines_file_name,
                     'sample_requirement_file_url' => $campaignCreator->campaign->sample_requirement_file_url,
                     'sample_requirement_file_name' => $campaignCreator->campaign->sample_requirement_file_name,
+                    'products' => $campaignCreator->campaign->products->map(fn($p) => [
+                        'id' => $p->id,
+                        'product_name' => $p->product_name,
+                        'product_sku' => $p->product_sku,
+                        'product_url' => $p->product_url,
+                        'retail_price' => (float) ($p->retail_price ?? 0),
+                        'brief_content' => $p->brief_content,
+                        'brief_file_url' => $p->brief_file_url,
+                        'brief_file_name' => $p->brief_file_name,
+                        'hashtags' => $p->hashtags,
+                        'sample_requirement' => $p->sample_requirement,
+                    ])->values()->all(),
                     'files' => array_values(array_filter([
                         $campaignCreator->campaign->content_guidelines_file_url ? [
                             'type' => 'guideline',
@@ -71,9 +83,31 @@ class PortalController extends Controller
                 'pipeline' => [
                     'status' => $campaignCreator->status->value,
                     'status_label' => $campaignCreator->status->label(),
+                    'collaboration_type' => $campaignCreator->collaboration_type?->value ?? 'video',
+                    'collaboration_type_label' => $campaignCreator->collaboration_type?->label() ?? 'Lên Video',
+                    'total_samples_assigned' => (int) $campaignCreator->total_samples_assigned,
+                    'total_samples_sent' => (int) $campaignCreator->total_samples_sent,
                     'sample_sent_at' => $campaignCreator->sample_sent_at?->format('d/m/Y'),
                     'sample_received_at' => $campaignCreator->sample_received_at?->format('d/m/Y'),
                     'posted_at' => $campaignCreator->posted_at?->format('d/m/Y H:i'),
+                    'creator_products' => $campaignCreator->creatorProducts->map(fn($cp) => [
+                        'id' => $cp->id,
+                        'campaign_product_id' => $cp->campaign_product_id,
+                        'product_name' => $cp->campaignProduct?->product_name ?? 'Sản phẩm mẫu',
+                        'product_sku' => $cp->campaignProduct?->product_sku,
+                        'product_url' => $cp->campaignProduct?->product_url,
+                        'retail_price' => (float) ($cp->campaignProduct?->retail_price ?? 0),
+                        'brief_content' => $cp->campaignProduct?->brief_content,
+                        'brief_file_url' => $cp->campaignProduct?->brief_file_url,
+                        'brief_file_name' => $cp->campaignProduct?->brief_file_name,
+                        'hashtags' => $cp->campaignProduct?->hashtags,
+                        'sample_requirement' => $cp->campaignProduct?->sample_requirement,
+                        'sample_variant' => $cp->sample_variant,
+                        'quantity_assigned' => (int) $cp->quantity_assigned,
+                        'quantity_sent' => (int) $cp->quantity_sent,
+                        'sample_status' => $cp->sample_status?->value ?? 'assigned',
+                        'sample_status_label' => $cp->sample_status?->label() ?? 'Dự kiến',
+                    ])->values()->all(),
                 ],
             ]);
         } catch (Exception $e) {

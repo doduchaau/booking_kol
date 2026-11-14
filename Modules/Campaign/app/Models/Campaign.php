@@ -94,6 +94,14 @@ class Campaign extends Model
     }
 
     /**
+     * Danh sách sản phẩm của chiến dịch (Hỗ trợ đa sản phẩm & brief riêng)
+     */
+    public function products(): HasMany
+    {
+        return $this->hasMany(CampaignProduct::class, 'campaign_id')->orderBy('sort_order')->orderBy('id');
+    }
+
+    /**
      * Danh sách liên kết với Creator trong Pipeline
      */
     public function campaignCreators(): HasMany

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from '@inertiajs/react';
 import {
     Copy,
@@ -16,6 +16,8 @@ import {
     X,
     Plus,
     RotateCcw,
+    Radio,
+    FileText,
 } from 'lucide-react';
 import { CampaignCreatorPivot, STATUS_DEFINITIONS } from './types';
 import PlatformBadge from '@/Components/Common/PlatformBadge';
@@ -28,6 +30,8 @@ interface Props {
     onToggleSelect: (id: number) => void;
     staffUsers: { id: number; name: string; email: string }[];
     onInlineAssign: (pivotId: number, staffId: string) => void;
+    onInlineCollaborationTypeChange: (pivotId: number, type: string) => void;
+    onInlineNoteChange: (pivotId: number, note: string) => void;
     editingFeeId: number | null;
     tempFeeValue: string;
     onStartEditFee: (id: number, currentFee: string | number) => void;
@@ -42,6 +46,7 @@ interface Props {
     onQuickStatusChange: (itemOrId: CampaignCreatorPivot | number, newStatus: string) => void;
     onOpenShipmentModal: (item: CampaignCreatorPivot) => void;
     onOpenVideoModal: (item: CampaignCreatorPivot) => void;
+    onOpenNoteModal: (item: CampaignCreatorPivot) => void;
     onOpenZalo: (item: CampaignCreatorPivot) => void;
     onRemoveCreator: (id: number, name: string) => void;
     formatCurrency: (val: string | number) => string;
@@ -55,6 +60,8 @@ export default React.memo(function KocMatrixRow({
     onToggleSelect,
     staffUsers,
     onInlineAssign,
+    onInlineCollaborationTypeChange,
+    onInlineNoteChange,
     editingFeeId,
     tempFeeValue,
     onStartEditFee,
@@ -69,6 +76,7 @@ export default React.memo(function KocMatrixRow({
     onQuickStatusChange,
     onOpenShipmentModal,
     onOpenVideoModal,
+    onOpenNoteModal,
     onOpenZalo,
     onRemoveCreator,
     formatCurrency,
@@ -77,19 +85,32 @@ export default React.memo(function KocMatrixRow({
     const creator = item.creator;
     const mainAccount = creator?.accounts?.[0];
 
+    const shortStatusLabels: Record<string, string> = {
+        new: 'Mới thêm',
+        contacted: 'Đã liên hệ',
+        price_proposed: 'Chờ duyệt phí',
+        deal_closed: 'Đã chốt deal',
+        address_confirmed: 'Đã chốt đ/c',
+        sample_sent: 'Đã gửi mẫu',
+        sample_received: 'Đang làm video',
+        posted: 'Đã lên video',
+        completed: 'Nghiệm thu',
+        rejected: 'Từ chối',
+        dropped: 'Bom hàng',
+    };
+
     return (
         <tr
             id={`koc-row-${item.id}`}
-            className={`transition-all duration-300 ${
-                isFocused
+            className={`transition-all duration-300 ${isFocused
                     ? 'bg-primary-50/80 ring-2 ring-primary-500/60 shadow-xs'
                     : isSelected
-                    ? 'bg-primary-50/30 hover:bg-slate-50/80'
-                    : 'hover:bg-slate-50/80'
-            }`}
+                        ? 'bg-primary-50/30 hover:bg-slate-50/80'
+                        : 'hover:bg-slate-50/80'
+                }`}
         >
             {/* Checkbox */}
-            <td className="px-4 py-3.5 text-center">
+            <td className="w-9 px-2.5 py-3 text-center">
                 <input
                     type="checkbox"
                     checked={isSelected}
@@ -99,31 +120,32 @@ export default React.memo(function KocMatrixRow({
             </td>
 
             {/* Creator Info */}
-            <td className="px-4 py-3.5">
-                <div className="flex items-center gap-2.5">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-100 font-bold text-primary-700 text-xs shadow-2xs">
+            <td className="px-2.5 py-3">
+                <div className="flex items-center gap-2">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-100 font-bold text-primary-700 text-xs shadow-2xs">
                         {creator?.name?.charAt(0).toUpperCase()}
                     </div>
-                    <div>
+                    <div className="min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
                             <Link
                                 href={route('creators.show', item.creator_id)}
-                                className="font-bold text-slate-900 hover:text-primary-600 transition-colors"
+                                className="font-bold text-slate-900 hover:text-primary-600 transition-colors text-xs truncate max-w-[130px]"
+                                title={creator?.name}
                             >
                                 {creator?.name}
                             </Link>
                             {isFocused && (
-                                <span className="inline-flex items-center rounded-md bg-primary-600 px-1.5 py-0.5 text-[10px] font-extrabold text-white shadow-2xs animate-pulse">
-                                    Mục trong thông báo
+                                <span className="inline-flex items-center rounded bg-primary-600 px-1 py-0.2 text-[9px] font-extrabold text-white shadow-2xs animate-pulse">
+                                    Thông báo
                                 </span>
                             )}
-                            <span className="text-[10px] px-1.5 py-0.2 rounded font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                            <span className="text-[9px] px-1 py-0.2 rounded font-semibold bg-slate-100 text-slate-600 border border-slate-200">
                                 {creator?.tier?.toUpperCase()}
                             </span>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500 mt-1">
-                            <span>{creator?.phone || 'Chưa có SĐT'}</span>
+                        <div className="flex flex-wrap items-center gap-1 text-[10px] text-slate-500 mt-0.5">
+                            <span>{creator?.phone || 'Chưa SĐT'}</span>
                             {mainAccount && (
                                 <>
                                     <span>•</span>
@@ -140,13 +162,31 @@ export default React.memo(function KocMatrixRow({
                 </div>
             </td>
 
-            {/* Trạng thái tiến độ với Dropdown chuyển nhanh */}
-            <td className="px-4 py-3.5">
-                <div className="relative inline-block">
+            {/* Hình thức hợp tác (Cột riêng biệt: Video / Live / Both) */}
+            <td className="px-2.5 py-3">
+                <select
+                    value={item.collaboration_type || 'video'}
+                    onChange={(e) => onInlineCollaborationTypeChange(item.id, e.target.value)}
+                    className={`w-full max-w-[110px] py-1 pl-2 pr-7 text-[11px] font-semibold rounded-lg border shadow-2xs cursor-pointer focus:ring-2 focus:ring-primary-500 transition-colors ${item.collaboration_type === 'livestream'
+                            ? 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100/70'
+                            : item.collaboration_type === 'both'
+                                ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100/70'
+                                : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100/70'
+                        }`}
+                >
+                    <option value="video">🎬 Video</option>
+                    <option value="livestream">🎙️ Live</option>
+                    <option value="both">⚡ Cả 2</option>
+                </select>
+            </td>
+
+            {/* Trạng thái tiến độ với Dropdown chuyển nhanh (Tối ưu gọn gàng) */}
+            <td className="px-2.5 py-3">
+                <div className="relative inline-block w-full">
                     <select
                         value={item.status}
                         onChange={(e) => onQuickStatusChange(item, e.target.value)}
-                        className="py-1 pl-2.5 pr-7 text-xs font-semibold rounded-lg border border-slate-200 bg-white text-slate-800 shadow-2xs cursor-pointer focus:ring-2 focus:ring-primary-500 hover:border-slate-300"
+                        className="w-full max-w-[125px] py-1 pl-2 pr-6 text-[11px] font-semibold rounded-lg border border-slate-200 bg-white text-slate-800 shadow-2xs cursor-pointer focus:ring-2 focus:ring-primary-500 hover:border-slate-300"
                     >
                         {Object.entries(STATUS_DEFINITIONS).map(([stKey, stVal]) => {
                             const isMissingAddressForSent =
@@ -157,16 +197,16 @@ export default React.memo(function KocMatrixRow({
                             const cannotReceiveOrPostYet = ['sample_received', 'posted'].includes(stKey) && !isSent;
                             const hasVideo = Boolean(
                                 (item.content_posts && item.content_posts.length > 0) ||
-                                    (item.contentPosts && item.contentPosts.length > 0)
+                                (item.contentPosts && item.contentPosts.length > 0)
                             );
                             const isMissingVideoForPosted = stKey === 'posted' && !hasVideo;
 
                             return (
                                 <option key={stKey} value={stKey} disabled={cannotReceiveOrPostYet}>
-                                    {stVal.label}
-                                    {isMissingAddressForSent ? ' ⚠️ (Thiếu Đ/c)' : ''}
-                                    {cannotReceiveOrPostYet ? ' ⛔ (Chưa gửi mẫu)' : ''}
-                                    {!cannotReceiveOrPostYet && isMissingVideoForPosted ? ' 🔗 (Cần link video)' : ''}
+                                    {shortStatusLabels[stKey] || stVal.label}
+                                    {isMissingAddressForSent ? ' ⚠️' : ''}
+                                    {cannotReceiveOrPostYet ? ' ⛔' : ''}
+                                    {!cannotReceiveOrPostYet && isMissingVideoForPosted ? ' 🔗' : ''}
                                 </option>
                             );
                         })}
@@ -175,16 +215,15 @@ export default React.memo(function KocMatrixRow({
             </td>
 
             {/* Hạn Video (Deadline đếm ngược) */}
-            <td className="px-4 py-3.5">
+            <td className="px-2.5 py-3">
                 {item.deadline_info ? (
                     <span
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold ${
-                            item.deadline_info.status === 'overdue'
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold ${item.deadline_info.status === 'overdue'
                                 ? 'bg-rose-100 text-rose-800 animate-pulse'
                                 : item.deadline_info.status === 'warning'
-                                ? 'bg-amber-100 text-amber-800'
-                                : 'bg-emerald-50 text-emerald-700'
-                        }`}
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-emerald-50 text-emerald-700'
+                            }`}
                     >
                         <Clock className="h-3 w-3" />
                         {item.deadline_info.text}
@@ -205,40 +244,95 @@ export default React.memo(function KocMatrixRow({
             </td>
 
             {/* Gửi Mẫu KOC */}
-            <td className="px-4 py-3.5">
+            <td className="px-2.5 py-3">
                 {(() => {
                     const isSent =
                         Boolean(item.sample_sent_at) ||
                         ['sample_sent', 'sample_received', 'posted', 'completed'].includes(item.status);
 
+                    const hasAddress = Boolean(item.creator?.shipping_address?.trim() && item.creator?.phone?.trim());
+                    const isAddressConfirmed = item.status === 'address_confirmed';
+
+                    const creatorProds = item.creatorProducts || item.creator_products || [];
+                    const sentProds = creatorProds.filter((cp) => (cp.quantity_sent || 0) > 0 || cp.sample_status === 'sent' || cp.sample_status === 'received');
+                    const totalSent = item.total_samples_sent || sentProds.reduce((sum, cp) => sum + (cp.quantity_sent || 0), 0) || (isSent ? 1 : 0);
+                    const totalAssigned = item.total_samples_assigned || creatorProds.reduce((sum, cp) => sum + (cp.quantity_assigned || 0), 0) || 0;
+
+                    const summaryTitle = creatorProds.length > 0
+                        ? creatorProds.map((cp) => {
+                            const name = cp.campaignProduct?.name || cp.campaign_product?.name || 'Sản phẩm';
+                            const qty = isSent ? (cp.quantity_sent || cp.quantity_assigned || 1) : (cp.quantity_assigned || 1);
+                            const variant = cp.sample_variant ? ` (${cp.sample_variant})` : '';
+                            return `${name}${variant}: x${qty}`;
+                        }).join('\n')
+                        : undefined;
+
                     return (
                         <div className="flex flex-col gap-1 items-start">
-                            <div className="flex items-center gap-1.5">
-                                {isSent ? (
+                            {isSent ? (
+                                <div className="flex items-center gap-1.5">
                                     <button
                                         type="button"
                                         onClick={() => onOpenShipmentModal(item)}
                                         className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200/60 hover:bg-amber-100 transition-colors"
-                                        title="Xem thông tin hoặc gửi lại"
+                                        title={summaryTitle || "Xem thông tin hoặc gửi lại"}
                                     >
-                                        <Package className="h-3 w-3" />
-                                        <span>Đã gửi mẫu</span>
+                                        <Package className="h-3 w-3 text-amber-600" />
+                                        <span>Đã gửi {totalSent > 0 ? `${totalSent} mẫu` : 'mẫu'}</span>
                                     </button>
-                                ) : (
-                                    <span className="text-[11px] text-slate-400 italic">Chưa gửi</span>
-                                )}
-                                <button
-                                    type="button"
-                                    onClick={() => onOpenShipmentModal(item)}
-                                    className="p-1 rounded-md bg-slate-100 hover:bg-amber-100 text-slate-600 hover:text-amber-800 transition-colors"
-                                    title="Xác nhận gửi mẫu cho KOC"
-                                >
-                                    <Plus className="h-3 w-3" />
-                                </button>
-                            </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => onOpenShipmentModal(item)}
+                                        className="p-1 rounded-md bg-slate-100 hover:bg-amber-100 text-slate-600 hover:text-amber-800 transition-colors"
+                                        title="Xem hoặc bổ sung sản phẩm gửi"
+                                    >
+                                        <Plus className="h-3 w-3" />
+                                    </button>
+                                </div>
+                            ) : isAddressConfirmed ? (
+                                <div className="flex items-center gap-1.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => onOpenShipmentModal(item)}
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-primary-600 text-white hover:bg-primary-700 shadow-2xs transition-colors"
+                                        title="KOC đã chốt địa chỉ! Bấm để chọn sản phẩm gửi đi"
+                                    >
+                                        <Package className="h-3.5 w-3.5" />
+                                        <span>{totalAssigned > 0 ? `Gửi mẫu (${totalAssigned} món)` : 'Chọn mẫu gửi'}</span>
+                                    </button>
+                                </div>
+                            ) : !hasAddress ? (
+                                <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200" title="KOC chưa cung cấp địa chỉ nhận hàng">
+                                        Chưa có địa chỉ
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => onOpenShipmentModal(item)}
+                                        className="p-1 rounded bg-slate-100 hover:bg-primary-50 text-slate-400 hover:text-primary-600 transition-colors"
+                                        title="Nhập trước địa chỉ nhận hàng"
+                                    >
+                                        <Plus className="h-3 w-3" />
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="flex items-center gap-1.5">
+                                    <span className="text-[11px] text-slate-500 italic">Chưa chốt địa chỉ</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => onOpenShipmentModal(item)}
+                                        className="p-1 rounded bg-slate-100 hover:bg-primary-50 text-slate-500 hover:text-primary-700 transition-colors"
+                                        title="Chọn trước sản phẩm hoặc gửi sớm"
+                                    >
+                                        <Plus className="h-3 w-3" />
+                                    </button>
+                                </div>
+                            )}
+
                             {item.sample_sent_at && (
-                                <span className="text-[10px] text-slate-500 truncate max-w-[130px]">
+                                <span className="text-[10px] text-slate-500 truncate max-w-[140px]" title={`Ngày gửi: ${formatDate(item.sample_sent_at)}`}>
                                     Ngày {formatDate(item.sample_sent_at)}
+                                    {creatorProds.length > 0 && ` • ${creatorProds.length} SP`}
                                 </span>
                             )}
                         </div>
@@ -247,7 +341,7 @@ export default React.memo(function KocMatrixRow({
             </td>
 
             {/* Video Đã Lên */}
-            <td className="px-4 py-3.5">
+            <td className="px-2.5 py-3">
                 {(() => {
                     const posts = item.content_posts || item.contentPosts || [];
                     const count = posts.length;
@@ -303,17 +397,16 @@ export default React.memo(function KocMatrixRow({
                                             )} / TB kênh: ${latest.benchmark.average_channel_views.toLocaleString(
                                                 'vi-VN'
                                             )}`}
-                                            className={`inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[9px] font-semibold border ${
-                                                latest.benchmark.status === 'viral'
+                                            className={`inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[9px] font-semibold border ${latest.benchmark.status === 'viral'
                                                     ? 'bg-purple-50 text-purple-700 border-purple-200'
                                                     : latest.benchmark.status === 'exceeded'
-                                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                                    : latest.benchmark.status === 'expected'
-                                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                                    : latest.benchmark.status === 'below'
-                                                    ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                                    : 'bg-rose-50 text-rose-700 border-rose-200'
-                                            }`}
+                                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                        : latest.benchmark.status === 'expected'
+                                                            ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                                            : latest.benchmark.status === 'below'
+                                                                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                                                : 'bg-rose-50 text-rose-700 border-rose-200'
+                                                }`}
                                         >
                                             {latest.benchmark.label}
                                         </span>
@@ -326,7 +419,7 @@ export default React.memo(function KocMatrixRow({
             </td>
 
             {/* Phí Booking (Inline Edit) */}
-            <td className="px-4 py-3.5">
+            <td className="px-2.5 py-3">
                 {editingFeeId === item.id ? (
                     <div className="flex items-center gap-1">
                         <input
@@ -368,24 +461,35 @@ export default React.memo(function KocMatrixRow({
                 )}
             </td>
 
-            {/* Phụ trách (Inline Dropdown) */}
-            <td className="px-4 py-3.5">
-                <select
-                    value={item.assigned_to || ''}
-                    onChange={(e) => onInlineAssign(item.id, e.target.value)}
-                    className="w-full max-w-[130px] py-0.5 px-1.5 text-[11px] rounded border border-slate-200 bg-slate-50/60 text-slate-700 focus:ring-1 focus:ring-primary-500 cursor-pointer"
-                >
-                    <option value="">-- Chưa gán --</option>
-                    {staffUsers.map((u) => (
-                        <option key={u.id} value={u.id}>
-                            {u.name}
-                        </option>
-                    ))}
-                </select>
+            {/* Ghi chú nội bộ (Popup Modal Ghi Chú Chi Tiết) */}
+            <td className="px-2.5 py-3">
+                {item.notes ? (
+                    <button
+                        type="button"
+                        onClick={() => onOpenNoteModal(item)}
+                        className="group flex items-center gap-1.5 max-w-[125px] w-full text-left py-1 px-2 rounded-lg bg-slate-50 hover:bg-primary-50 border border-slate-200 hover:border-primary-300 transition-all cursor-pointer"
+                        title={`Ghi chú: ${item.notes}\n(Bấm để sửa hoặc xem chi tiết)`}
+                    >
+                        <FileText className="h-3.5 w-3.5 text-primary-600 shrink-0" />
+                        <span className="truncate text-[11px] text-slate-700 font-medium group-hover:text-primary-700">
+                            {item.notes}
+                        </span>
+                    </button>
+                ) : (
+                    <button
+                        type="button"
+                        onClick={() => onOpenNoteModal(item)}
+                        className="inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-primary-600 hover:bg-slate-100 px-2 py-0.5 rounded-md border border-dashed border-slate-300 transition-colors cursor-pointer"
+                        title="Bấm để thêm ghi chú chi tiết cho KOC"
+                    >
+                        <Plus className="h-2.5 w-2.5" />
+                        <span>Ghi chú</span>
+                    </button>
+                )}
             </td>
 
             {/* Cổng Portal Tự Điền */}
-            <td className="px-4 py-3.5">
+            <td className="px-2.5 py-3">
                 {item.portal_token ? (
                     <button
                         type="button"
@@ -405,8 +509,24 @@ export default React.memo(function KocMatrixRow({
                 )}
             </td>
 
+            {/* Phụ trách (Đã chuyển xuống cuối bảng cạnh Hành động) */}
+            <td className="px-2.5 py-3">
+                <select
+                    value={item.assigned_to || ''}
+                    onChange={(e) => onInlineAssign(item.id, e.target.value)}
+                    className="w-full max-w-[115px] py-1 pl-1.5 pr-6 text-[11px] rounded-lg border border-slate-200 bg-slate-50/60 text-slate-700 focus:ring-1 focus:ring-primary-500 cursor-pointer"
+                >
+                    <option value="">-- Chưa gán --</option>
+                    {staffUsers.map((u) => (
+                        <option key={u.id} value={u.id}>
+                            {u.name}
+                        </option>
+                    ))}
+                </select>
+            </td>
+
             {/* NÚT THAO TÁC 1-CHẠM THÔNG MINH */}
-            <td className="px-4 py-3.5 text-right">
+            <td className="px-2.5 py-3 text-right">
                 <div className="flex items-center justify-end gap-1.5">
                     {/* KOC MỚI THÊM: Mở Zalo Tiếp Cận */}
                     {item.status === 'new' && (

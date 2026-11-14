@@ -11,12 +11,48 @@ class UpdateCampaignRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        // Chuẩn hóa danh sách sản phẩm và tự động gán product_name từ sản phẩm đầu tiên
+        if (!empty($this->products) && is_array($this->products)) {
+            $normalizedProducts = array_map(function ($p) {
+                if (is_array($p)) {
+                    $p['name'] = $p['name'] ?? $p['product_name'] ?? null;
+                    $p['sku'] = $p['sku'] ?? $p['product_sku'] ?? null;
+                }
+                return $p;
+            }, $this->products);
+
+            $this->merge([
+                'products' => $normalizedProducts,
+            ]);
+
+            if (empty($this->product_name) && !empty($normalizedProducts[0]['name'])) {
+                $this->merge([
+                    'product_name' => $normalizedProducts[0]['name'],
+                    'product_sku' => $normalizedProducts[0]['sku'] ?? null,
+                ]);
+            }
+        }
+    }
+
     public function rules(): array
     {
         return [
             'name' => ['required', 'string', 'max:200'],
             'product_name' => ['required', 'string', 'max:200'],
             'product_sku' => ['nullable', 'string', 'max:100'],
+            'products' => ['nullable', 'array'],
+            'products.*.id' => ['nullable', 'integer'],
+            'products.*.name' => ['required_with:products', 'string', 'max:200'],
+            'products.*.sku' => ['nullable', 'string', 'max:100'],
+            'products.*.product_url' => ['nullable', 'string', 'max:500'],
+            'products.*.retail_price' => ['nullable', 'numeric', 'min:0'],
+            'products.*.brief_content' => ['nullable', 'string'],
+            'products.*.brief_file' => ['nullable', 'file', 'max:20480', 'mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,png,jpg,jpeg,webp,txt,zip'],
+            'products.*.remove_brief_file' => ['nullable', 'boolean'],
+            'products.*.hashtags' => ['nullable', 'string', 'max:255'],
+            'products.*.sample_requirement' => ['nullable', 'string'],
             'budget' => ['required', 'numeric', 'min:0'],
             'target_creators_count' => ['required', 'integer', 'min:1', 'max:1000'],
             'start_date' => ['required', 'date'],

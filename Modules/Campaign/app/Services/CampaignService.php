@@ -53,13 +53,17 @@ class CampaignService
     /**
      * Thêm hàng loạt Creator vào chiến dịch
      * Hỗ trợ gán danh sách ID hoặc chọn toàn bộ KOC khả dụng trong kho dữ liệu
+     * Hỗ trợ gán sản phẩm cụ thể và phân loại KOC (Video/Live/Both)
      */
     public function addCreatorsToCampaign(
         Campaign $campaign,
         array $creatorIds = [],
         ?int $assignedTo = null,
         float $bookingFee = 0.0,
-        bool $selectAllInDb = false
+        bool $selectAllInDb = false,
+        string $collaborationType = 'video',
+        array $productIds = [],
+        array $productQuantities = []
     ): array {
         if ($selectAllInDb) {
             $existingCreatorIds = CampaignCreator::where('campaign_id', $campaign->id)
@@ -83,7 +87,25 @@ class CampaignService
             ];
         }
 
-        DB::transaction(function () use ($campaign, $creatorIds, $assignedTo, $bookingFee, &$added, &$skipped) {
+        $totalAssignedSamples = 0;
+        if (!empty($productIds)) {
+            foreach ($productIds as $pId) {
+                $totalAssignedSamples += max(1, (int) ($productQuantities[$pId] ?? 1));
+            }
+        }
+
+        DB::transaction(function () use (
+            $campaign,
+            $creatorIds,
+            $assignedTo,
+            $bookingFee,
+            $collaborationType,
+            $productIds,
+            $productQuantities,
+            $totalAssignedSamples,
+            &$added,
+            &$skipped
+        ) {
             $existingSet = CampaignCreator::where('campaign_id', $campaign->id)
                 ->pluck('creator_id')
                 ->flip()
@@ -92,18 +114,20 @@ class CampaignService
             $now = now();
             $expiresAt = $now->copy()->addDays(14);
 
-            $inserts = [];
             foreach ($creatorIds as $creatorId) {
                 if (isset($existingSet[$creatorId])) {
                     $skipped++;
                     continue;
                 }
 
-                $inserts[] = [
+                $campaignCreator = CampaignCreator::create([
                     'campaign_id' => $campaign->id,
                     'creator_id' => $creatorId,
                     'assigned_to' => $assignedTo,
                     'status' => PipelineStatusEnum::NEW->value,
+                    'collaboration_type' => $collaborationType ?? 'video',
+                    'total_samples_assigned' => $totalAssignedSamples,
+                    'total_samples_sent' => 0,
                     'booking_fee' => $bookingFee,
                     'commission_rate' => $campaign->commission_rate,
                     'ads_commission_rate' => $campaign->ads_commission_rate,
@@ -111,19 +135,26 @@ class CampaignService
                     'portal_token_expires_at' => $expiresAt,
                     'created_at' => $now,
                     'updated_at' => $now,
-                ];
+                ]);
+
+                // Chỉ gán sản phẩm mẫu nếu có chỉ định rõ ràng
+                if (!empty($productIds)) {
+                    foreach ($productIds as $pId) {
+                        $qty = max(1, (int) ($productQuantities[$pId] ?? 1));
+                        \Modules\Campaign\Models\CampaignCreatorProduct::create([
+                            'campaign_creator_id' => $campaignCreator->id,
+                            'campaign_product_id' => $pId,
+                            'quantity_assigned' => $qty,
+                            'quantity_sent' => 0,
+                            'sample_status' => 'assigned',
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ]);
+                    }
+                }
 
                 $existingSet[$creatorId] = true;
                 $added++;
-
-                if (count($inserts) >= 100) {
-                    CampaignCreator::insert($inserts);
-                    $inserts = [];
-                }
-            }
-
-            if (!empty($inserts)) {
-                CampaignCreator::insert($inserts);
             }
         });
 

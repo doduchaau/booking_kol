@@ -107,6 +107,47 @@ class CampaignController extends Controller
 
         $campaign = Campaign::create($validated);
 
+        // Lưu danh sách sản phẩm & brief riêng cho từng sản phẩm
+        $productsInput = $request->input('products', []);
+        if (is_string($productsInput)) {
+            $productsInput = json_decode($productsInput, true) ?: [];
+        }
+
+        if (!empty($productsInput) && is_array($productsInput)) {
+            foreach ($productsInput as $idx => $p) {
+                if (empty($p['name'])) continue;
+
+                $briefFilePath = null;
+                if ($request->hasFile("products.{$idx}.brief_file")) {
+                    $briefFilePath = $request->file("products.{$idx}.brief_file")->store('campaigns/product_briefs', 'public');
+                }
+
+                $campaign->products()->create([
+                    'name' => trim($p['name']),
+                    'sku' => !empty($p['sku']) ? trim($p['sku']) : null,
+                    'product_url' => !empty($p['product_url']) ? trim($p['product_url']) : null,
+                    'retail_price' => (float) ($p['retail_price'] ?? 0),
+                    'brief_content' => $p['brief_content'] ?? null,
+                    'brief_file' => $briefFilePath,
+                    'hashtags' => !empty($p['hashtags']) ? trim($p['hashtags']) : null,
+                    'sample_requirement' => $p['sample_requirement'] ?? null,
+                    'sort_order' => $idx,
+                ]);
+            }
+        } elseif (!empty($campaign->product_name)) {
+            $campaign->products()->create([
+                'name' => $campaign->product_name,
+                'sku' => $campaign->product_sku,
+                'product_url' => $campaign->affiliate_link,
+                'brief_content' => $campaign->content_guidelines,
+                'brief_file' => $campaign->content_guidelines_file,
+                'hashtags' => $campaign->hashtags,
+                'sample_requirement' => $campaign->sample_requirement,
+                'retail_price' => 0.00,
+                'sort_order' => 0,
+            ]);
+        }
+
         if ($assignAllCreators) {
             $result = $this->campaignService->addCreatorsToCampaign(
                 campaign: $campaign,
@@ -132,12 +173,14 @@ class CampaignController extends Controller
         $isStaffOnly = !$isLeaderOrAdmin;
 
         $campaign = Campaign::with([
+            'products',
             'creatorUser:id,name,email',
             'campaignCreators' => function ($q) use ($currentUser, $isStaffOnly) {
                 $q->when($isStaffOnly, fn ($sq) => $sq->where('assigned_to', $currentUser->id))
                   ->with([
                       'creator:id,name,phone,shipping_address,city_province,district,ward,niche,tier,trust_score,blacklist_status',
                       'creator.accounts:id,creator_id,platform,handle,followers_count,engagement_rate,average_views',
+                      'creatorProducts.campaignProduct',
                       'assignee:id,name,email',
                       'contentPosts:id,campaign_creator_id,platform,post_url,video_title,posted_at,status,views_count,likes_count,comments_count,gmv_amount',
                   ]);
@@ -214,7 +257,7 @@ class CampaignController extends Controller
      */
     public function edit(int $id): Response
     {
-        $campaign = Campaign::findOrFail($id);
+        $campaign = Campaign::with('products')->findOrFail($id);
 
         return Inertia::render('Campaign/Edit', [
             'campaign' => $campaign,
@@ -241,7 +284,7 @@ class CampaignController extends Controller
             }
         }
 
-        // Xử lý file kịch bản
+        // Xử lý file kịch bản chung
         if ($request->boolean('remove_content_guidelines_file')) {
             if ($campaign->content_guidelines_file && Storage::disk('public')->exists($campaign->content_guidelines_file)) {
                 Storage::disk('public')->delete($campaign->content_guidelines_file);
@@ -254,7 +297,7 @@ class CampaignController extends Controller
             $data['content_guidelines_file'] = $request->file('content_guidelines_file')->store('campaigns/guidelines', 'public');
         }
 
-        // Xử lý file quy định gửi mẫu
+        // Xử lý file quy định gửi mẫu chung
         if ($request->boolean('remove_sample_requirement_file')) {
             if ($campaign->sample_requirement_file && Storage::disk('public')->exists($campaign->sample_requirement_file)) {
                 Storage::disk('public')->delete($campaign->sample_requirement_file);
@@ -268,6 +311,63 @@ class CampaignController extends Controller
         }
 
         $campaign->update($data);
+
+        // Xử lý danh sách sản phẩm & brief riêng từng sản phẩm
+        $productsInput = $request->input('products', []);
+        if (is_string($productsInput)) {
+            $productsInput = json_decode($productsInput, true) ?: [];
+        }
+
+        if (is_array($productsInput) && count($productsInput) > 0) {
+            $keptProductIds = [];
+            foreach ($productsInput as $idx => $p) {
+                if (empty($p['name'])) continue;
+
+                $prodId = !empty($p['id']) ? (int) $p['id'] : null;
+                $existingProd = $prodId ? $campaign->products()->find($prodId) : null;
+
+                $briefFilePath = $existingProd?->brief_file;
+
+                if (!empty($p['remove_brief_file']) && $briefFilePath) {
+                    if (Storage::disk('public')->exists($briefFilePath)) {
+                        Storage::disk('public')->delete($briefFilePath);
+                    }
+                    $briefFilePath = null;
+                }
+
+                if ($request->hasFile("products.{$idx}.brief_file")) {
+                    if ($briefFilePath && Storage::disk('public')->exists($briefFilePath)) {
+                        Storage::disk('public')->delete($briefFilePath);
+                    }
+                    $briefFilePath = $request->file("products.{$idx}.brief_file")->store('campaigns/product_briefs', 'public');
+                }
+
+                $productData = [
+                    'name' => trim($p['name']),
+                    'sku' => !empty($p['sku']) ? trim($p['sku']) : null,
+                    'product_url' => !empty($p['product_url']) ? trim($p['product_url']) : null,
+                    'retail_price' => (float) ($p['retail_price'] ?? 0),
+                    'brief_content' => $p['brief_content'] ?? null,
+                    'brief_file' => $briefFilePath,
+                    'hashtags' => !empty($p['hashtags']) ? trim($p['hashtags']) : null,
+                    'sample_requirement' => $p['sample_requirement'] ?? null,
+                    'sort_order' => $idx,
+                ];
+
+                if ($existingProd) {
+                    $existingProd->update($productData);
+                    $keptProductIds[] = $existingProd->id;
+                } else {
+                    $newProd = $campaign->products()->create($productData);
+                    $keptProductIds[] = $newProd->id;
+                }
+            }
+
+            // Xóa các sản phẩm đã bị remove trong form edit
+            if (!empty($keptProductIds)) {
+                $campaign->products()->whereNotIn('id', $keptProductIds)->delete();
+            }
+        }
 
         return redirect()->route('campaigns.show', $campaign->id)
             ->with('success', "Đã cập nhật chiến dịch [{$campaign->name}] thành công.");
@@ -296,7 +396,10 @@ class CampaignController extends Controller
             creatorIds: $validated['creator_ids'] ?? [],
             assignedTo: $validated['assigned_to'] ?? null,
             bookingFee: (float) ($validated['booking_fee'] ?? 0),
-            selectAllInDb: $selectAllInDb
+            selectAllInDb: $selectAllInDb,
+            collaborationType: $validated['collaboration_type'] ?? 'video',
+            productIds: $validated['product_ids'] ?? [],
+            productQuantities: $validated['product_quantities'] ?? []
         );
 
         $msg = $selectAllInDb
@@ -380,6 +483,10 @@ class CampaignController extends Controller
             'district' => ['nullable', 'string', 'max:100'],
             'ward' => ['nullable', 'string', 'max:100'],
             'phone' => ['nullable', 'string', 'max:20'],
+            'products' => ['nullable', 'array'],
+            'products.*.product_id' => ['required_with:products', 'exists:campaign_products,id'],
+            'products.*.quantity' => ['required_with:products', 'integer', 'min:1'],
+            'products.*.variant' => ['nullable', 'string', 'max:100'],
         ]);
 
         $campaignCreator = CampaignCreator::where('campaign_id', $id)->with('creator')->findOrFail($pivotId);
@@ -459,6 +566,8 @@ class CampaignController extends Controller
         }
 
         try {
+            $shippedAt = !empty($validated['shipped_at']) ? Carbon::parse($validated['shipped_at']) : now();
+
             // Chuyển sang sample_sent thông qua PipelineService với đầy đủ ràng buộc kiểm tra địa chỉ
             $this->pipelineService->updateCreatorStatus(
                 campaignCreator: $campaignCreator,
@@ -466,9 +575,39 @@ class CampaignController extends Controller
                 notes: $validated['notes'] ?? null
             );
 
-            if (!empty($validated['shipped_at'])) {
+            $campaignCreator->update([
+                'sample_sent_at' => $shippedAt,
+            ]);
+
+            // Cập nhật chi tiết các sản phẩm gửi đi nếu có chỉ định từ modal
+            $productsToSend = $request->input('products', []);
+            if (!empty($productsToSend) && is_array($productsToSend)) {
+                $totalSent = 0;
+                foreach ($productsToSend as $p) {
+                    $pId = (int) $p['product_id'];
+                    $qty = max(1, (int) ($p['quantity'] ?? 1));
+                    $variant = !empty($p['variant']) ? trim($p['variant']) : null;
+
+                    $ccProduct = \Modules\Campaign\Models\CampaignCreatorProduct::firstOrNew([
+                        'campaign_creator_id' => $campaignCreator->id,
+                        'campaign_product_id' => $pId,
+                    ]);
+
+                    $ccProduct->quantity_sent = $qty;
+                    $ccProduct->quantity_assigned = max((int) ($ccProduct->quantity_assigned ?: 0), $qty);
+                    if ($variant) {
+                        $ccProduct->sample_variant = $variant;
+                    }
+                    $ccProduct->sample_status = \Modules\Campaign\Enums\SampleStatusEnum::SENT;
+                    $ccProduct->sent_at = $shippedAt;
+                    $ccProduct->save();
+
+                    $totalSent += $qty;
+                }
+
                 $campaignCreator->update([
-                    'sample_sent_at' => Carbon::parse($validated['shipped_at']),
+                    'total_samples_sent' => $totalSent,
+                    'total_samples_assigned' => max((int) $campaignCreator->total_samples_assigned, $totalSent),
                 ]);
             }
 
