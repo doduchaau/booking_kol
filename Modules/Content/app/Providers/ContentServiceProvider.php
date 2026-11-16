@@ -25,6 +25,7 @@ class ContentServiceProvider extends ModuleServiceProvider
     protected array $commands = [
         \Modules\Content\Console\SyncPostMetricsCommand::class,
         \Modules\Content\Console\CheckVideoHealthCommand::class,
+        \Modules\Content\Console\ResetUnverifiedGmvCommand::class,
     ];
 
     /**

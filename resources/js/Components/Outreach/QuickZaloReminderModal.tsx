@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { router } from '@inertiajs/react';
 import {
     X,
     MessageCircle,
@@ -129,48 +130,52 @@ export default function QuickZaloReminderModal({
     };
 
     // 1-Click: Sao chép nội dung & Mở Zalo Desktop / Web
-    const handleCopyAndOpenZalo = async () => {
+    const handleCopyAndOpenZalo = () => {
         if (!data || !campaignCreatorId) return;
 
         setSending(true);
+        setError(null);
+
+        // 1. Copy vào clipboard
         try {
-            // 1. Copy vào clipboard
-            await navigator.clipboard.writeText(messageContent);
+            navigator.clipboard.writeText(messageContent);
             setCopied(true);
             setTimeout(() => setCopied(false), 3000);
-
-            // 2. Ghi log tương tác vào backend
-            // @ts-ignore
-            const logUrl = typeof route === 'function'
-                ? route('outreach.quick-followup.log', campaignCreatorId)
-                : `/outreach/quick-followup/${campaignCreatorId}`;
-
-            // Lấy CSRF token từ thẻ meta
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-
-            await fetch(logUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json',
-                    'X-CSRF-TOKEN': csrfToken,
-                    'X-Requested-With': 'XMLHttpRequest',
-                },
-                body: JSON.stringify({ content: messageContent }),
-            });
-
-            // 3. Mở deep-link Zalo
-            window.open(data.creator.zalo_link, '_blank');
-
-            if (onSuccess) {
-                onSuccess(`Đã sao chép tin nhắn và mở Zalo cho ${data.creator.name}.`);
-            }
-            onClose();
-        } catch (err: any) {
-            setError(err.message || 'Không thể thực hiện sao chép hoặc mở Zalo.');
-        } finally {
-            setSending(false);
+        } catch (e) {
+            console.warn('Clipboard write failed:', e);
         }
+
+        // 2. Mở deep-link Zalo ngay lập tức để tránh popup blocker của trình duyệt
+        if (data.creator.zalo_link) {
+            window.open(data.creator.zalo_link, '_blank');
+        }
+
+        // 3. Ghi log tương tác vào backend & tự động cập nhật trạng thái KOC tức thì qua Inertia (không cần F5)
+        // @ts-ignore
+        const logUrl = typeof route === 'function'
+            ? route('outreach.quick-followup.log', campaignCreatorId)
+            : `/outreach/quick-followup/${campaignCreatorId}`;
+
+        router.post(
+            logUrl,
+            { content: messageContent },
+            {
+                preserveScroll: true,
+                preserveState: true,
+                onSuccess: () => {
+                    if (onSuccess) {
+                        onSuccess(`Đã sao chép tin nhắn và mở Zalo cho ${data.creator.name}.`);
+                    }
+                    onClose();
+                },
+                onError: (err) => {
+                    setError('Không thể ghi nhận tương tác Zalo lên hệ thống.');
+                },
+                onFinish: () => {
+                    setSending(false);
+                },
+            }
+        );
     };
 
     // Chỉ sao chép nội dung
@@ -195,10 +200,14 @@ export default function QuickZaloReminderModal({
                         </div>
                         <div>
                             <h3 className="text-base font-bold text-slate-900">
-                                Nhắc Việc Zalo 1-Chạm Thông Minh
+                                {data?.pipeline?.status === 'new'
+                                    ? 'Tiếp Cận Zalo 1-Chạm Cho KOC'
+                                    : 'Nhắc Việc Zalo 1-Chạm Thông Minh'}
                             </h3>
                             <p className="text-xs text-slate-500">
-                                Tin nhắn cá nhân hóa chuẩn ngữ cảnh giúp đôn đốc KOC nhanh chóng
+                                {data?.pipeline?.status === 'new'
+                                    ? 'Mở Zalo trao đổi và tự động chuyển trạng thái KOC sang Đã liên hệ'
+                                    : 'Tin nhắn cá nhân hóa chuẩn ngữ cảnh giúp đôn đốc KOC nhanh chóng'}
                             </p>
                         </div>
                     </div>
@@ -387,7 +396,9 @@ export default function QuickZaloReminderModal({
                             loading={sending}
                             iconLeft={<MessageCircle className="h-4 w-4" />}
                         >
-                            Sao chép & Mở Zalo
+                            {data?.pipeline?.status === 'new'
+                                ? (sending ? 'Đang mở Zalo & cập nhật...' : 'Sao chép & Mở Zalo Tiếp Cận')
+                                : (sending ? 'Đang mở Zalo...' : 'Sao chép & Mở Zalo')}
                         </Button>
                     </div>
                 </div>

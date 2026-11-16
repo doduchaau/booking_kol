@@ -38,6 +38,10 @@ return [
         'api_host' => env('SOCIAL_DATA_PROVIDER_API_HOST'), // Dùng cho RapidAPI header X-RapidAPI-Host
     ],
 
+    'youtube' => [
+        'api_key' => env('YOUTUBE_API_KEY', env('GOOGLE_API_KEY')),
+    ],
+
     'kol_sync' => [
         'proxy_url' => env('KOL_SYNC_PROXY_URL', null), // socks5://127.0.0.1:40000 hoặc http proxy
         'python_path' => env('PYTHON_BINARY_PATH', 'python'),

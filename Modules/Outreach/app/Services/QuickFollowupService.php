@@ -228,11 +228,19 @@ class QuickFollowupService
         ]);
 
         // Nếu Creator đang ở trạng thái 'new', tự động nhảy sang 'contacted'
-        if ($item->status === PipelineStatusEnum::NEW) {
+        $isNew = $item->status === PipelineStatusEnum::NEW
+            || $item->status === 'new'
+            || ($item->status instanceof \BackedEnum && $item->status->value === 'new');
+
+        if ($isNew) {
             $item->update([
                 'status' => PipelineStatusEnum::CONTACTED,
-                'contacted_at' => Carbon::now(),
+                'contacted_at' => $item->contacted_at ?? Carbon::now(),
             ]);
+
+            if (class_exists(\Modules\Report\Services\ReportCalculationService::class)) {
+                \Modules\Report\Services\ReportCalculationService::flushReportCache($item->campaign_id);
+            }
         }
 
         return $message;

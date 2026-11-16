@@ -14,7 +14,8 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 class CreatorLeaderboardSheet implements FromArray, WithTitle, WithStyles, ShouldAutoSize, WithColumnFormatting
 {
     public function __construct(
-        protected array $leaderboard
+        protected array $leaderboard,
+        protected ?string $periodLabel = null
     ) {}
 
     public function title(): string
@@ -26,6 +27,7 @@ class CreatorLeaderboardSheet implements FromArray, WithTitle, WithStyles, Shoul
     {
         $rows = [
             ['BẢNG XẾP HẠNG HIỆU QUẢ CREATOR / KOC'],
+            ['Kỳ báo cáo:', $this->periodLabel ?? 'Toàn thời gian'],
             ['Ngày xuất:', date('d/m/Y H:i:s')],
             [''],
             [
@@ -83,9 +85,9 @@ class CreatorLeaderboardSheet implements FromArray, WithTitle, WithStyles, Shoul
         $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14)->getColor()->setRGB('1E293B');
 
         // Header
-        $sheet->getStyle('A4:L4')->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
-        $sheet->getStyle('A4:L4')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('4F46E5');
-        $sheet->getStyle('A4:L4')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle('A5:L5')->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
+        $sheet->getStyle('A5:L5')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('4F46E5');
+        $sheet->getStyle('A5:L5')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
         return [];
     }

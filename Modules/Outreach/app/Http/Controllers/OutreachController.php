@@ -310,7 +310,7 @@ class OutreachController extends Controller
     /**
      * Ghi nhận việc gửi tin nhắn nhắc nhở Zalo vào lịch sử tương tác
      */
-    public function quickFollowupLog(Request $request, int $id): JsonResponse
+    public function quickFollowupLog(Request $request, int $id): JsonResponse|RedirectResponse
     {
         $request->validate([
             'content' => ['required', 'string'],
@@ -324,13 +324,21 @@ class OutreachController extends Controller
             auth()->id()
         );
 
+        $campaignCreator->refresh();
+
+        if ($request->header('X-Inertia') || (!$request->wantsJson() && !$request->ajax())) {
+            return back()->with('success', 'Đã lưu lịch sử tương tác Zalo và cập nhật trạng thái KOC thành công.');
+        }
+
         return response()->json([
             'success' => true,
             'message' => 'Đã lưu lịch sử tương tác Zalo thành công.',
             'data' => [
                 'id' => $message->id,
                 'sent_at' => $message->sent_at?->format('d/m/Y H:i'),
-                'pipeline_status' => $campaignCreator->status?->value ?? $campaignCreator->status,
+                'pipeline_status' => $campaignCreator->status instanceof \BackedEnum
+                    ? $campaignCreator->status->value
+                    : (string) $campaignCreator->status,
             ],
         ]);
     }

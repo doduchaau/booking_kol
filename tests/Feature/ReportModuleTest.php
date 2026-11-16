@@ -119,6 +119,11 @@ class ReportModuleTest extends TestCase
     public function test_report_service_calculates_financial_roi_and_cpv_accurately(): void
     {
         $campaign = $this->createCampaign();
+        \Modules\Campaign\Models\CampaignProduct::create([
+            'campaign_id' => $campaign->id,
+            'name' => 'Sản phẩm Test Mẫu',
+            'retail_price' => 150000,
+        ]);
         $creator = $this->createCreator();
 
         $cc = CampaignCreator::create([
@@ -237,7 +242,8 @@ class ReportModuleTest extends TestCase
         $exportResponse = $this->actingAs($user)->get(route('reports.export', ['campaign_id' => $campaign->id]));
         $exportResponse->assertOk();
 
-        Excel::assertDownloaded('Bao_Cao_ROI_Booking_KOL_chien_dich_my_pham_he_' . date('Ymd_His') . '.xlsx', function (CampaignRoiExport $export) {
+        $expectedFileName = 'Bao_Cao_Booking_KOL_Toan_Bo_' . date('Ymd') . '_chien_dich_my_pham_he.xlsx';
+        Excel::assertDownloaded($expectedFileName, function (CampaignRoiExport $export) {
             return true;
         });
         \Carbon\Carbon::setTestNow();

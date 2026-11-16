@@ -162,4 +162,50 @@ class ContentMetricsTest extends TestCase
                 ],
             ]);
     }
+
+    public function test_reset_unverified_gmv_command_cleans_up_metrics(): void
+    {
+        $post = $this->createSamplePost();
+        $this->assertEquals(4500000, $post->gmv_amount);
+
+        // Tạo snapshot metric có GMV và Orders
+        ContentPostMetric::create([
+            'content_post_id' => $post->id,
+            'recorded_date' => Carbon::yesterday()->toDateString(),
+            'views_count' => 10000,
+            'likes_count' => 800,
+            'comments_count' => 50,
+            'shares_count' => 20,
+            'orders_count' => 12,
+            'gmv_amount' => 4500000,
+        ]);
+
+        // Chạy lệnh reset GMV
+        $this->artisan('content:reset-unverified-gmv', ['--force' => true])
+            ->assertSuccessful();
+
+        $post->refresh();
+        $this->assertEquals(0, $post->gmv_amount);
+
+        $this->assertDatabaseHas('content_posts', [
+            'id' => $post->id,
+            'gmv_amount' => 0,
+        ]);
+
+        $this->assertDatabaseHas('content_post_metrics', [
+            'content_post_id' => $post->id,
+            'gmv_amount' => 0,
+            'orders_count' => 0,
+        ]);
+    }
+
+    public function test_url_id_extraction_helpers(): void
+    {
+        $service = app(ContentMetricsSyncService::class);
+
+        $this->assertEquals('7212345678', $service->extractTikTokVideoId('https://www.tiktok.com/@user/video/7212345678?is_from_webapp=1'));
+        $this->assertEquals('dQw4w9WgXcQ', $service->extractYouTubeVideoId('https://www.youtube.com/watch?v=dQw4w9WgXcQ'));
+        $this->assertEquals('dQw4w9WgXcQ', $service->extractYouTubeVideoId('https://youtu.be/dQw4w9WgXcQ'));
+        $this->assertEquals('dQw4w9WgXcQ', $service->extractYouTubeVideoId('https://www.youtube.com/shorts/dQw4w9WgXcQ'));
+    }
 }

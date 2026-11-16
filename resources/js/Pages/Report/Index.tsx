@@ -21,6 +21,15 @@ import {
     ArrowDownRight,
     HelpCircle,
     RotateCcw,
+    RefreshCw,
+    Layers,
+    Play,
+    Film,
+    Check,
+    Clock,
+    SlidersHorizontal,
+    Search,
+    Edit3,
 } from 'lucide-react';
 import PageHeader from '@/Components/Common/PageHeader';
 import Button from '@/Components/Common/Button';
@@ -31,6 +40,8 @@ import FunnelAnalysisSection, {
     TierConversionItem,
     CycleTimeInfo,
 } from '@/Pages/Report/Partials/FunnelAnalysisSection';
+import ExportReportModal from '@/Pages/Report/Partials/ExportReportModal';
+import EditVideoMetricsModal from '@/Pages/Report/Partials/EditVideoMetricsModal';
 import {
     ResponsiveContainer,
     ComposedChart,
@@ -42,7 +53,6 @@ import {
     CartesianGrid,
     Tooltip,
     Legend,
-    Cell,
 } from 'recharts';
 
 export interface CampaignOption {
@@ -83,6 +93,7 @@ export interface LeaderboardItem {
     likes_count: number;
     gmv_amount: number;
     booking_fee: number;
+    sample_cost?: number;
     total_cost: number;
     cpv: number;
     roi_percentage: number;
@@ -107,13 +118,46 @@ export interface StaffPerformanceItem {
     rating: 'excellent' | 'good' | 'standard';
 }
 
+export interface KocVideoDetailItem {
+    index: number;
+    post_id: number;
+    creator_name: string;
+    creator_phone?: string;
+    handle: string;
+    platform: string;
+    tier: string;
+    staff_name: string;
+    campaign_name: string;
+    product_name: string;
+    post_url: string;
+    video_title: string;
+    posted_at: string;
+    deadline: string;
+    delivery_status: string;
+    post_status: string;
+    views_count: number;
+    likes_count: number;
+    comments_count: number;
+    shares_count: number;
+    gmv_amount: number;
+    booking_fee: number;
+    sample_cost: number;
+    total_cost: number;
+    cpv: number;
+    roi_percentage: number;
+}
+
 export interface ReportIndexProps {
     campaigns: CampaignOption[];
     selectedCampaign?: CampaignOption | null;
     filters: {
         campaign_id?: number | null;
+        filter_type?: 'month' | 'date_range';
+        month?: number | null;
+        year?: number | null;
         start_date?: string | null;
         end_date?: string | null;
+        period_label?: string;
     };
     funnel: {
         steps: FunnelStep[];
@@ -144,6 +188,7 @@ export interface ReportIndexProps {
         top_gmv: LeaderboardItem[];
     };
     staffPerformance: StaffPerformanceItem[];
+    videoDetails?: KocVideoDetailItem[];
 }
 
 export default function ReportIndex({
@@ -154,13 +199,60 @@ export default function ReportIndex({
     financial,
     leaderboard,
     staffPerformance,
+    videoDetails = [],
 }: ReportIndexProps) {
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
+
     const [selectedCampaignId, setSelectedCampaignId] = useState<string>(
         filters.campaign_id ? String(filters.campaign_id) : ''
+    );
+    const [filterType, setFilterType] = useState<'month' | 'date_range'>(
+        filters.month ? 'month' : (filters.start_date ? 'date_range' : 'month')
+    );
+    const [selectedMonth, setSelectedMonth] = useState<number>(
+        filters.month || currentMonth
+    );
+    const [selectedYear, setSelectedYear] = useState<number>(
+        filters.year || currentYear
     );
     const [startDate, setStartDate] = useState<string>(filters.start_date || '');
     const [endDate, setEndDate] = useState<string>(filters.end_date || '');
     const [leaderboardTab, setLeaderboardTab] = useState<'views' | 'gmv'>('views');
+    const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
+    const [videoSearchQuery, setVideoSearchQuery] = useState<string>('');
+    const [syncingPostId, setSyncingPostId] = useState<number | null>(null);
+    const [isSyncingAll, setIsSyncingAll] = useState<boolean>(false);
+    const [editingVideo, setEditingVideo] = useState<KocVideoDetailItem | null>(null);
+
+    const handleSyncSingleVideo = (postId: number) => {
+        setSyncingPostId(postId);
+        router.post(
+            // @ts-ignore
+            route('content.sync', postId),
+            {},
+            {
+                preserveScroll: true,
+                onFinish: () => setSyncingPostId(null),
+            }
+        );
+    };
+
+    const handleSyncAllVideos = () => {
+        if (confirm('Hệ thống sẽ kết nối API chính thức để làm mới chỉ số (Views, Likes) cho toàn bộ video đang chạy. Bạn có muốn tiếp tục?')) {
+            setIsSyncingAll(true);
+            router.post(
+                // @ts-ignore
+                route('content.sync_all'),
+                {},
+                {
+                    preserveScroll: true,
+                    onFinish: () => setIsSyncingAll(false),
+                }
+            );
+        }
+    };
 
     const formatVND = (amount: number) => {
         return new Intl.NumberFormat('vi-VN', {
@@ -176,14 +268,24 @@ export default function ReportIndex({
 
     const handleFilter = (e?: React.FormEvent) => {
         if (e) e.preventDefault();
+
+        const params: Record<string, any> = {
+            campaign_id: selectedCampaignId || undefined,
+            filter_type: filterType,
+        };
+
+        if (filterType === 'month') {
+            params.month = selectedMonth;
+            params.year = selectedYear;
+        } else {
+            params.start_date = startDate || undefined;
+            params.end_date = endDate || undefined;
+        }
+
         router.get(
             // @ts-ignore
             route('reports.index'),
-            {
-                campaign_id: selectedCampaignId || undefined,
-                start_date: startDate || undefined,
-                end_date: endDate || undefined,
-            },
+            params,
             {
                 preserveState: true,
                 preserveScroll: true,
@@ -191,26 +293,64 @@ export default function ReportIndex({
         );
     };
 
+    const handleQuickPreset = (preset: 'this_month' | 'last_month' | 'all') => {
+        if (preset === 'this_month') {
+            setFilterType('month');
+            setSelectedMonth(currentMonth);
+            setSelectedYear(currentYear);
+            // @ts-ignore
+            router.get(route('reports.index'), {
+                campaign_id: selectedCampaignId || undefined,
+                filter_type: 'month',
+                month: currentMonth,
+                year: currentYear,
+            }, { preserveState: true });
+        } else if (preset === 'last_month') {
+            const prevMonth = currentMonth === 1 ? 12 : currentMonth - 1;
+            const prevYear = currentMonth === 1 ? currentYear - 1 : currentYear;
+            setFilterType('month');
+            setSelectedMonth(prevMonth);
+            setSelectedYear(prevYear);
+            // @ts-ignore
+            router.get(route('reports.index'), {
+                campaign_id: selectedCampaignId || undefined,
+                filter_type: 'month',
+                month: prevMonth,
+                year: prevYear,
+            }, { preserveState: true });
+        } else if (preset === 'all') {
+            setSelectedCampaignId('');
+            setStartDate('');
+            setEndDate('');
+            // @ts-ignore
+            router.get(route('reports.index'), {}, { preserveState: true });
+        }
+    };
+
     const handleReset = () => {
         setSelectedCampaignId('');
         setStartDate('');
         setEndDate('');
+        setFilterType('month');
+        setSelectedMonth(currentMonth);
+        setSelectedYear(currentYear);
         // @ts-ignore
         router.get(route('reports.index'), {}, { preserveState: true });
     };
 
-    const handleExportExcel = () => {
-        const params = new URLSearchParams();
-        if (selectedCampaignId) params.append('campaign_id', selectedCampaignId);
-        if (startDate) params.append('start_date', startDate);
-        if (endDate) params.append('end_date', endDate);
-
-        // @ts-ignore
-        const exportUrl = route('reports.export') + (params.toString() ? `?${params.toString()}` : '');
-        window.location.href = exportUrl;
-    };
-
     const activeLeaderboard = leaderboardTab === 'views' ? leaderboard.top_views : leaderboard.top_gmv;
+
+    // Lọc danh sách video theo từ khóa tìm kiếm
+    const filteredVideoDetails = videoDetails.filter((v) => {
+        if (!videoSearchQuery.trim()) return true;
+        const query = videoSearchQuery.toLowerCase();
+        return (
+            v.creator_name.toLowerCase().includes(query) ||
+            v.handle.toLowerCase().includes(query) ||
+            v.video_title.toLowerCase().includes(query) ||
+            v.platform.toLowerCase().includes(query)
+        );
+    });
 
     // Màu sắc từng bước phễu
     const funnelColors = ['#6366F1', '#4F46E5', '#3B82F6', '#0EA5E9', '#10B981'];
@@ -232,7 +372,7 @@ export default function ReportIndex({
                             </h1>
                         </div>
                         <p className="text-sm text-slate-500 mt-1">
-                            Phân tích chuyên sâu phễu chuyển đổi KOC, tối ưu hóa ngân sách và đánh giá năng suất đội ngũ booking.
+                            Phân tích dữ liệu thực tế phễu chuyển đổi KOC, tối ưu hóa ngân sách và nghiệm thu video chi tiết.
                         </p>
                     </div>
 
@@ -240,79 +380,184 @@ export default function ReportIndex({
                         <Button
                             variant="primary"
                             iconLeft={<Download className="h-4 w-4" />}
-                            onClick={handleExportExcel}
+                            onClick={() => setIsExportModalOpen(true)}
                         >
                             Xuất Báo Cáo Excel (.xlsx)
                         </Button>
                     </div>
                 </div>
 
-                {/* 2. Filter Bar */}
-                <form
-                    onSubmit={handleFilter}
-                    className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-stretch md:items-center gap-3 text-sm"
-                >
-                    <div className="flex items-center gap-2 text-slate-600 font-medium shrink-0">
-                        <Filter className="h-4 w-4 text-primary-600" />
-                        <span>Bộ lọc:</span>
-                    </div>
-
-                    <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        {/* Chiến dịch */}
-                        <div>
-                            <select
-                                value={selectedCampaignId}
-                                onChange={(e) => setSelectedCampaignId(e.target.value)}
-                                className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500 bg-white"
-                            >
-                                <option value="">Tất cả chiến dịch</option>
-                                {campaigns.map((camp) => (
-                                    <option key={camp.id} value={camp.id}>
-                                        {camp.name} ({camp.product_name})
-                                    </option>
-                                ))}
-                            </select>
+                {/* 2. Enhanced Filter Bar with Month Selector & Presets */}
+                <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm space-y-3">
+                    {/* Top filter row: Mode switch & Presets */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 text-xs border-b border-slate-100 pb-3">
+                        <div className="flex items-center gap-2">
+                            <span className="font-semibold text-slate-700 flex items-center gap-1.5">
+                                <Filter className="h-3.5 w-3.5 text-primary-600" /> Chế độ lọc:
+                            </span>
+                            <div className="inline-flex rounded-lg bg-slate-100 p-0.5">
+                                <button
+                                    type="button"
+                                    onClick={() => setFilterType('month')}
+                                    className={`px-3 py-1 rounded-md font-semibold transition-all ${
+                                        filterType === 'month'
+                                            ? 'bg-white text-primary-600 shadow-xs'
+                                            : 'text-slate-600 hover:text-slate-900'
+                                    }`}
+                                >
+                                    Theo Tháng
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setFilterType('date_range')}
+                                    className={`px-3 py-1 rounded-md font-semibold transition-all ${
+                                        filterType === 'date_range'
+                                            ? 'bg-white text-primary-600 shadow-xs'
+                                            : 'text-slate-600 hover:text-slate-900'
+                                    }`}
+                                >
+                                    Khoảng Ngày
+                                </button>
+                            </div>
                         </div>
 
-                        {/* Từ ngày */}
+                        {/* Quick Presets */}
                         <div className="flex items-center gap-1.5">
-                            <span className="text-xs text-slate-500 shrink-0">Từ:</span>
-                            <input
-                                type="date"
-                                value={startDate}
-                                onChange={(e) => setStartDate(e.target.value)}
-                                className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500"
-                            />
-                        </div>
-
-                        {/* Đến ngày */}
-                        <div className="flex items-center gap-1.5">
-                            <span className="text-xs text-slate-500 shrink-0">Đến:</span>
-                            <input
-                                type="date"
-                                value={endDate}
-                                onChange={(e) => setEndDate(e.target.value)}
-                                className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500"
-                            />
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                        <Button type="submit" variant="secondary" size="sm">
-                            Áp dụng
-                        </Button>
-                        {(selectedCampaignId || startDate || endDate) && (
+                            <span className="text-slate-400 mr-1">Chọn nhanh:</span>
                             <button
                                 type="button"
-                                onClick={handleReset}
-                                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-                                title="Đặt lại bộ lọc"
+                                onClick={() => handleQuickPreset('this_month')}
+                                className="px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition-colors"
                             >
-                                <RotateCcw className="h-4 w-4" />
+                                Tháng này
                             </button>
-                        )}
+                            <button
+                                type="button"
+                                onClick={() => handleQuickPreset('last_month')}
+                                className="px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition-colors"
+                            >
+                                Tháng trước
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => handleQuickPreset('all')}
+                                className="px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition-colors"
+                            >
+                                Toàn bộ
+                            </button>
+                        </div>
                     </div>
-                </form>
+
+                    {/* Filter controls row */}
+                    <form
+                        onSubmit={handleFilter}
+                        className="flex flex-col md:flex-row items-stretch md:items-center gap-3 text-sm"
+                    >
+                        <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            {/* Chiến dịch */}
+                            <div>
+                                <select
+                                    value={selectedCampaignId}
+                                    onChange={(e) => setSelectedCampaignId(e.target.value)}
+                                    className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500 bg-white"
+                                >
+                                    <option value="">Tất cả chiến dịch</option>
+                                    {campaigns.map((camp) => (
+                                        <option key={camp.id} value={camp.id}>
+                                            {camp.name} ({camp.product_name})
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Trường lọc theo Tháng hoặc Khoảng Ngày */}
+                            {filterType === 'month' ? (
+                                <>
+                                    {/* Chọn Tháng */}
+                                    <div>
+                                        <select
+                                            value={selectedMonth}
+                                            onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                                            className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500 bg-white font-medium"
+                                        >
+                                            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                                                <option key={m} value={m}>
+                                                    Tháng {m < 10 ? `0${m}` : m}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    {/* Chọn Năm */}
+                                    <div>
+                                        <select
+                                            value={selectedYear}
+                                            onChange={(e) => setSelectedYear(Number(e.target.value))}
+                                            className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500 bg-white font-medium"
+                                        >
+                                            <option value={currentYear - 1}>Năm {currentYear - 1}</option>
+                                            <option value={currentYear}>Năm {currentYear}</option>
+                                            <option value={currentYear + 1}>Năm {currentYear + 1}</option>
+                                        </select>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    {/* Từ ngày */}
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-xs text-slate-500 shrink-0">Từ:</span>
+                                        <input
+                                            type="date"
+                                            value={startDate}
+                                            onChange={(e) => setStartDate(e.target.value)}
+                                            className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500"
+                                        />
+                                    </div>
+
+                                    {/* Đến ngày */}
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-xs text-slate-500 shrink-0">Đến:</span>
+                                        <input
+                                            type="date"
+                                            value={endDate}
+                                            onChange={(e) => setEndDate(e.target.value)}
+                                            className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500"
+                                        />
+                                    </div>
+                                </>
+                            )}
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                            <Button type="submit" variant="primary" size="sm">
+                                Áp dụng
+                            </Button>
+                            {(selectedCampaignId || startDate || endDate || filters.month) && (
+                                <button
+                                    type="button"
+                                    onClick={handleReset}
+                                    className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                                    title="Đặt lại bộ lọc"
+                                >
+                                    <RotateCcw className="h-4 w-4" />
+                                </button>
+                            )}
+                        </div>
+                    </form>
+
+                    {/* Filter Active Badge Bar */}
+                    <div className="flex items-center justify-between text-xs text-slate-500 pt-1">
+                        <span>
+                            Đang xem: <strong className="text-primary-600">{filters.period_label || 'Toàn thời gian'}</strong>
+                            {selectedCampaign && (
+                                <span> • Chiến dịch: <strong className="text-slate-800">{selectedCampaign.name}</strong></span>
+                            )}
+                        </span>
+                        <span className="text-slate-400 italic">
+                            * Dữ liệu tài chính & chi phí mẫu được tính từ đơn giá bán lẻ sản phẩm thực tế
+                        </span>
+                    </div>
+                </div>
 
                 {/* 3. Financial KPI Stat Cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -333,7 +578,9 @@ export default function ReportIndex({
                             <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
                                 <span>Booking: <strong>{formatVND(financial.total_booking_cost)}</strong></span>
                                 <span>•</span>
-                                <span>Mẫu: <strong>{formatVND(financial.total_sample_cost)}</strong></span>
+                                <span title="Chi phí mẫu thực tế từ giá bán lẻ sản phẩm">
+                                    Mẫu thật: <strong>{formatVND(financial.total_sample_cost)}</strong>
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -496,10 +743,12 @@ export default function ReportIndex({
                             <div className="flex items-center justify-between mb-2">
                                 <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
                                     <span>Xu Hướng Chi Phí, Doanh Thu & ROI</span>
-                                    <span className="text-xs font-normal text-slate-500">(Theo Tuần)</span>
+                                    <span className="text-xs font-normal text-slate-500">
+                                        ({filters.period_label || 'Theo Tuần'})
+                                    </span>
                                 </h2>
                                 <span className="text-xs text-slate-500 flex items-center gap-1">
-                                    <Calendar className="h-3.5 w-3.5" /> 8 tuần gần nhất
+                                    <Calendar className="h-3.5 w-3.5" /> Diễn biến thực tế
                                 </span>
                             </div>
                             <p className="text-xs text-slate-500 mb-4">
@@ -584,7 +833,7 @@ export default function ReportIndex({
                         </div>
 
                         <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-                            <span>* Số liệu được tổng hợp theo các video phát sinh chỉ số trong tuần</span>
+                            <span>* Số liệu được tổng hợp theo các video phát sinh chỉ số trong kỳ</span>
                             <span className="font-medium text-slate-700">Đơn vị: VND / %</span>
                         </div>
                     </div>
@@ -593,7 +842,224 @@ export default function ReportIndex({
                 {/* 4.5. Phân Tích Chuyên Sâu Hao Hụt & Chuyển Đổi Phễu */}
                 <FunnelAnalysisSection funnel={funnel} formatVND={formatVND} />
 
-                {/* 5. Top Creator Leaderboard */}
+                {/* 5. Trọng Tâm Nghiệm Thu: Chi Tiết Video & Ngày Lên Video Cho Từng KOC */}
+                <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+                    <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <span className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600">
+                                    <Film className="h-5 w-5" />
+                                </span>
+                                <h2 className="text-lg font-bold text-slate-900">
+                                    Chi Tiết Video Nghiệm Thu & Ngày Lên Bài Từng KOC
+                                </h2>
+                                <Badge variant="primary" size="sm">
+                                    {videoDetails.length} Video
+                                </Badge>
+                            </div>
+                            <p className="text-xs text-slate-500 mt-1">
+                                Danh sách chi tiết đường dẫn video, thời gian lên bài thực tế, đối chiếu deadline và chỉ số của từng KOC trong kỳ.
+                            </p>
+                        </div>
+
+                        {/* Search Input for Videos & Bulk Sync */}
+                        <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
+                            <div className="w-full sm:w-64 relative">
+                                <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <input
+                                    type="text"
+                                    value={videoSearchQuery}
+                                    onChange={(e) => setVideoSearchQuery(e.target.value)}
+                                    placeholder="Tìm KOC, handle, tiêu đề..."
+                                    className="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl border-slate-200 focus:border-primary-500 focus:ring-primary-500"
+                                />
+                            </div>
+                            <button
+                                type="button"
+                                onClick={handleSyncAllVideos}
+                                disabled={isSyncingAll}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors disabled:opacity-50 shrink-0 shadow-2xs cursor-pointer"
+                                title="Đồng bộ chỉ số thực tế từ API chính thức cho toàn bộ video"
+                            >
+                                <RefreshCw className={`h-3.5 w-3.5 ${isSyncingAll ? 'animate-spin text-primary-600' : 'text-slate-500'}`} />
+                                {isSyncingAll ? 'Đang cập nhật...' : 'Đồng bộ tất cả'}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Table Video Details */}
+                    <div className="overflow-x-auto max-h-[500px]">
+                        <table className="w-full text-left text-sm text-slate-600">
+                            <thead className="bg-slate-50/75 text-xs uppercase font-semibold text-slate-500 border-b border-slate-100 sticky top-0 z-10 backdrop-blur-xs">
+                                <tr>
+                                    <th className="px-5 py-3.5">KOC / Creator</th>
+                                    <th className="px-5 py-3.5">Video & Nền Tảng</th>
+                                    <th className="px-5 py-3.5">Ngày Lên Video Thực Tế</th>
+                                    <th className="px-5 py-3.5">Hạn Chót (Deadline)</th>
+                                    <th className="px-5 py-3.5 text-right">Lượt Xem (Views)</th>
+                                    <th className="px-5 py-3.5 text-right">Doanh Thu (GMV)</th>
+                                    <th className="px-5 py-3.5 text-right">Chi Phí KOC</th>
+                                    <th className="px-5 py-3.5 text-right">CPV</th>
+                                    <th className="px-5 py-3.5 text-right">ROI (%)</th>
+                                    <th className="px-5 py-3.5 text-center">Đồng Bộ</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {filteredVideoDetails.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={10} className="px-6 py-8 text-center text-slate-400">
+                                            {videoSearchQuery
+                                                ? 'Không tìm thấy video nào khớp với từ khóa tìm kiếm.'
+                                                : 'Chưa có video nào phát sinh trong kỳ báo cáo đã chọn.'}
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    filteredVideoDetails.map((v) => {
+                                        const isLate = v.delivery_status.includes('Trễ hạn');
+                                        const hasGmv = v.gmv_amount > 0;
+                                        return (
+                                            <tr key={v.post_id} className="hover:bg-slate-50/70 transition-colors">
+                                                <td className="px-5 py-4">
+                                                    <div>
+                                                        <div className="font-bold text-slate-900">
+                                                            {v.creator_name}
+                                                        </div>
+                                                        <div className="text-xs text-slate-400 font-mono">
+                                                            {v.handle} • {v.tier}
+                                                        </div>
+                                                        {v.staff_name && (
+                                                            <div className="text-[11px] text-slate-500 mt-0.5">
+                                                                Phụ trách: {v.staff_name}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </td>
+
+                                                <td className="px-5 py-4">
+                                                    <div className="space-y-1">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <PlatformBadge platform={v.platform.toLowerCase()} size="xs" />
+                                                            <span className="font-semibold text-xs text-slate-800 line-clamp-1 max-w-[200px]" title={v.video_title}>
+                                                                {v.video_title}
+                                                            </span>
+                                                        </div>
+                                                        {v.post_url ? (
+                                                            <a
+                                                                href={v.post_url}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="inline-flex items-center gap-1 text-xs text-primary-600 hover:text-primary-800 font-medium hover:underline"
+                                                            >
+                                                                Xem video <ExternalLink className="h-3 w-3" />
+                                                            </a>
+                                                        ) : (
+                                                            <span className="text-xs text-slate-400 italic">Không có link</span>
+                                                        )}
+                                                    </div>
+                                                </td>
+
+                                                <td className="px-5 py-4">
+                                                    <div className="space-y-0.5">
+                                                        <div className="font-medium text-slate-900 text-xs">
+                                                            {v.posted_at}
+                                                        </div>
+                                                        <div>
+                                                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                                                isLate
+                                                                    ? 'bg-rose-50 text-rose-700'
+                                                                    : 'bg-emerald-50 text-emerald-700'
+                                                            }`}>
+                                                                {v.delivery_status}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </td>
+
+                                                <td className="px-5 py-4 text-xs text-slate-600">
+                                                    {v.deadline}
+                                                </td>
+
+                                                <td className="px-5 py-4 text-right font-bold text-slate-900">
+                                                    {formatNumber(v.views_count)}
+                                                </td>
+
+                                                <td className="px-5 py-4 text-right">
+                                                    {hasGmv ? (
+                                                        <span className="font-bold text-emerald-600">
+                                                            {formatVND(v.gmv_amount)}
+                                                        </span>
+                                                    ) : (
+                                                        <div>
+                                                            <span className="font-medium text-slate-500">0 đ</span>
+                                                            <div className="text-[10px] text-slate-400">Chưa đối soát</div>
+                                                        </div>
+                                                    )}
+                                                </td>
+
+                                                <td className="px-5 py-4 text-right">
+                                                    <div className="font-medium text-slate-900 text-xs">
+                                                        {formatVND(v.total_cost)}
+                                                    </div>
+                                                    <div className="text-[10px] text-slate-400">
+                                                        Thù lao: {formatVND(v.booking_fee)}
+                                                    </div>
+                                                </td>
+
+                                                <td className="px-5 py-4 text-right font-mono text-xs text-slate-600">
+                                                    {formatNumber(v.cpv)} đ
+                                                </td>
+
+                                                <td className="px-5 py-4 text-right">
+                                                    {hasGmv ? (
+                                                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold ${
+                                                            v.roi_percentage >= 0
+                                                                ? 'bg-emerald-50 text-emerald-700'
+                                                                : 'bg-rose-50 text-rose-700'
+                                                        }`}>
+                                                            {v.roi_percentage >= 0 ? `+${v.roi_percentage}%` : `${v.roi_percentage}%`}
+                                                        </span>
+                                                    ) : (
+                                                        <span
+                                                            className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-400"
+                                                            title="Chưa đối soát doanh thu GMV từ sàn"
+                                                        >
+                                                            -
+                                                        </span>
+                                                    )}
+                                                </td>
+
+                                                <td className="px-5 py-4 text-center">
+                                                    <div className="flex items-center justify-center gap-1.5">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleSyncSingleVideo(v.post_id)}
+                                                            disabled={syncingPostId === v.post_id}
+                                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-primary-50 hover:text-primary-700 transition-colors disabled:opacity-50 cursor-pointer shadow-2xs"
+                                                            title="Đồng bộ chỉ số thực tế từ API"
+                                                        >
+                                                            <RefreshCw className={`h-3 w-3 ${syncingPostId === v.post_id ? 'animate-spin text-primary-600' : 'text-slate-500'}`} />
+                                                            {syncingPostId === v.post_id ? 'Đang lấy...' : 'Làm mới'}
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setEditingVideo(v)}
+                                                            className="p-1 rounded-lg text-slate-400 hover:text-primary-600 hover:bg-primary-50 transition-colors cursor-pointer"
+                                                            title="Chỉnh sửa hoặc nhập chỉ số đối soát thủ công"
+                                                        >
+                                                            <Edit3 className="h-3.5 w-3.5" />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                {/* 6. Top Creator Leaderboard */}
                 <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
                     <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div>
@@ -606,7 +1072,7 @@ export default function ReportIndex({
                                 </h2>
                             </div>
                             <p className="text-xs text-slate-500 mt-1">
-                                Xếp hạng các KOC mang lại hiệu quả lượt xem và doanh thu cao nhất cho chiến dịch.
+                                Xếp hạng các KOC mang lại hiệu quả lượt xem và doanh thu cao nhất cho chiến dịch trong kỳ.
                             </p>
                         </div>
 
@@ -615,20 +1081,22 @@ export default function ReportIndex({
                             <button
                                 type="button"
                                 onClick={() => setLeaderboardTab('views')}
-                                className={`px-3 py-1.5 rounded-lg transition-all ${leaderboardTab === 'views'
-                                    ? 'bg-white text-primary-600 shadow-sm'
-                                    : 'text-slate-600 hover:text-slate-900'
-                                    }`}
+                                className={`px-3 py-1.5 rounded-lg transition-all ${
+                                    leaderboardTab === 'views'
+                                        ? 'bg-white text-primary-600 shadow-sm'
+                                        : 'text-slate-600 hover:text-slate-900'
+                                }`}
                             >
                                 Top 10 Lượt Xem (Views)
                             </button>
                             <button
                                 type="button"
                                 onClick={() => setLeaderboardTab('gmv')}
-                                className={`px-3 py-1.5 rounded-lg transition-all ${leaderboardTab === 'gmv'
-                                    ? 'bg-white text-primary-600 shadow-sm'
-                                    : 'text-slate-600 hover:text-slate-900'
-                                    }`}
+                                className={`px-3 py-1.5 rounded-lg transition-all ${
+                                    leaderboardTab === 'gmv'
+                                        ? 'bg-white text-primary-600 shadow-sm'
+                                        : 'text-slate-600 hover:text-slate-900'
+                                }`}
                             >
                                 Top 10 Doanh Thu (GMV)
                             </button>
@@ -655,12 +1123,11 @@ export default function ReportIndex({
                                 {activeLeaderboard.length === 0 ? (
                                     <tr>
                                         <td colSpan={9} className="px-6 py-8 text-center text-slate-400">
-                                            Chưa có dữ liệu Creator đạt chuẩn xếp hạng.
+                                            Chưa có dữ liệu Creator đạt chuẩn xếp hạng trong kỳ đã chọn.
                                         </td>
                                     </tr>
                                 ) : (
                                     activeLeaderboard.map((koc) => {
-                                        // Huy chương hạng 1, 2, 3
                                         let rankBadge = (
                                             <span className="w-6 h-6 rounded-full bg-slate-100 text-slate-600 font-bold text-xs flex items-center justify-center mx-auto">
                                                 {koc.rank}
@@ -734,10 +1201,11 @@ export default function ReportIndex({
                                                 </td>
                                                 <td className="px-6 py-4 text-right">
                                                     <span
-                                                        className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold ${koc.roi_percentage >= 0
-                                                            ? 'bg-emerald-50 text-emerald-700'
-                                                            : 'bg-rose-50 text-rose-700'
-                                                            }`}
+                                                        className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold ${
+                                                            koc.roi_percentage >= 0
+                                                                ? 'bg-emerald-50 text-emerald-700'
+                                                                : 'bg-rose-50 text-rose-700'
+                                                        }`}
                                                     >
                                                         {koc.roi_percentage >= 0 ? `+${koc.roi_percentage}%` : `${koc.roi_percentage}%`}
                                                     </span>
@@ -768,7 +1236,7 @@ export default function ReportIndex({
                     </div>
                 </div>
 
-                {/* 6. Staff Performance Report */}
+                {/* 7. Staff Performance Report */}
                 <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
                     <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div>
@@ -781,7 +1249,7 @@ export default function ReportIndex({
                                 </h2>
                             </div>
                             <p className="text-xs text-slate-500 mt-1">
-                                Đánh giá tỷ lệ hoàn thành công việc, số lượng KOC chốt hợp tác và doanh thu do từng nhân viên tạo ra.
+                                Đánh giá tỷ lệ hoàn thành công việc, số lượng KOC chốt hợp tác và doanh thu do từng nhân viên tạo ra trong kỳ.
                             </p>
                         </div>
                     </div>
@@ -806,7 +1274,7 @@ export default function ReportIndex({
                                 {staffPerformance.length === 0 ? (
                                     <tr>
                                         <td colSpan={10} className="px-6 py-8 text-center text-slate-400">
-                                            Chưa có nhân viên nào được phân công phụ trách KOC.
+                                            Chưa có nhân viên nào được phân công phụ trách KOC trong kỳ này.
                                         </td>
                                     </tr>
                                 ) : (
@@ -871,6 +1339,26 @@ export default function ReportIndex({
                     </div>
                 </div>
             </div>
+
+            {/* Custom Export Options Modal */}
+            <ExportReportModal
+                isOpen={isExportModalOpen}
+                onClose={() => setIsExportModalOpen(false)}
+                campaignId={selectedCampaignId ? Number(selectedCampaignId) : null}
+                campaignName={selectedCampaign?.name}
+                periodLabel={filters.period_label || 'Toàn thời gian'}
+                month={filterType === 'month' ? selectedMonth : null}
+                year={filterType === 'month' ? selectedYear : null}
+                startDate={filterType === 'date_range' ? startDate : null}
+                endDate={filterType === 'date_range' ? endDate : null}
+            />
+
+            {/* Manual Edit Video Metrics Modal */}
+            <EditVideoMetricsModal
+                isOpen={editingVideo !== null}
+                onClose={() => setEditingVideo(null)}
+                video={editingVideo}
+            />
         </AppLayout>
     );
 }

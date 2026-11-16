@@ -1,4 +1,0 @@
-for d in Modules/*/; do
-  mkdir -p "${d}resources/views"
-  touch "${d}resources/views/.gitkeep"
-done

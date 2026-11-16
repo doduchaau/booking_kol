@@ -24,10 +24,12 @@ php /var/www/html/artisan view:cache || true
 # Tự động chạy migration database
 php /var/www/html/artisan migrate --force || true
 
-if [ "$RUN_SEED" = "true" ]; then
-    echo ">>> Đang chạy seeder..."
-    php artisan db:seed --force || echo ">>> SEED FAILED"
-fi
+
+#if [ "$RUN_SEED" = "true" ]; then
+ #   echo ">>> Đang chạy seeder..."
+  #  php artisan db:seed --force || echo ">>> SEED FAILED"
+#fi
+
 
 echo ">>> Bắt đầu khởi động Supervisord (Nginx + PHP-FPM + Queue + Scheduler)..."
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf

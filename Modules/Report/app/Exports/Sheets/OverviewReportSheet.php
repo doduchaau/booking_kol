@@ -18,7 +18,8 @@ class OverviewReportSheet implements FromArray, WithTitle, WithStyles, ShouldAut
     public function __construct(
         protected array $financial,
         protected array $funnel,
-        protected ?string $campaignName = null
+        protected ?string $campaignName = null,
+        protected ?string $periodLabel = null
     ) {}
 
     public function title(): string
@@ -31,13 +32,14 @@ class OverviewReportSheet implements FromArray, WithTitle, WithStyles, ShouldAut
         $rows = [
             ['BÁO CÁO TỔNG QUAN HIỆU QUẢ VÀ ROI CHIẾN DỊCH BOOKING KOL/KOC'],
             ['Chiến dịch:', $this->campaignName ?? 'Tất cả chiến dịch'],
+            ['Kỳ báo cáo:', $this->periodLabel ?? 'Toàn thời gian'],
             ['Ngày xuất báo cáo:', date('d/m/Y H:i:s')],
             [''],
             ['I. CHỈ SỐ TÀI CHÍNH & HIỆU SUẤT ĐẦU TƯ (ROI)'],
             ['Chỉ số', 'Giá trị', 'Đơn vị', 'Ghi chú'],
             ['Tổng chi phí booking KOC', $this->financial['total_booking_cost'], 'VND', 'Thù lao booking thỏa thuận'],
-            ['Tổng chi phí sản phẩm mẫu thử', $this->financial['total_sample_cost'], 'VND', 'Ước tính định mức gửi mẫu'],
-            ['TỔNG CHI PHÍ THỰC HIỆN', $this->financial['total_cost'], 'VND', 'Chi phí booking + chi phí mẫu thử'],
+            ['Tổng chi phí sản phẩm mẫu thực tế', $this->financial['total_sample_cost'], 'VND', 'Tính từ số lượng gửi x giá bán lẻ sản phẩm'],
+            ['TỔNG CHI PHÍ THỰC HIỆN', $this->financial['total_cost'], 'VND', 'Chi phí booking + chi phí mẫu thử thực tế'],
             ['TỔNG DOANH THU (GMV)', $this->financial['total_gmv'], 'VND', 'Doanh thu phát sinh từ toàn bộ video'],
             ['LỢI NHUẬN RÒNG (GMV - CHI PHÍ)', $this->financial['net_profit'], 'VND', 'Chênh lệch doanh thu và chi phí'],
             ['TỶ LỆ LỢI NHUẬN ĐẦU TƯ (ROI)', $this->financial['roi_percentage'] / 100, '%', '((GMV - Chi phí) / Chi phí) * 100'],
@@ -80,23 +82,23 @@ class OverviewReportSheet implements FromArray, WithTitle, WithStyles, ShouldAut
         $sheet->getStyle('A1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
 
         // Header các phần
-        $sheet->getStyle('A5')->getFont()->setBold(true)->setSize(11)->getColor()->setRGB('4F46E5');
-        $sheet->getStyle('A18')->getFont()->setBold(true)->setSize(11)->getColor()->setRGB('4F46E5');
+        $sheet->getStyle('A6')->getFont()->setBold(true)->setSize(11)->getColor()->setRGB('4F46E5');
+        $sheet->getStyle('A19')->getFont()->setBold(true)->setSize(11)->getColor()->setRGB('4F46E5');
 
         // Bảng 1 Header
-        $sheet->getStyle('A6:D6')->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
-        $sheet->getStyle('A6:D6')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('4F46E5');
+        $sheet->getStyle('A7:D7')->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
+        $sheet->getStyle('A7:D7')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('4F46E5');
 
         // Bảng 2 Header
-        $sheet->getStyle('A19:D19')->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
-        $sheet->getStyle('A19:D19')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('4F46E5');
+        $sheet->getStyle('A20:D20')->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
+        $sheet->getStyle('A20:D20')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('4F46E5');
 
         // Định dạng % cho các dòng ROI và Funnel
-        $sheet->getStyle('B12')->getNumberFormat()->setFormatCode('0.0%');
-        $sheet->getStyle('C20:D24')->getNumberFormat()->setFormatCode('0.0%');
-        $sheet->getStyle('B26')->getNumberFormat()->setFormatCode('0.0%');
-        $sheet->getStyle('B13:B15')->getNumberFormat()->setFormatCode('#,##0');
-        $sheet->getStyle('B20:B24')->getNumberFormat()->setFormatCode('#,##0');
+        $sheet->getStyle('B13')->getNumberFormat()->setFormatCode('0.0%');
+        $sheet->getStyle('C21:D25')->getNumberFormat()->setFormatCode('0.0%');
+        $sheet->getStyle('B27')->getNumberFormat()->setFormatCode('0.0%');
+        $sheet->getStyle('B14:B16')->getNumberFormat()->setFormatCode('#,##0');
+        $sheet->getStyle('B21:B25')->getNumberFormat()->setFormatCode('#,##0');
 
         return [];
     }

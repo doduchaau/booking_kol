@@ -217,12 +217,12 @@ class ReportCalculationService
     }
 
     /**
-     * Thống kê tài chính & Chỉ số ROI bằng SQL Aggregation
+     * Thống kê tài chính & Chỉ số ROI bằng SQL Aggregation với dữ liệu thực tế 100%
      */
     public function getFinancialRoiMetrics(?int $campaignId = null, ?array $dateRange = null): array
     {
         $ver = self::getCacheVersion($campaignId);
-        $cacheKey = "report_financial:v3:{$ver}:{$campaignId}:" . md5(json_encode($dateRange));
+        $cacheKey = "report_financial:v4:{$ver}:{$campaignId}:" . md5(json_encode($dateRange));
 
         return Cache::remember($cacheKey, self::CACHE_TTL_SECONDS, function () use ($campaignId, $dateRange) {
             $ccQuery = CampaignCreator::query()
@@ -244,7 +244,58 @@ class ReportCalculationService
             ")->first();
 
             $totalBookingCost = (float) ($costStats->total_booking_cost ?? 0);
-            $totalSampleCost = ((int) ($costStats->sample_sent_count ?? 0)) * 150000.0;
+
+            // 1. Tính chi phí sản phẩm mẫu THẬT từ campaign_creator_products join campaign_products (retail_price * quantity_sent)
+            $sampleCostQuery = DB::table('campaign_creators')
+                ->join('campaign_creator_products', 'campaign_creator_products.campaign_creator_id', '=', 'campaign_creators.id')
+                ->join('campaign_products', 'campaign_products.id', '=', 'campaign_creator_products.campaign_product_id')
+                ->whereNull('campaign_creators.deleted_at')
+                ->where('campaign_creator_products.quantity_sent', '>', 0);
+
+            if ($campaignId) {
+                $sampleCostQuery->where('campaign_creators.campaign_id', $campaignId);
+            }
+            if (!empty($dateRange['start_date'])) {
+                $sampleCostQuery->whereDate('campaign_creators.created_at', '>=', $dateRange['start_date']);
+            }
+            if (!empty($dateRange['end_date'])) {
+                $sampleCostQuery->whereDate('campaign_creators.created_at', '<=', $dateRange['end_date']);
+            }
+
+            $totalSampleCost = (float) $sampleCostQuery->sum(DB::raw('campaign_creator_products.quantity_sent * campaign_products.retail_price'));
+
+            // Fallback chi phí mẫu: Nếu KOC đã gửi mẫu nhưng chưa phân bổ sản phẩm con chi tiết -> lấy theo retail_price của sản phẩm chiến dịch
+            $creatorsWithoutProductsSent = DB::table('campaign_creators')
+                ->whereNull('campaign_creators.deleted_at')
+                ->where(function ($q) {
+                    $q->whereNotNull('campaign_creators.sample_sent_at')
+                      ->orWhereIn('campaign_creators.status', ['sample_sent', 'sample_received', 'posted', 'completed', 'no_show']);
+                })
+                ->whereNotExists(function ($sub) {
+                    $sub->select(DB::raw(1))
+                        ->from('campaign_creator_products')
+                        ->whereColumn('campaign_creator_products.campaign_creator_id', 'campaign_creators.id')
+                        ->where('campaign_creator_products.quantity_sent', '>', 0);
+                });
+
+            if ($campaignId) {
+                $creatorsWithoutProductsSent->where('campaign_creators.campaign_id', $campaignId);
+            }
+            if (!empty($dateRange['start_date'])) {
+                $creatorsWithoutProductsSent->whereDate('campaign_creators.created_at', '>=', $dateRange['start_date']);
+            }
+            if (!empty($dateRange['end_date'])) {
+                $creatorsWithoutProductsSent->whereDate('campaign_creators.created_at', '<=', $dateRange['end_date']);
+            }
+
+            $fallbackSampleCost = (float) $creatorsWithoutProductsSent
+                ->leftJoin('campaign_products', function ($join) {
+                    $join->on('campaign_products.campaign_id', '=', 'campaign_creators.campaign_id')
+                         ->whereRaw('campaign_products.id = (SELECT id FROM campaign_products cp WHERE cp.campaign_id = campaign_creators.campaign_id ORDER BY sort_order ASC, id ASC LIMIT 1)');
+                })
+                ->sum(DB::raw('COALESCE(campaign_products.retail_price, 0)'));
+
+            $totalSampleCost += $fallbackSampleCost;
             $totalCost = $totalBookingCost + $totalSampleCost;
 
             // Số liệu bài đăng video (Views, Likes, Comments, GMV) qua SQL JOIN
@@ -284,7 +335,7 @@ class ReportCalculationService
             $roiPercentage = $totalCost > 0 ? round(($netProfit / $totalCost) * 100, 2) : 0.0;
             $cpv = $totalViews > 0 ? round($totalCost / $totalViews, 2) : 0.0;
 
-            // Xu hướng theo tuần
+            // Xu hướng theo tuần / tháng
             $weeklyTrend = $this->calculateWeeklyTrend($campaignId, $dateRange);
 
             return [
@@ -306,14 +357,14 @@ class ReportCalculationService
     }
 
     /**
-     * Bảng xếp hạng Top Creator bằng SQL Group By + Limit
+     * Bảng xếp hạng Top Creator bằng SQL Group By + Limit với dữ liệu thực tế và lọc theo kỳ
      */
-    public function getCreatorLeaderboard(?int $campaignId = null, int $limit = 10): array
+    public function getCreatorLeaderboard(?int $campaignId = null, ?array $dateRange = null, int $limit = 10): array
     {
         $ver = self::getCacheVersion($campaignId);
-        $cacheKey = "report_leaderboard:v3:{$ver}:{$campaignId}:{$limit}";
+        $cacheKey = "report_leaderboard:v4:{$ver}:{$campaignId}:{$limit}:" . md5(json_encode($dateRange));
 
-        return Cache::remember($cacheKey, self::CACHE_TTL_SECONDS, function () use ($campaignId, $limit) {
+        return Cache::remember($cacheKey, self::CACHE_TTL_SECONDS, function () use ($campaignId, $dateRange, $limit) {
             $baseQuery = CampaignCreator::query()
                 ->join('creators', 'creators.id', '=', 'campaign_creators.creator_id')
                 ->join('campaigns', 'campaigns.id', '=', 'campaign_creators.campaign_id')
@@ -321,9 +372,15 @@ class ReportCalculationService
                     $join->on('creator_accounts.creator_id', '=', 'creators.id')
                         ->whereRaw('creator_accounts.id = (SELECT id FROM creator_accounts ca WHERE ca.creator_id = creators.id AND ca.deleted_at IS NULL LIMIT 1)');
                 })
-                ->leftJoin('content_posts', function ($join) {
+                ->leftJoin('content_posts', function ($join) use ($dateRange) {
                     $join->on('content_posts.campaign_creator_id', '=', 'campaign_creators.id')
                         ->whereNull('content_posts.deleted_at');
+                    if (!empty($dateRange['start_date'])) {
+                        $join->whereDate('content_posts.posted_at', '>=', $dateRange['start_date']);
+                    }
+                    if (!empty($dateRange['end_date'])) {
+                        $join->whereDate('content_posts.posted_at', '<=', $dateRange['end_date']);
+                    }
                 })
                 ->whereNull('campaign_creators.deleted_at')
                 ->whereNull('creators.deleted_at')
@@ -336,6 +393,7 @@ class ReportCalculationService
             $baseQuery->groupBy([
                 'campaign_creators.id',
                 'campaign_creators.creator_id',
+                'campaign_creators.campaign_id',
                 'campaign_creators.booking_fee',
                 'campaign_creators.sample_sent_at',
                 'campaign_creators.status',
@@ -359,7 +417,30 @@ class ReportCalculationService
                 COALESCE(SUM(content_posts.likes_count), 0) as likes_count,
                 COALESCE(SUM(content_posts.gmv_amount), 0) as gmv_amount,
                 campaign_creators.booking_fee,
-                (campaign_creators.booking_fee + CASE WHEN campaign_creators.sample_sent_at IS NOT NULL THEN 150000.0 ELSE 0.0 END) as total_cost,
+                COALESCE((
+                    SELECT SUM(ccp.quantity_sent * cp.retail_price)
+                    FROM campaign_creator_products ccp
+                    JOIN campaign_products cp ON cp.id = ccp.campaign_product_id
+                    WHERE ccp.campaign_creator_id = campaign_creators.id AND ccp.quantity_sent > 0
+                ), (
+                    SELECT CASE WHEN campaign_creators.sample_sent_at IS NOT NULL OR campaign_creators.status IN ('sample_sent', 'sample_received', 'posted', 'completed')
+                        THEN COALESCE(cp2.retail_price, 0) ELSE 0 END
+                    FROM campaign_products cp2
+                    WHERE cp2.campaign_id = campaign_creators.campaign_id
+                    ORDER BY cp2.sort_order ASC, cp2.id ASC LIMIT 1
+                ), 0) as sample_cost,
+                (campaign_creators.booking_fee + COALESCE((
+                    SELECT SUM(ccp.quantity_sent * cp.retail_price)
+                    FROM campaign_creator_products ccp
+                    JOIN campaign_products cp ON cp.id = ccp.campaign_product_id
+                    WHERE ccp.campaign_creator_id = campaign_creators.id AND ccp.quantity_sent > 0
+                ), (
+                    SELECT CASE WHEN campaign_creators.sample_sent_at IS NOT NULL OR campaign_creators.status IN ('sample_sent', 'sample_received', 'posted', 'completed')
+                        THEN COALESCE(cp2.retail_price, 0) ELSE 0 END
+                    FROM campaign_products cp2
+                    WHERE cp2.campaign_id = campaign_creators.campaign_id
+                    ORDER BY cp2.sort_order ASC, cp2.id ASC LIMIT 1
+                ), 0)) as total_cost,
                 COUNT(content_posts.id) as videos_count,
                 MAX(content_posts.post_url) as latest_video_url,
                 campaign_creators.status
@@ -606,6 +687,359 @@ class ReportCalculationService
         }
 
         return $weeks;
+    }
+
+    /**
+     * Danh sách chi tiết từng Video và KOC nghiệm thu với đầy đủ dữ liệu thực tế:
+     * Tên KOC, Handle, Link video, Ngày lên video (posted_at), Deadline, Views, Likes, GMV, Chi phí...
+     */
+    public function getKocVideoPerformanceDetails(?int $campaignId = null, ?array $dateRange = null): array
+    {
+        $ver = self::getCacheVersion($campaignId);
+        $cacheKey = "report_video_details:v1:{$ver}:{$campaignId}:" . md5(json_encode($dateRange));
+
+        return Cache::remember($cacheKey, self::CACHE_TTL_SECONDS, function () use ($campaignId, $dateRange) {
+            $query = ContentPost::query()
+                ->join('campaign_creators', 'campaign_creators.id', '=', 'content_posts.campaign_creator_id')
+                ->join('creators', 'creators.id', '=', 'campaign_creators.creator_id')
+                ->join('campaigns', 'campaigns.id', '=', 'campaign_creators.campaign_id')
+                ->leftJoin('creator_accounts', function ($join) {
+                    $join->on('creator_accounts.creator_id', '=', 'creators.id')
+                        ->whereRaw('creator_accounts.id = (SELECT id FROM creator_accounts ca WHERE ca.creator_id = creators.id AND ca.deleted_at IS NULL LIMIT 1)');
+                })
+                ->leftJoin('users', 'users.id', '=', 'campaign_creators.assigned_to')
+                ->whereNull('campaign_creators.deleted_at')
+                ->whereNull('creators.deleted_at')
+                ->whereNull('campaigns.deleted_at')
+                ->whereNull('content_posts.deleted_at');
+
+            if ($campaignId) {
+                $query->where('campaign_creators.campaign_id', $campaignId);
+            }
+
+            if (!empty($dateRange['start_date'])) {
+                $query->whereDate('content_posts.posted_at', '>=', $dateRange['start_date']);
+            }
+            if (!empty($dateRange['end_date'])) {
+                $query->whereDate('content_posts.posted_at', '<=', $dateRange['end_date']);
+            }
+
+            $posts = $query->select([
+                'content_posts.id as post_id',
+                'content_posts.post_url',
+                'content_posts.video_title',
+                'content_posts.platform as post_platform',
+                'content_posts.posted_at',
+                'content_posts.status as post_status',
+                'content_posts.views_count',
+                'content_posts.likes_count',
+                'content_posts.comments_count',
+                'content_posts.shares_count',
+                'content_posts.gmv_amount',
+                'content_posts.compliance_score',
+                'content_posts.compliance_status',
+                'campaign_creators.id as campaign_creator_id',
+                'campaign_creators.booking_fee',
+                'campaign_creators.sample_received_at',
+                'campaign_creators.sample_sent_at',
+                'campaign_creators.status as pipeline_status',
+                'creators.name as creator_name',
+                'creators.phone as creator_phone',
+                'creators.tier as creator_tier',
+                'creator_accounts.handle as creator_handle',
+                'creator_accounts.platform as creator_platform',
+                'campaigns.name as campaign_name',
+                'campaigns.product_name',
+                'campaigns.video_deadline_days',
+                'users.name as staff_name',
+            ])
+            ->selectRaw("
+                COALESCE((
+                    SELECT SUM(ccp.quantity_sent * cp.retail_price)
+                    FROM campaign_creator_products ccp
+                    JOIN campaign_products cp ON cp.id = ccp.campaign_product_id
+                    WHERE ccp.campaign_creator_id = campaign_creators.id AND ccp.quantity_sent > 0
+                ), (
+                    SELECT CASE WHEN campaign_creators.sample_sent_at IS NOT NULL OR campaign_creators.status IN ('sample_sent', 'sample_received', 'posted', 'completed')
+                        THEN COALESCE(cp2.retail_price, 0) ELSE 0 END
+                    FROM campaign_products cp2
+                    WHERE cp2.campaign_id = campaign_creators.campaign_id
+                    ORDER BY cp2.sort_order ASC, cp2.id ASC LIMIT 1
+                ), 0) as sample_cost
+            ")
+            ->orderByDesc('content_posts.posted_at')
+            ->orderByDesc('content_posts.id')
+            ->get();
+
+            return $posts->map(function ($post, $index) {
+                $views = (int) $post->views_count;
+                $gmv = (float) $post->gmv_amount;
+                $bookingFee = (float) $post->booking_fee;
+                $sampleCost = (float) $post->sample_cost;
+                $totalCost = $bookingFee + $sampleCost;
+
+                $cpv = $views > 0 ? round($totalCost / $views, 2) : 0.0;
+                $roi = $totalCost > 0 ? round((($gmv - $totalCost) / $totalCost) * 100, 1) : 0.0;
+
+                // Tính hạn chót lên video
+                $deadlineDays = (int) ($post->video_deadline_days ?: 7);
+                $deadline = null;
+                if ($post->sample_received_at) {
+                    $deadline = Carbon::parse($post->sample_received_at)->addDays($deadlineDays);
+                } elseif ($post->sample_sent_at) {
+                    $deadline = Carbon::parse($post->sample_sent_at)->addDays($deadlineDays + 3);
+                }
+
+                $postedAt = $post->posted_at ? Carbon::parse($post->posted_at) : null;
+                $deliveryStatus = 'Đúng hạn';
+                if ($deadline && $postedAt) {
+                    if ($postedAt->gt($deadline)) {
+                        $diffDays = $postedAt->diffInDays($deadline);
+                        $deliveryStatus = 'Trễ hạn ' . ($diffDays > 0 ? $diffDays : 1) . ' ngày';
+                    }
+                }
+
+                return [
+                    'index' => $index + 1,
+                    'post_id' => $post->post_id,
+                    'creator_name' => $post->creator_name,
+                    'creator_phone' => $post->creator_phone,
+                    'handle' => $post->creator_handle ?: '@koc',
+                    'platform' => strtoupper($post->post_platform ?: ($post->creator_platform ?: 'tiktok')),
+                    'tier' => strtoupper($post->creator_tier ?: 'nano'),
+                    'staff_name' => $post->staff_name ?: 'Chưa phân công',
+                    'campaign_name' => $post->campaign_name,
+                    'product_name' => $post->product_name ?: 'Sản phẩm chiến dịch',
+                    'post_url' => $post->post_url,
+                    'video_title' => $post->video_title ?: 'Video Review',
+                    'posted_at' => $postedAt ? $postedAt->format('d/m/Y H:i') : 'Chưa đăng',
+                    'deadline' => $deadline ? $deadline->format('d/m/Y') : 'Không có',
+                    'delivery_status' => $deliveryStatus,
+                    'post_status' => $post->post_status ?: 'published',
+                    'views_count' => $views,
+                    'likes_count' => (int) $post->likes_count,
+                    'comments_count' => (int) $post->comments_count,
+                    'shares_count' => (int) $post->shares_count,
+                    'gmv_amount' => $gmv,
+                    'booking_fee' => $bookingFee,
+                    'sample_cost' => $sampleCost,
+                    'total_cost' => $totalCost,
+                    'cpv' => $cpv,
+                    'roi_percentage' => $roi,
+                ];
+            })->all();
+        });
+    }
+
+    /**
+     * Báo cáo diễn biến hiệu quả 12 tháng trong năm (Monthly Breakdown)
+     */
+    public function getMonthlyBreakdown(?int $campaignId = null, ?int $year = null): array
+    {
+        $year = $year ?: (int) date('Y');
+        $ver = self::getCacheVersion($campaignId);
+        $cacheKey = "report_monthly_breakdown:v1:{$ver}:{$campaignId}:{$year}";
+
+        return Cache::remember($cacheKey, self::CACHE_TTL_SECONDS, function () use ($campaignId, $year) {
+            $months = [];
+
+            for ($m = 1; $m <= 12; $m++) {
+                $startOfMonth = Carbon::create($year, $m, 1)->startOfMonth();
+                $endOfMonth = Carbon::create($year, $m, 1)->endOfMonth();
+
+                // Số KOC mới trong tháng
+                $kocsQuery = CampaignCreator::query()
+                    ->whereBetween('created_at', [$startOfMonth, $endOfMonth])
+                    ->whereNull('deleted_at');
+                if ($campaignId) {
+                    $kocsQuery->where('campaign_id', $campaignId);
+                }
+                $kocsCount = $kocsQuery->count();
+
+                // Số KOC chốt hợp tác trong tháng
+                $agreedQuery = CampaignCreator::query()
+                    ->whereBetween('agreed_at', [$startOfMonth, $endOfMonth])
+                    ->whereNull('deleted_at');
+                if ($campaignId) {
+                    $agreedQuery->where('campaign_id', $campaignId);
+                }
+                $agreedCount = $agreedQuery->count();
+
+                // Số mẫu gửi trong tháng
+                $samplesSentQuery = CampaignCreator::query()
+                    ->whereBetween('sample_sent_at', [$startOfMonth, $endOfMonth])
+                    ->whereNull('deleted_at');
+                if ($campaignId) {
+                    $samplesSentQuery->where('campaign_id', $campaignId);
+                }
+                $samplesSentCount = $samplesSentQuery->count();
+
+                // Chi phí booking trong tháng (theo KOC tạo hoặc chốt)
+                $bookingFee = (float) $kocsQuery->sum('booking_fee');
+
+                // Chi phí mẫu thật trong tháng
+                $sampleCostQuery = DB::table('campaign_creators')
+                    ->join('campaign_creator_products', 'campaign_creator_products.campaign_creator_id', '=', 'campaign_creators.id')
+                    ->join('campaign_products', 'campaign_products.id', '=', 'campaign_creator_products.campaign_product_id')
+                    ->whereNull('campaign_creators.deleted_at')
+                    ->where('campaign_creator_products.quantity_sent', '>', 0)
+                    ->whereBetween('campaign_creators.sample_sent_at', [$startOfMonth, $endOfMonth]);
+                if ($campaignId) {
+                    $sampleCostQuery->where('campaign_creators.campaign_id', $campaignId);
+                }
+                $sampleCost = (float) $sampleCostQuery->sum(DB::raw('campaign_creator_products.quantity_sent * campaign_products.retail_price'));
+
+                $totalCost = $bookingFee + $sampleCost;
+
+                // Video, views và GMV xuất bản trong tháng
+                $postsQuery = ContentPost::query()
+                    ->join('campaign_creators', 'campaign_creators.id', '=', 'content_posts.campaign_creator_id')
+                    ->whereNull('campaign_creators.deleted_at')
+                    ->whereNull('content_posts.deleted_at')
+                    ->whereBetween('content_posts.posted_at', [$startOfMonth, $endOfMonth]);
+                if ($campaignId) {
+                    $postsQuery->where('campaign_creators.campaign_id', $campaignId);
+                }
+
+                $postStats = $postsQuery->selectRaw("
+                    COUNT(content_posts.id) as posted_count,
+                    COALESCE(SUM(content_posts.views_count), 0) as views_count,
+                    COALESCE(SUM(content_posts.gmv_amount), 0) as gmv_amount
+                ")->first();
+
+                $postedCount = (int) ($postStats->posted_count ?? 0);
+                $viewsCount = (int) ($postStats->views_count ?? 0);
+                $gmvAmount = (float) ($postStats->gmv_amount ?? 0);
+                $netProfit = $gmvAmount - $totalCost;
+                $roi = $totalCost > 0 ? round(($netProfit / $totalCost) * 100, 1) : ($gmvAmount > 0 ? 100.0 : 0.0);
+                $cpv = $viewsCount > 0 ? round($totalCost / $viewsCount, 2) : 0.0;
+
+                $months[] = [
+                    'month_number' => $m,
+                    'month_name' => "Tháng " . str_pad($m, 2, '0', STR_PAD_LEFT) . "/{$year}",
+                    'kocs_count' => $kocsCount,
+                    'agreed_count' => $agreedCount,
+                    'samples_sent_count' => $samplesSentCount,
+                    'posted_count' => $postedCount,
+                    'booking_cost' => $bookingFee,
+                    'sample_cost' => $sampleCost,
+                    'total_cost' => $totalCost,
+                    'views_count' => $viewsCount,
+                    'gmv_amount' => $gmvAmount,
+                    'net_profit' => $netProfit,
+                    'roi_percentage' => $roi,
+                    'cpv' => $cpv,
+                ];
+            }
+
+            return $months;
+        });
+    }
+
+    /**
+     * Bảng đối soát chi phí & thanh toán thù lao KOC phục vụ kế toán
+     */
+    public function getCostReconciliationDetails(?int $campaignId = null, ?array $dateRange = null): array
+    {
+        $ver = self::getCacheVersion($campaignId);
+        $cacheKey = "report_cost_reconciliation:v1:{$ver}:{$campaignId}:" . md5(json_encode($dateRange));
+
+        return Cache::remember($cacheKey, self::CACHE_TTL_SECONDS, function () use ($campaignId, $dateRange) {
+            $query = CampaignCreator::query()
+                ->join('creators', 'creators.id', '=', 'campaign_creators.creator_id')
+                ->join('campaigns', 'campaigns.id', '=', 'campaign_creators.campaign_id')
+                ->leftJoin('users', 'users.id', '=', 'campaign_creators.assigned_to')
+                ->whereNull('campaign_creators.deleted_at')
+                ->whereNull('creators.deleted_at')
+                ->whereNull('campaigns.deleted_at');
+
+            if ($campaignId) {
+                $query->where('campaign_creators.campaign_id', $campaignId);
+            }
+
+            if (!empty($dateRange['start_date'])) {
+                $query->whereDate('campaign_creators.created_at', '>=', $dateRange['start_date']);
+            }
+            if (!empty($dateRange['end_date'])) {
+                $query->whereDate('campaign_creators.created_at', '<=', $dateRange['end_date']);
+            }
+
+            $items = $query->select([
+                'campaign_creators.id as campaign_creator_id',
+                'campaign_creators.booking_fee',
+                'campaign_creators.status',
+                'campaign_creators.agreed_at',
+                'campaign_creators.approved_cost_at',
+                'campaign_creators.approver_name',
+                'campaign_creators.notes',
+                'creators.name as creator_name',
+                'creators.phone as creator_phone',
+                'creators.tier as creator_tier',
+                'campaigns.name as campaign_name',
+                'users.name as staff_name',
+            ])
+            ->selectRaw("
+                (SELECT COUNT(cp.id) FROM content_posts cp WHERE cp.campaign_creator_id = campaign_creators.id AND cp.deleted_at IS NULL) as video_count,
+                (SELECT MAX(cp.posted_at) FROM content_posts cp WHERE cp.campaign_creator_id = campaign_creators.id AND cp.deleted_at IS NULL) as latest_posted_at,
+                (SELECT COALESCE(SUM(cp.gmv_amount), 0) FROM content_posts cp WHERE cp.campaign_creator_id = campaign_creators.id AND cp.deleted_at IS NULL) as total_gmv,
+                COALESCE((
+                    SELECT SUM(ccp.quantity_sent * cp.retail_price)
+                    FROM campaign_creator_products ccp
+                    JOIN campaign_products cp ON cp.id = ccp.campaign_product_id
+                    WHERE ccp.campaign_creator_id = campaign_creators.id AND ccp.quantity_sent > 0
+                ), (
+                    SELECT CASE WHEN campaign_creators.sample_sent_at IS NOT NULL OR campaign_creators.status IN ('sample_sent', 'sample_received', 'posted', 'completed')
+                        THEN COALESCE(cp2.retail_price, 0) ELSE 0 END
+                    FROM campaign_products cp2
+                    WHERE cp2.campaign_id = campaign_creators.campaign_id
+                    ORDER BY cp2.sort_order ASC, cp2.id ASC LIMIT 1
+                ), 0) as sample_cost,
+                COALESCE((
+                    SELECT SUM(ccp.quantity_sent)
+                    FROM campaign_creator_products ccp
+                    WHERE ccp.campaign_creator_id = campaign_creators.id AND ccp.quantity_sent > 0
+                ), (CASE WHEN campaign_creators.sample_sent_at IS NOT NULL THEN 1 ELSE 0 END)) as samples_sent_count
+            ")
+            ->orderByDesc('campaign_creators.agreed_at')
+            ->orderByDesc('campaign_creators.id')
+            ->get();
+
+            return $items->map(function ($item, $index) {
+                $bookingFee = (float) $item->booking_fee;
+                $sampleCost = (float) $item->sample_cost;
+                $totalCost = $bookingFee + $sampleCost;
+                $videoCount = (int) $item->video_count;
+
+                $paymentStatus = 'Chưa chốt';
+                if ($item->status === 'completed') {
+                    $paymentStatus = 'Đã nghiệm thu (Sẵn sàng thanh toán)';
+                } elseif ($videoCount > 0) {
+                    $paymentStatus = 'Đã lên video (Chờ đối soát nghiệm thu)';
+                } elseif ($item->agreed_at) {
+                    $paymentStatus = 'Đã chốt thù lao (Chờ lên video)';
+                }
+
+                return [
+                    'index' => $index + 1,
+                    'creator_name' => $item->creator_name,
+                    'creator_phone' => $item->creator_phone,
+                    'creator_tier' => strtoupper($item->creator_tier ?: 'nano'),
+                    'campaign_name' => $item->campaign_name,
+                    'staff_name' => $item->staff_name ?: 'Chưa phân công',
+                    'agreed_at' => $item->agreed_at ? Carbon::parse($item->agreed_at)->format('d/m/Y') : 'Chưa có',
+                    'booking_fee' => $bookingFee,
+                    'samples_sent_count' => (int) $item->samples_sent_count,
+                    'sample_cost' => $sampleCost,
+                    'total_cost' => $totalCost,
+                    'video_count' => $videoCount,
+                    'latest_posted_at' => $item->latest_posted_at ? Carbon::parse($item->latest_posted_at)->format('d/m/Y') : 'Chưa đăng',
+                    'total_gmv' => (float) $item->total_gmv,
+                    'payment_status' => $paymentStatus,
+                    'approval_status' => $item->approved_cost_at ? 'Đã duyệt bởi ' . ($item->approver_name ?: 'Quản lý') : 'Chờ duyệt',
+                    'notes' => $item->notes ?: '',
+                ];
+            })->all();
+        });
     }
 
     /**

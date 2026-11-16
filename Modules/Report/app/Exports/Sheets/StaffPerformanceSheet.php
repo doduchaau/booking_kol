@@ -14,7 +14,8 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 class StaffPerformanceSheet implements FromArray, WithTitle, WithStyles, ShouldAutoSize, WithColumnFormatting
 {
     public function __construct(
-        protected array $staff
+        protected array $staff,
+        protected ?string $periodLabel = null
     ) {}
 
     public function title(): string
@@ -26,6 +27,7 @@ class StaffPerformanceSheet implements FromArray, WithTitle, WithStyles, ShouldA
     {
         $rows = [
             ['BÁO CÁO NĂNG SUẤT VÀ TỶ LỆ HOÀN THÀNH CÔNG VIỆC NHÂN VIÊN BOOKING'],
+            ['Kỳ báo cáo:', $this->periodLabel ?? 'Toàn thời gian'],
             ['Ngày xuất:', date('d/m/Y H:i:s')],
             [''],
             [
@@ -82,9 +84,9 @@ class StaffPerformanceSheet implements FromArray, WithTitle, WithStyles, ShouldA
         $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14)->getColor()->setRGB('1E293B');
 
         // Header
-        $sheet->getStyle('A4:K4')->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
-        $sheet->getStyle('A4:K4')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('4F46E5');
-        $sheet->getStyle('A4:K4')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle('A5:K5')->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
+        $sheet->getStyle('A5:K5')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('4F46E5');
+        $sheet->getStyle('A5:K5')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
         return [];
     }

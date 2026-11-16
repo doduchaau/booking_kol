@@ -171,7 +171,21 @@ class ContentController extends Controller
 
         $result = $syncService->syncPost($post, $custom);
 
-        return back()->with('success', "Đã đồng bộ chỉ số cho video #{$post->id}: {$result['post']->views_count} lượt xem, {$result['post']->likes_count} lượt thích.");
+        $sourceLabel = match ($result['source'] ?? '') {
+            'tikwm_public_api' => 'TikWM Real-time API',
+            'tiktok_html_hydration', 'tiktok_html_regex', 'tiktok_sigi_state' => 'TikTok Web Scraper',
+            'tiktok_provider_api' => 'Social Data Provider',
+            'youtube_official_api' => 'YouTube Data API v3',
+            'manual' => 'Nhập thủ công',
+            'tiktok_oembed', 'youtube_oembed' => 'oEmbed Metadata',
+            default => 'Hệ thống',
+        };
+
+        if ($result['post']->views_count === 0 && in_array($result['source'] ?? '', ['tiktok_oembed', 'youtube_oembed'])) {
+            return back()->with('warning', "Đã lấy thông tin từ {$sourceLabel}, nhưng nền tảng chưa mở lượt xem tự động (do video riêng tư hoặc nền tảng giới hạn). Bạn có thể bấm 'Sửa' để nhập số liệu đối soát thực tế.");
+        }
+
+        return back()->with('success', "Đã đồng bộ chỉ số thực tế qua {$sourceLabel} cho video #{$post->id}: " . number_format($result['post']->views_count, 0, ',', '.') . " lượt xem, " . number_format($result['post']->likes_count, 0, ',', '.') . " lượt thích.");
     }
 
     /**
