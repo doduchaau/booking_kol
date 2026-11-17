@@ -845,7 +845,7 @@ export default function SettingsIndex({
                                                 }
                                                 className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500 font-mono"
                                             />
-                                            <p className="text-[11px] text-slate-400 mt-1">Mặc định: <code className="bg-slate-100 px-1 py-0.5 rounded">tiktok-api23.p.rapidapi.com</code></p>
+                                            <p className="text-[11px] text-slate-400 mt-1">Host gói đã đăng ký trên RapidAPI (ví dụ: <code className="bg-slate-100 px-1 py-0.5 rounded">tiktok-api6.p.rapidapi.com</code> hoặc <code className="bg-slate-100 px-1 py-0.5 rounded">tiktok-api23.p.rapidapi.com</code>)</p>
                                         </div>
 
                                         {/* API Key */}

@@ -186,24 +186,66 @@ class SettingsController extends Controller
 
         try {
             if ($target === 'rapidapi') {
-                $host = $host ?: (Setting::get('social_data_provider_api_host') ?: config('services.social_data_provider.api_host', 'tiktok-api23.p.rapidapi.com'));
-                $res = Http::withHeaders([
-                    'x-rapidapi-key' => $key,
-                    'x-rapidapi-host' => $host,
-                    'Accept' => 'application/json',
-                ])->timeout(8)->get("https://{$host}/api/post/info", ['postId' => '7123456789012345678']);
+                $host = trim($host ?: (Setting::get('social_data_provider_api_host') ?: config('services.social_data_provider.api_host', 'tiktok-api23.p.rapidapi.com')));
+                $key = trim($key);
 
-                if ($res->status() === 401 || $res->status() === 403) {
-                    $body = $res->json('message') ?? 'API Key không hợp lệ hoặc đã hết hạn mức.';
+                $probes = [
+                    ['url' => "https://{$host}/search/general/query", 'params' => ['query' => 'mr beast', 'sort_type' => 0]],
+                    ['url' => "https://{$host}/api/user/info", 'params' => ['uniqueId' => 'tiktok']],
+                    ['url' => "https://{$host}/user/info", 'params' => ['uniqueId' => 'tiktok']],
+                    ['url' => "https://{$host}/api/post/info", 'params' => ['postId' => '7123456789012345678']],
+                ];
+
+                $lastStatus = 0;
+                $authError = '';
+                $isSubscribed = true;
+                $success = false;
+
+                foreach ($probes as $probe) {
+                    $res = Http::withHeaders([
+                        'x-rapidapi-key' => $key,
+                        'x-rapidapi-host' => $host,
+                        'Accept' => 'application/json',
+                    ])->timeout(10)->get($probe['url'], $probe['params']);
+
+                    $lastStatus = $res->status();
+
+                    if ($res->status() === 401 || $res->status() === 403) {
+                        $authError = $res->json('message') ?? 'Khóa API không hợp lệ hoặc bạn chưa Subscribe gói API này trên RapidAPI.';
+                        $isSubscribed = false;
+                        break;
+                    }
+
+                    if ($res->status() === 429) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => "RapidAPI thông báo đã vượt quá giới hạn tần suất (Mã 429: Too Many Requests). Vui lòng thử lại sau ít phút.",
+                        ]);
+                    }
+
+                    if ($res->successful()) {
+                        $success = true;
+                        break;
+                    }
+                }
+
+                if (!$isSubscribed) {
                     return response()->json([
                         'success' => false,
-                        'message' => "RapidAPI từ chối kết nối (Mã {$res->status()}): {$body}",
+                        'message' => "RapidAPI từ chối kết nối (Mã {$lastStatus}): {$authError}. Vui lòng kiểm tra lại Key hoặc bấm 'Subscribe' gói [{$host}] trên RapidAPI.",
+                    ]);
+                }
+
+                if (!$success && $lastStatus > 0 && $lastStatus !== 200) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Host RapidAPI [{$host}] phản hồi mã HTTP {$lastStatus}. Vui lòng kiểm tra lại tên Host trên RapidAPI.",
                     ]);
                 }
 
                 return response()->json([
                     'success' => true,
-                    'message' => "Kết nối RapidAPI [{$host}] thành công! Khóa API đang hoạt động bình thường.",
+                    'message' => "Kết nối RapidAPI [{$host}] thành công! Khóa API và Host đang hoạt động tốt.",
                 ]);
             }
 

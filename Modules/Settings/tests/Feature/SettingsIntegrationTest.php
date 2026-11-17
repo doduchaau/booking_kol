@@ -68,7 +68,7 @@ class SettingsIntegrationTest extends TestCase
 
         // 2. Mock RapidAPI probe thành công
         Http::fake([
-            'https://tiktok-api23.p.rapidapi.com/api/post/info*' => Http::response([
+            'https://tiktok-api23.p.rapidapi.com/*' => Http::response([
                 'code' => 0,
                 'data' => [],
             ], 200),

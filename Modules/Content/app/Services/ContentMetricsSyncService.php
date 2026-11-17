@@ -3,6 +3,7 @@
 namespace Modules\Content\Services;
 
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -188,9 +189,16 @@ class ContentMetricsSyncService
 
         // 1. TẦNG ƯU TIÊN 1: Nếu người dùng đã cấu hình API Key (RapidAPI / TikAPI), GỌI NGAY LẬP TỨC để tránh bị timeout
         if (!empty($apiKey) && $driver !== 'sandbox') {
-            $providerData = $this->fetchFromRapidApiWithFallbacks($canonicalUrl, $url, $videoId, $apiKey, $apiHost);
+            // Ưu tiên 1: Chạy luồng User Pipeline chuẩn hóa (uid/secUid -> user posts có phân trang continuation_token / cursor)
+            $providerData = $this->fetchFromRapidApiTikTokUserPipeline($canonicalUrl, $url, $videoId, $apiKey, $apiHost);
             if (!empty($providerData) && isset($providerData['views_count'])) {
                 return $providerData;
+            }
+
+            // Fallback: Thử các endpoint single post trực tiếp
+            $fallbackData = $this->fetchFromRapidApiWithFallbacks($canonicalUrl, $url, $videoId, $apiKey, $apiHost);
+            if (!empty($fallbackData) && isset($fallbackData['views_count'])) {
+                return $fallbackData;
             }
         }
 
@@ -216,6 +224,270 @@ class ContentMetricsSyncService
     }
 
     /**
+     * Trích xuất username (@uniqueId) từ URL TikTok
+     */
+    public function extractTikTokUsername(string $url): ?string
+    {
+        if (preg_match('/@([A-Za-z0-9_.-]+)/i', $url, $matches)) {
+            return trim($matches[1], '/?#');
+        }
+        return null;
+    }
+
+    /**
+     * Bóc tách chỉ số từ RapidAPI TikTok theo chuẩn tài liệu nhà cung cấp (Pha 1: uid/secUid -> Pha 2: user videos có phân trang)
+     */
+    public function fetchFromRapidApiTikTokUserPipeline(
+        string $canonicalUrl,
+        string $rawUrl,
+        ?string $videoId,
+        string $apiKey,
+        string $apiHost
+    ): array {
+        $username = $this->extractTikTokUsername($canonicalUrl) ?: $this->extractTikTokUsername($rawUrl);
+        $vid = $videoId ?: ($this->extractTikTokVideoId($canonicalUrl) ?: $this->extractTikTokVideoId($rawUrl));
+
+        if (empty($apiKey) || empty($apiHost)) {
+            return [];
+        }
+
+        $headers = [
+            'x-rapidapi-key' => $apiKey,
+            'x-rapidapi-host' => $apiHost,
+            'Accept' => 'application/json',
+            'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        ];
+
+        // -------------------------------------------------------------
+        // PHA 1: Xác định và Cache UID / SECUID của Creator (TTL: 30 ngày)
+        // -------------------------------------------------------------
+        $uid = null;
+        $secUid = null;
+
+        if (!empty($username)) {
+            $cleanUser = ltrim($username, '@');
+            $cacheKeyUid = "tiktok_uid_{$cleanUser}";
+            $cachedIdentity = Cache::get($cacheKeyUid);
+
+            if (is_array($cachedIdentity)) {
+                $uid = $cachedIdentity['uid'] ?? null;
+                $secUid = $cachedIdentity['secUid'] ?? null;
+            } elseif (is_string($cachedIdentity)) {
+                $uid = $cachedIdentity;
+                $secUid = $cachedIdentity;
+            }
+
+            if (empty($uid) && empty($secUid)) {
+                // Thử các endpoint lấy user info: /api/user/info hoặc /user/info
+                $userEndpoints = [
+                    "https://{$apiHost}/api/user/info",
+                    "https://{$apiHost}/user/info",
+                ];
+
+                foreach ($userEndpoints as $uUrl) {
+                    try {
+                        $res = Http::withHeaders($headers)
+                            ->timeout(15)
+                            ->retry(2, 500)
+                            ->get($uUrl, ['uniqueId' => $cleanUser]);
+
+                        if ($res->successful()) {
+                            $uJson = $res->json();
+                            $userData = $uJson['userInfo']['user'] ?? ($uJson['data']['user'] ?? ($uJson['user'] ?? ($uJson['data'] ?? [])));
+                            $userStats = $uJson['userInfo']['stats'] ?? ($uJson['data']['stats'] ?? ($uJson['stats'] ?? []));
+
+                            $extractedUid = (string) ($userData['id'] ?? ($userData['uid'] ?? ($userData['userId'] ?? '')));
+                            $extractedSecUid = (string) ($userData['secUid'] ?? ($userData['sec_uid'] ?? ''));
+
+                            if (!empty($extractedUid) || !empty($extractedSecUid)) {
+                                $uid = $extractedUid ?: $extractedSecUid;
+                                $secUid = $extractedSecUid ?: $extractedUid;
+
+                                Cache::put($cacheKeyUid, [
+                                    'uid' => $uid,
+                                    'secUid' => $secUid,
+                                ], now()->addDays(30));
+
+                                // Cập nhật followerCount vào hồ sơ KOL nếu có
+                                if (!empty($userStats['followerCount'])) {
+                                    $this->syncCreatorFollowers($cleanUser, (int) $userStats['followerCount']);
+                                }
+
+                                break;
+                            }
+                        } elseif ($res->status() === 401 || $res->status() === 403) {
+                            Log::warning("RapidAPI [{$apiHost}] User Info Auth Failed: HTTP {$res->status()}");
+                            break;
+                        }
+                    } catch (\Throwable $e) {
+                        Log::warning("RapidAPI user/info attempt failed on {$uUrl}: " . $e->getMessage());
+                    }
+                }
+            }
+        }
+
+        // -------------------------------------------------------------
+        // PHA 2: Quét Danh Sách Video có Phân Trang (continuation_token / cursor)
+        // -------------------------------------------------------------
+        $targetId = !empty($vid) ? (string) $vid : null;
+
+        $cleanUser = !empty($username) ? ltrim($username, '@') : null;
+        if (!empty($uid) || !empty($secUid) || !empty($cleanUser)) {
+            $effectiveId = $uid ?: ($secUid ?: $cleanUser);
+            $cacheKeyVideos = "tiktok_videos_{$effectiveId}";
+            $cachedVideos = Cache::get($cacheKeyVideos);
+
+            if (is_array($cachedVideos) && !empty($targetId)) {
+                $matched = $this->findVideoInList($cachedVideos, $targetId);
+                if ($matched) {
+                    $matched['source'] = 'tiktok_provider_api';
+                    return $matched;
+                }
+            }
+
+            // Danh sách các cấu hình endpoint phân trang
+            $postPipelines = [];
+            if (!empty($cleanUser)) {
+                $postPipelines[] = ['url' => "https://{$apiHost}/user/videos", 'id_param' => 'username', 'id_val' => $cleanUser, 'token_param' => 'continuation_token'];
+            }
+            if (!empty($uid) || !empty($secUid)) {
+                $postPipelines[] = ['url' => "https://{$apiHost}/user/videos", 'id_param' => 'uid', 'id_val' => $uid ?: $secUid, 'token_param' => 'continuation_token'];
+                $postPipelines[] = ['url' => "https://{$apiHost}/api/user/posts", 'id_param' => 'secUid', 'id_val' => $secUid ?: $uid, 'token_param' => 'cursor'];
+                $postPipelines[] = ['url' => "https://{$apiHost}/user/posts", 'id_param' => 'secUid', 'id_val' => $secUid ?: $uid, 'token_param' => 'cursor'];
+            }
+
+            foreach ($postPipelines as $pipeline) {
+                $token = null;
+                $allFetchedVideos = [];
+
+                for ($page = 0; $page < 4; $page++) {
+                    $params = [
+                        $pipeline['id_param'] => $pipeline['id_val'],
+                        'count' => 35,
+                    ];
+                    if ($token) {
+                        $params[$pipeline['token_param']] = $token;
+                    }
+
+                    try {
+                        $res = Http::withHeaders($headers)
+                            ->timeout(20)
+                            ->retry(2, 500)
+                            ->get($pipeline['url'], $params);
+
+                        if ($res->status() === 429) {
+                            usleep(600000); // Nghỉ 0.6s nếu bị 429
+                            continue;
+                        }
+
+                        if ($res->successful()) {
+                            $json = $res->json();
+                            $videoList = $json['videos'] ?? ($json['itemList'] ?? ($json['data']['itemList'] ?? ($json['data']['videos'] ?? ($json['data'] ?? []))));
+
+                            if (is_array($videoList) && !empty($videoList)) {
+                                foreach ($videoList as $vItem) {
+                                    $allFetchedVideos[] = $vItem;
+                                }
+
+                                if (!empty($targetId)) {
+                                    $found = $this->findVideoInList($videoList, $targetId);
+                                    if ($found !== null) {
+                                        Cache::put($cacheKeyVideos, $allFetchedVideos, now()->addMinutes(15));
+                                        $found['source'] = 'tiktok_provider_api';
+                                        return $found;
+                                    }
+                                }
+
+                                // Token phân trang cho trang kế tiếp
+                                $token = $json['continuation_token'] ?? ($json['cursor'] ?? ($json['data']['cursor'] ?? null));
+                                $hasMore = $json['hasMore'] ?? ($json['has_more'] ?? ($token !== null));
+
+                                if (!$hasMore || empty($token)) {
+                                    break;
+                                }
+
+                                usleep(300000); // Nghỉ 0.3s chống 429 rate limit
+                            } else {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                    } catch (\Throwable $e) {
+                        Log::warning("RapidAPI user posts fetch failed: " . $e->getMessage());
+                        break;
+                    }
+                }
+
+                if (!empty($allFetchedVideos)) {
+                    Cache::put($cacheKeyVideos, $allFetchedVideos, now()->addMinutes(15));
+                }
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * Tìm video cụ thể trong danh sách và bóc tách chỉ số đa hình
+     */
+    public function findVideoInList(array $videoList, string $targetId): ?array
+    {
+        $cleanTargetId = trim($targetId);
+
+        foreach ($videoList as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $itemId = (string) ($item['video_id'] ?? ($item['id'] ?? ($item['aweme_id'] ?? '')));
+            if ($itemId === $cleanTargetId) {
+                $stats = $item['statistics'] ?? ($item['stats'] ?? $item);
+
+                $views = $stats['number_of_plays'] ?? ($stats['playCount'] ?? ($stats['play_count'] ?? ($stats['plays'] ?? ($stats['view_count'] ?? ($stats['views'] ?? null)))));
+                $likes = $stats['number_of_hearts'] ?? ($stats['diggCount'] ?? ($stats['digg_count'] ?? ($stats['hearts'] ?? ($stats['likes'] ?? ($stats['like_count'] ?? 0)))));
+                $comments = $stats['number_of_comments'] ?? ($stats['commentCount'] ?? ($stats['comment_count'] ?? ($stats['comments'] ?? 0)));
+                $shares = $stats['number_of_shares'] ?? ($stats['shareCount'] ?? ($stats['share_count'] ?? ($stats['shares'] ?? 0)));
+
+                $title = $item['title'] ?? ($item['desc'] ?? ($item['description'] ?? null));
+                $author = $item['author']['nickname'] ?? ($item['author']['unique_id'] ?? ($item['author_name'] ?? null));
+
+                return [
+                    'source' => 'tiktok_provider_api',
+                    'title' => $title,
+                    'author_name' => $author,
+                    'views_count' => (int) ($views ?? 0),
+                    'likes_count' => (int) $likes,
+                    'comments_count' => (int) $comments,
+                    'shares_count' => (int) $shares,
+                ];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Đồng bộ số follower vào hồ sơ CreatorAccount nếu tồn tại
+     */
+    protected function syncCreatorFollowers(string $username, int $followerCount): void
+    {
+        try {
+            if (class_exists(\Modules\Creator\Models\CreatorAccount::class)) {
+                $clean = ltrim($username, '@');
+                \Modules\Creator\Models\CreatorAccount::where('handle', $clean)
+                    ->orWhere('handle', "@{$clean}")
+                    ->update([
+                        'followers_count' => $followerCount,
+                        'last_metrics_updated_at' => now(),
+                    ]);
+            }
+        } catch (\Throwable) {
+            // Không chặn tiến trình nếu lỗi
+        }
+    }
+
+    /**
      * Bóc tách chỉ số từ RapidAPI với hỗ trợ đa dạng endpoint và định dạng JSON của các provider khác nhau
      */
     public function fetchFromRapidApiWithFallbacks(
@@ -237,6 +509,8 @@ class ContentMetricsSyncService
 
         // Thử theo videoId (ID dạng số như 7123456789012345678)
         if (!empty($videoId)) {
+            $endpoints[] = ['url' => "https://{$apiHost}/video/details", 'params' => ['video_id' => $videoId]];
+            $endpoints[] = ['url' => "https://{$apiHost}/video/details", 'params' => ['id' => $videoId]];
             $endpoints[] = ['url' => "https://{$apiHost}/api/post/info", 'params' => ['postId' => $videoId]];
             $endpoints[] = ['url' => "https://{$apiHost}/api/post/detail", 'params' => ['videoId' => $videoId]];
             $endpoints[] = ['url' => "https://{$apiHost}/video/info", 'params' => ['video_id' => $videoId]];
@@ -290,14 +564,14 @@ class ContentMetricsSyncService
         $itemStruct = $json['itemInfo']['itemStruct'] ?? $json['data']['itemInfo']['itemStruct'] ?? null;
         if (!empty($itemStruct)) {
             $stats = $itemStruct['stats'] ?? [];
-            if (isset($stats['playCount']) || isset($stats['play_count'])) {
+            if (isset($stats['playCount']) || isset($stats['play_count']) || isset($stats['number_of_plays'])) {
                 return [
                     'title' => $itemStruct['desc'] ?? null,
                     'author_name' => $itemStruct['author']['nickname'] ?? ($itemStruct['author']['uniqueId'] ?? null),
-                    'views_count' => (int) ($stats['playCount'] ?? ($stats['play_count'] ?? 0)),
-                    'likes_count' => (int) ($stats['diggCount'] ?? ($stats['digg_count'] ?? 0)),
-                    'comments_count' => (int) ($stats['commentCount'] ?? ($stats['comment_count'] ?? 0)),
-                    'shares_count' => (int) ($stats['shareCount'] ?? ($stats['share_count'] ?? 0)),
+                    'views_count' => (int) ($stats['number_of_plays'] ?? ($stats['playCount'] ?? ($stats['play_count'] ?? 0))),
+                    'likes_count' => (int) ($stats['number_of_hearts'] ?? ($stats['diggCount'] ?? ($stats['digg_count'] ?? 0))),
+                    'comments_count' => (int) ($stats['number_of_comments'] ?? ($stats['commentCount'] ?? ($stats['comment_count'] ?? 0))),
+                    'shares_count' => (int) ($stats['number_of_shares'] ?? ($stats['shareCount'] ?? ($stats['share_count'] ?? 0))),
                 ];
             }
         }
@@ -308,18 +582,20 @@ class ContentMetricsSyncService
             $stats = $data['stats'] ?? ($data['statistics'] ?? $data);
             
             $views = null;
-            if (isset($stats['play_count'])) $views = (int) $stats['play_count'];
+            if (isset($stats['number_of_plays'])) $views = (int) $stats['number_of_plays'];
+            elseif (isset($stats['play_count'])) $views = (int) $stats['play_count'];
             elseif (isset($stats['playCount'])) $views = (int) $stats['playCount'];
             elseif (isset($stats['views'])) $views = (int) $stats['views'];
             elseif (isset($stats['view_count'])) $views = (int) $stats['view_count'];
             elseif (isset($stats['viewCount'])) $views = (int) $stats['viewCount'];
+            elseif (isset($data['number_of_plays'])) $views = (int) $data['number_of_plays'];
             elseif (isset($data['play_count'])) $views = (int) $data['play_count'];
             elseif (isset($data['views'])) $views = (int) $data['views'];
 
             if ($views !== null) {
-                $likes = (int) ($stats['digg_count'] ?? ($stats['diggCount'] ?? ($stats['likes'] ?? ($stats['like_count'] ?? ($data['digg_count'] ?? 0)))));
-                $comments = (int) ($stats['comment_count'] ?? ($stats['commentCount'] ?? ($stats['comments'] ?? ($data['comment_count'] ?? 0))));
-                $shares = (int) ($stats['share_count'] ?? ($stats['shareCount'] ?? ($stats['shares'] ?? ($data['share_count'] ?? 0))));
+                $likes = (int) ($stats['number_of_hearts'] ?? ($stats['digg_count'] ?? ($stats['diggCount'] ?? ($stats['likes'] ?? ($stats['like_count'] ?? ($data['digg_count'] ?? 0))))));
+                $comments = (int) ($stats['number_of_comments'] ?? ($stats['comment_count'] ?? ($stats['commentCount'] ?? ($stats['comments'] ?? ($data['comment_count'] ?? 0)))));
+                $shares = (int) ($stats['number_of_shares'] ?? ($stats['share_count'] ?? ($stats['shareCount'] ?? ($stats['shares'] ?? ($data['share_count'] ?? 0)))));
                 $title = $data['title'] ?? ($data['desc'] ?? ($data['description'] ?? null));
                 $authorName = $data['author']['nickname'] ?? ($data['author']['unique_id'] ?? ($data['author_name'] ?? null));
 

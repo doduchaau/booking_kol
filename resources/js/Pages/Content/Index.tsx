@@ -22,6 +22,7 @@ import {
     AlertTriangle,
     AlertOctagon,
     Activity,
+    Edit3,
 } from 'lucide-react';
 import PageHeader from '@/Components/Common/PageHeader';
 import Button from '@/Components/Common/Button';
@@ -153,6 +154,46 @@ export default function Index({ posts, filters, campaigns, stats }: Props) {
     const [chartModalPost, setChartModalPost] = useState<ContentPost | null>(null);
     const [chartData, setChartData] = useState<any[]>([]);
     const [isLoadingChart, setIsLoadingChart] = useState(false);
+
+    // State cho Modal nhập/sửa chỉ số đối soát thực tế
+    const [manualMetricPost, setManualMetricPost] = useState<ContentPost | null>(null);
+    const [manualForm, setManualForm] = useState({
+        views_count: 0,
+        likes_count: 0,
+        comments_count: 0,
+        shares_count: 0,
+        gmv_amount: 0,
+    });
+    const [isSavingManual, setIsSavingManual] = useState(false);
+
+    const handleOpenManualMetric = (post: ContentPost) => {
+        setManualMetricPost(post);
+        setManualForm({
+            views_count: Number(post.views_count) || 0,
+            likes_count: Number(post.likes_count) || 0,
+            comments_count: Number(post.comments_count) || 0,
+            shares_count: Number(post.shares_count) || 0,
+            gmv_amount: Number(post.gmv_amount) || 0,
+        });
+    };
+
+    const handleSaveManualMetric = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!manualMetricPost) return;
+
+        setIsSavingManual(true);
+        router.post(
+            route('content.sync', manualMetricPost.id),
+            manualForm,
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setManualMetricPost(null);
+                },
+                onFinish: () => setIsSavingManual(false),
+            }
+        );
+    };
 
     // Kích hoạt tìm kiếm
     const triggerFilter = (
@@ -691,9 +732,19 @@ export default function Index({ posts, filters, campaigns, stats }: Props) {
                                         loading={isSyncingThis}
                                         onClick={() => handleSyncSingle(post.id)}
                                         iconLeft={<RefreshCw className="h-3.5 w-3.5 text-indigo-600" />}
-                                        title="Đồng bộ chỉ số"
+                                        title="Đồng bộ chỉ số tự động từ API"
                                     >
                                         Đồng bộ
+                                    </Button>
+
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        onClick={() => handleOpenManualMetric(post)}
+                                        iconLeft={<Edit3 className="h-3.5 w-3.5 text-amber-600" />}
+                                        title="Nhập chỉ số đối soát thực tế từ TikTok Studio / KOC"
+                                    >
+                                        Đối soát
                                     </Button>
 
                                     <Button
@@ -817,6 +868,117 @@ export default function Index({ posts, filters, campaigns, stats }: Props) {
                 post={reviewModalPost}
                 onClose={() => setReviewModalPost(null)}
             />
+
+            {/* Modal Cập Nhật Chỉ Số Đối Soát Thực Tế */}
+            {manualMetricPost && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+                    <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                        <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/50">
+                            <div>
+                                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                    <Edit3 className="h-5 w-5 text-amber-600" />
+                                    Cập Nhật Chỉ Số Đối Soát Thực Tế
+                                </h3>
+                                <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">
+                                    Video: {manualMetricPost.video_title || manualMetricPost.post_url}
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setManualMetricPost(null)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSaveManualMetric}>
+                            <div className="p-6 space-y-4">
+                                <div className="p-3 rounded-lg bg-amber-50/80 border border-amber-200 text-xs text-amber-800 leading-relaxed">
+                                    Nhập số liệu đối soát trực tiếp từ ảnh chụp màn hình TikTok Studio / Creator Center. Số liệu này sẽ được lưu vào lịch sử đối soát và báo cáo của chiến dịch.
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                        Lượt xem (Views) <span className="text-rose-500">*</span>
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        required
+                                        value={manualForm.views_count}
+                                        onChange={(e) => setManualForm({ ...manualForm, views_count: parseInt(e.target.value) || 0 })}
+                                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                            Lượt thích (Likes)
+                                        </label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={manualForm.likes_count}
+                                            onChange={(e) => setManualForm({ ...manualForm, likes_count: parseInt(e.target.value) || 0 })}
+                                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                            Bình luận (Comments)
+                                        </label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={manualForm.comments_count}
+                                            onChange={(e) => setManualForm({ ...manualForm, comments_count: parseInt(e.target.value) || 0 })}
+                                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                            Lượt chia sẻ (Shares)
+                                        </label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={manualForm.shares_count}
+                                            onChange={(e) => setManualForm({ ...manualForm, shares_count: parseInt(e.target.value) || 0 })}
+                                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                            Doanh thu GMV (VNĐ)
+                                        </label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="1000"
+                                            value={manualForm.gmv_amount}
+                                            onChange={(e) => setManualForm({ ...manualForm, gmv_amount: parseFloat(e.target.value) || 0 })}
+                                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+                                <Button variant="secondary" type="button" onClick={() => setManualMetricPost(null)}>
+                                    Hủy
+                                </Button>
+                                <Button variant="primary" type="submit" loading={isSavingManual}>
+                                    Lưu số liệu đối soát
+                                </Button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </AppLayout>
     );
 }

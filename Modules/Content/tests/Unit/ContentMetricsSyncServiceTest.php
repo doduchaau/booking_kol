@@ -160,5 +160,118 @@ HTML;
         $res3 = $service->parseRapidApiPayload($payload3);
         $this->assertEquals(99999, $res3['views_count']);
         $this->assertEquals(8888, $res3['likes_count']);
+
+        // Format 4: Snippet RapidAPI with number_of_plays / number_of_hearts
+        $payload4 = [
+            'statistics' => [
+                'number_of_plays' => 123456,
+                'number_of_hearts' => 54321,
+                'number_of_comments' => 777,
+                'number_of_shares' => 88,
+            ],
+            'title' => 'Video snippet test',
+        ];
+        $res4 = $service->parseRapidApiPayload($payload4);
+        $this->assertEquals(123456, $res4['views_count']);
+        $this->assertEquals(54321, $res4['likes_count']);
+        $this->assertEquals(777, $res4['comments_count']);
+        $this->assertEquals(88, $res4['shares_count']);
+    }
+
+    public function test_can_fetch_tiktok_metrics_from_user_pipeline(): void
+    {
+        Http::fake([
+            'https://tiktok-api23.p.rapidapi.com/api/user/info*' => Http::response([
+                'userInfo' => [
+                    'user' => [
+                        'id' => '11223344',
+                        'uniqueId' => 'taylorswift',
+                        'nickname' => 'Taylor Swift',
+                        'secUid' => 'sec_taylor_swift_999',
+                    ],
+                    'stats' => [
+                        'followerCount' => 32000000,
+                    ],
+                ],
+            ], 200),
+            'https://tiktok-api23.p.rapidapi.com/user/videos*' => Http::response([
+                'videos' => [
+                    [
+                        'video_id' => '7251860245353661446',
+                        'title' => 'Anti-Hero Music Video',
+                        'statistics' => [
+                            'number_of_plays' => 2500000,
+                            'number_of_hearts' => 450000,
+                            'number_of_comments' => 15000,
+                            'number_of_shares' => 8500,
+                        ],
+                    ],
+                ],
+                'continuation_token' => 'token_next_page',
+            ], 200),
+        ]);
+
+        $extractor = new VideoMetadataExtractorService();
+        $service = new ContentMetricsSyncService($extractor);
+
+        $metrics = $service->fetchFromRapidApiTikTokUserPipeline(
+            'https://www.tiktok.com/@taylorswift/video/7251860245353661446',
+            'https://www.tiktok.com/@taylorswift/video/7251860245353661446',
+            '7251860245353661446',
+            'test_rapidapi_key',
+            'tiktok-api23.p.rapidapi.com'
+        );
+
+        $this->assertEquals('tiktok_provider_api', $metrics['source']);
+        $this->assertEquals(2500000, $metrics['views_count']);
+        $this->assertEquals(450000, $metrics['likes_count']);
+        $this->assertEquals(15000, $metrics['comments_count']);
+        $this->assertEquals(8500, $metrics['shares_count']);
+        $this->assertEquals('Anti-Hero Music Video', $metrics['title']);
+    }
+
+    public function test_extract_tiktok_username_and_video_id(): void
+    {
+        $extractor = new VideoMetadataExtractorService();
+        $service = new ContentMetricsSyncService($extractor);
+
+        $url = 'https://www.tiktok.com/@huonggiang.official/video/7345678901234567890?is_from_webapp=1';
+
+        $this->assertEquals('huonggiang.official', $service->extractTikTokUsername($url));
+        $this->assertEquals('7345678901234567890', $service->extractTikTokVideoId($url));
+    }
+
+    public function test_can_fetch_tiktok_metrics_from_tiktok_api6_video_details(): void
+    {
+        Http::fake([
+            'https://tiktok-api6.p.rapidapi.com/video/details*' => Http::response([
+                'video_id' => '7251860245353661446',
+                'title' => 'Mr Beast Challenge Video',
+                'statistics' => [
+                    'number_of_plays' => 50000000,
+                    'number_of_hearts' => 4200000,
+                    'number_of_comments' => 120000,
+                    'number_of_shares' => 85000,
+                ],
+            ], 200),
+        ]);
+
+        $extractor = new VideoMetadataExtractorService();
+        $service = new ContentMetricsSyncService($extractor);
+
+        $metrics = $service->fetchFromRapidApiWithFallbacks(
+            'https://www.tiktok.com/@mrbeast/video/7251860245353661446',
+            'https://www.tiktok.com/@mrbeast/video/7251860245353661446',
+            '7251860245353661446',
+            'test_rapidapi_key',
+            'tiktok-api6.p.rapidapi.com'
+        );
+
+        $this->assertEquals('tiktok_provider_api', $metrics['source']);
+        $this->assertEquals(50000000, $metrics['views_count']);
+        $this->assertEquals(4200000, $metrics['likes_count']);
+        $this->assertEquals(120000, $metrics['comments_count']);
+        $this->assertEquals(85000, $metrics['shares_count']);
+        $this->assertEquals('Mr Beast Challenge Video', $metrics['title']);
     }
 }
