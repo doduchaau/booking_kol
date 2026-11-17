@@ -175,19 +175,6 @@ class ContentMetricsSyncService
         $canonicalUrl = $this->resolveTikTokCanonicalUrl($url);
         $videoId = $this->extractTikTokVideoId($canonicalUrl) ?: $this->extractTikTokVideoId($url);
 
-        // 1. TẦNG 1: TikWM Public API (Real-time, miễn phí, trả về đầy đủ views, likes, comments, shares, title, author)
-        $tikwmData = $this->fetchFromTikWmApi($canonicalUrl);
-        if (!empty($tikwmData) && isset($tikwmData['views_count'])) {
-            return $tikwmData;
-        }
-
-        // 2. TẦNG 2: HTML Scraping trực tiếp từ trang TikTok Web với Chrome Browser Headers
-        $scrapedData = $this->scrapeTikTokHtmlStats($canonicalUrl);
-        if (!empty($scrapedData) && isset($scrapedData['views_count'])) {
-            return $scrapedData;
-        }
-
-        // 3. TẦNG 3: RapidAPI / TikAPI nếu có cấu hình API Key (ưu tiên Database Settings, fallback .env)
         $hasSettings = class_exists(\Modules\Settings\Models\Setting::class);
         $apiKey = $hasSettings
             ? (\Modules\Settings\Models\Setting::get('social_data_provider_api_key') ?: config('services.social_data_provider.api_key'))
@@ -199,33 +186,24 @@ class ContentMetricsSyncService
             ? (\Modules\Settings\Models\Setting::get('social_data_provider_api_host') ?: config('services.social_data_provider.api_host', 'tiktok-api23.p.rapidapi.com'))
             : config('services.social_data_provider.api_host', 'tiktok-api23.p.rapidapi.com');
 
-        if (!empty($apiKey) && $driver !== 'sandbox' && $videoId) {
-            try {
-                $res = Http::withHeaders([
-                    'x-rapidapi-key' => $apiKey,
-                    'x-rapidapi-host' => $apiHost,
-                    'Accept' => 'application/json',
-                ])->timeout(10)->get("https://{$apiHost}/api/post/info", [
-                    'postId' => $videoId,
-                ]);
-
-                if ($res->successful()) {
-                    $itemInfo = $res->json('itemInfo.itemStruct') ?? $res->json('data') ?? [];
-                    $stats = $itemInfo['stats'] ?? [];
-
-                    return [
-                        'source' => 'tiktok_provider_api',
-                        'title' => $itemInfo['desc'] ?? null,
-                        'author_name' => $itemInfo['author']['nickname'] ?? null,
-                        'views_count' => (int) ($stats['playCount'] ?? 0),
-                        'likes_count' => (int) ($stats['diggCount'] ?? 0),
-                        'comments_count' => (int) ($stats['commentCount'] ?? 0),
-                        'shares_count' => (int) ($stats['shareCount'] ?? 0),
-                    ];
-                }
-            } catch (\Throwable $e) {
-                Log::warning("TikTok Data Provider fetch failed: " . $e->getMessage(), ['url' => $url]);
+        // 1. TẦNG ƯU TIÊN 1: Nếu người dùng đã cấu hình API Key (RapidAPI / TikAPI), GỌI NGAY LẬP TỨC để tránh bị timeout
+        if (!empty($apiKey) && $driver !== 'sandbox') {
+            $providerData = $this->fetchFromRapidApiWithFallbacks($canonicalUrl, $url, $videoId, $apiKey, $apiHost);
+            if (!empty($providerData) && isset($providerData['views_count'])) {
+                return $providerData;
             }
+        }
+
+        // 2. TẦNG 2: TikWM Public API (Miễn phí fallback)
+        $tikwmData = $this->fetchFromTikWmApi($canonicalUrl);
+        if (!empty($tikwmData) && isset($tikwmData['views_count'])) {
+            return $tikwmData;
+        }
+
+        // 3. TẦNG 3: HTML Scraping trực tiếp từ trang TikTok Web với Chrome Browser Headers
+        $scrapedData = $this->scrapeTikTokHtmlStats($canonicalUrl);
+        if (!empty($scrapedData) && isset($scrapedData['views_count'])) {
+            return $scrapedData;
         }
 
         // 4. TẦNG 4: Fallback qua oEmbed công khai (Chỉ lấy tiêu đề & tác giả thật, tuyệt đối không sinh số ảo)
@@ -235,6 +213,145 @@ class ContentMetricsSyncService
             'title' => $metadata['title'] ?? null,
             'author_name' => $metadata['author_name'] ?? null,
         ];
+    }
+
+    /**
+     * Bóc tách chỉ số từ RapidAPI với hỗ trợ đa dạng endpoint và định dạng JSON của các provider khác nhau
+     */
+    public function fetchFromRapidApiWithFallbacks(
+        string $canonicalUrl,
+        string $rawUrl,
+        ?string $videoId,
+        string $apiKey,
+        string $apiHost
+    ): array {
+        $headers = [
+            'x-rapidapi-key' => $apiKey,
+            'x-rapidapi-host' => $apiHost,
+            'Accept' => 'application/json',
+            'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        ];
+
+        // Danh sách endpoint và tham số linh hoạt tương thích với hầu hết các package RapidAPI TikTok
+        $endpoints = [];
+
+        // Thử theo videoId (ID dạng số như 7123456789012345678)
+        if (!empty($videoId)) {
+            $endpoints[] = ['url' => "https://{$apiHost}/api/post/info", 'params' => ['postId' => $videoId]];
+            $endpoints[] = ['url' => "https://{$apiHost}/api/post/detail", 'params' => ['videoId' => $videoId]];
+            $endpoints[] = ['url' => "https://{$apiHost}/video/info", 'params' => ['video_id' => $videoId]];
+            $endpoints[] = ['url' => "https://{$apiHost}/feed/detail", 'params' => ['video_id' => $videoId]];
+        }
+
+        // Thử theo link video (hỗ trợ cả canonical lẫn shortlink)
+        $endpoints[] = ['url' => "https://{$apiHost}/api/post/info", 'params' => ['url' => $canonicalUrl]];
+        $endpoints[] = ['url' => "https://{$apiHost}/video/info", 'params' => ['url' => $canonicalUrl]];
+        $endpoints[] = ['url' => "https://{$apiHost}/media/info", 'params' => ['url' => $canonicalUrl]];
+        $endpoints[] = ['url' => "https://{$apiHost}/", 'params' => ['url' => $canonicalUrl]];
+
+        if ($rawUrl !== $canonicalUrl) {
+            $endpoints[] = ['url' => "https://{$apiHost}/video/info", 'params' => ['url' => $rawUrl]];
+            $endpoints[] = ['url' => "https://{$apiHost}/media/info", 'params' => ['url' => $rawUrl]];
+        }
+
+        foreach ($endpoints as $ep) {
+            try {
+                $res = Http::withHeaders($headers)
+                    ->timeout(8)
+                    ->get($ep['url'], $ep['params']);
+
+                if ($res->successful()) {
+                    $json = $res->json();
+                    if (!empty($json)) {
+                        $parsed = $this->parseRapidApiPayload($json);
+                        if ($parsed !== null && isset($parsed['views_count'])) {
+                            $parsed['source'] = 'tiktok_provider_api';
+                            return $parsed;
+                        }
+                    }
+                } elseif ($res->status() === 401 || $res->status() === 403) {
+                    Log::error("RapidAPI [{$apiHost}] Authentication Failed ({$res->status()}): " . substr($res->body(), 0, 200));
+                    break;
+                }
+            } catch (\Throwable $e) {
+                Log::warning("RapidAPI attempt failed on {$ep['url']}: " . $e->getMessage());
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * Tự động nhận diện cấu trúc JSON của các RapidAPI TikTok Provider khác nhau
+     */
+    public function parseRapidApiPayload(array $json): ?array
+    {
+        // 1. Dạng Lundehund / tiktok-api23: { itemInfo: { itemStruct: { stats: { playCount, diggCount, ... } } } }
+        $itemStruct = $json['itemInfo']['itemStruct'] ?? $json['data']['itemInfo']['itemStruct'] ?? null;
+        if (!empty($itemStruct)) {
+            $stats = $itemStruct['stats'] ?? [];
+            if (isset($stats['playCount']) || isset($stats['play_count'])) {
+                return [
+                    'title' => $itemStruct['desc'] ?? null,
+                    'author_name' => $itemStruct['author']['nickname'] ?? ($itemStruct['author']['uniqueId'] ?? null),
+                    'views_count' => (int) ($stats['playCount'] ?? ($stats['play_count'] ?? 0)),
+                    'likes_count' => (int) ($stats['diggCount'] ?? ($stats['digg_count'] ?? 0)),
+                    'comments_count' => (int) ($stats['commentCount'] ?? ($stats['comment_count'] ?? 0)),
+                    'shares_count' => (int) ($stats['shareCount'] ?? ($stats['share_count'] ?? 0)),
+                ];
+            }
+        }
+
+        // 2. Dạng TikWM / Douyin / tiktok-scraper: { data: { play_count, digg_count, ... } }
+        $data = $json['data'] ?? $json;
+        if (is_array($data)) {
+            $stats = $data['stats'] ?? ($data['statistics'] ?? $data);
+            
+            $views = null;
+            if (isset($stats['play_count'])) $views = (int) $stats['play_count'];
+            elseif (isset($stats['playCount'])) $views = (int) $stats['playCount'];
+            elseif (isset($stats['views'])) $views = (int) $stats['views'];
+            elseif (isset($stats['view_count'])) $views = (int) $stats['view_count'];
+            elseif (isset($stats['viewCount'])) $views = (int) $stats['viewCount'];
+            elseif (isset($data['play_count'])) $views = (int) $data['play_count'];
+            elseif (isset($data['views'])) $views = (int) $data['views'];
+
+            if ($views !== null) {
+                $likes = (int) ($stats['digg_count'] ?? ($stats['diggCount'] ?? ($stats['likes'] ?? ($stats['like_count'] ?? ($data['digg_count'] ?? 0)))));
+                $comments = (int) ($stats['comment_count'] ?? ($stats['commentCount'] ?? ($stats['comments'] ?? ($data['comment_count'] ?? 0))));
+                $shares = (int) ($stats['share_count'] ?? ($stats['shareCount'] ?? ($stats['shares'] ?? ($data['share_count'] ?? 0))));
+                $title = $data['title'] ?? ($data['desc'] ?? ($data['description'] ?? null));
+                $authorName = $data['author']['nickname'] ?? ($data['author']['unique_id'] ?? ($data['author_name'] ?? null));
+
+                return [
+                    'title' => $title,
+                    'author_name' => $authorName,
+                    'views_count' => $views,
+                    'likes_count' => $likes,
+                    'comments_count' => $comments,
+                    'shares_count' => $shares,
+                ];
+            }
+        }
+
+        // 3. Dạng item_list (User feed hoặc search item): { data: { itemList: [ { stats: ... } ] } }
+        $itemList = $json['data']['itemList'] ?? ($json['itemList'] ?? ($json['items'] ?? null));
+        if (is_array($itemList) && !empty($itemList[0])) {
+            $first = $itemList[0];
+            $stats = $first['stats'] ?? $first;
+            if (isset($stats['playCount']) || isset($stats['play_count'])) {
+                return [
+                    'title' => $first['desc'] ?? null,
+                    'author_name' => $first['author']['nickname'] ?? null,
+                    'views_count' => (int) ($stats['playCount'] ?? ($stats['play_count'] ?? 0)),
+                    'likes_count' => (int) ($stats['diggCount'] ?? ($stats['digg_count'] ?? 0)),
+                    'comments_count' => (int) ($stats['commentCount'] ?? ($stats['comment_count'] ?? 0)),
+                    'shares_count' => (int) ($stats['shareCount'] ?? ($stats['share_count'] ?? 0)),
+                ];
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -368,16 +485,19 @@ class ContentMetricsSyncService
     }
 
     /**
-     * Chuẩn hóa URL TikTok và xử lý resolve Shortlink (vt.tiktok.com, vm.tiktok.com)
+     * Chuẩn hóa URL TikTok và xử lý resolve Shortlink (vt.tiktok.com, vm.tiktok.com, tiktok.com/t/)
      */
     public function resolveTikTokCanonicalUrl(string $url): string
     {
         $url = trim($url);
 
-        // Nếu là short link vt.tiktok.com hoặc vm.tiktok.com
-        if (preg_match('/(?:vt|vm)\.tiktok\.com\/([\w-]+)/i', $url)) {
+        // Nếu là short link vt.tiktok.com, vm.tiktok.com hoặc tiktok.com/t/
+        if (preg_match('/(?:vt|vm)\.tiktok\.com\/([\w-]+)|tiktok\.com\/t\/([\w-]+)/i', $url)) {
             try {
-                $response = Http::timeout(5)->withoutRedirecting()->head($url);
+                $response = Http::withHeaders([
+                    'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                ])->timeout(6)->withoutRedirecting()->get($url);
+
                 $location = $response->header('Location');
                 if ($location) {
                     return strtok($location, '?');
