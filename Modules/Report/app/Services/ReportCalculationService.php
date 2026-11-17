@@ -288,12 +288,27 @@ class ReportCalculationService
                 $creatorsWithoutProductsSent->whereDate('campaign_creators.created_at', '<=', $dateRange['end_date']);
             }
 
-            $fallbackSampleCost = (float) $creatorsWithoutProductsSent
-                ->leftJoin('campaign_products', function ($join) {
-                    $join->on('campaign_products.campaign_id', '=', 'campaign_creators.campaign_id')
-                         ->whereRaw('campaign_products.id = (SELECT id FROM campaign_products cp WHERE cp.campaign_id = campaign_creators.campaign_id ORDER BY sort_order ASC, id ASC LIMIT 1)');
-                })
-                ->sum(DB::raw('COALESCE(campaign_products.retail_price, 0)'));
+            $creatorsPerCampaign = $creatorsWithoutProductsSent
+                ->select('campaign_creators.campaign_id', DB::raw('COUNT(*) as total_creators'))
+                ->groupBy('campaign_creators.campaign_id')
+                ->get();
+
+            $fallbackSampleCost = 0.0;
+            if ($creatorsPerCampaign->isNotEmpty()) {
+                $campaignIds = $creatorsPerCampaign->pluck('campaign_id')->unique()->filter()->values();
+                $defaultProducts = DB::table('campaign_products')
+                    ->whereIn('campaign_id', $campaignIds)
+                    ->orderBy('sort_order', 'asc')
+                    ->orderBy('id', 'asc')
+                    ->get()
+                    ->groupBy('campaign_id')
+                    ->map(fn($products) => (float) ($products->first()->retail_price ?? 0));
+
+                foreach ($creatorsPerCampaign as $item) {
+                    $price = $defaultProducts->get($item->campaign_id, 0.0);
+                    $fallbackSampleCost += $price * (int) $item->total_creators;
+                }
+            }
 
             $totalSampleCost += $fallbackSampleCost;
             $totalCost = $totalBookingCost + $totalSampleCost;
@@ -365,13 +380,16 @@ class ReportCalculationService
         $cacheKey = "report_leaderboard:v4:{$ver}:{$campaignId}:{$limit}:" . md5(json_encode($dateRange));
 
         return Cache::remember($cacheKey, self::CACHE_TTL_SECONDS, function () use ($campaignId, $dateRange, $limit) {
+            $firstAccountsSub = DB::table('creator_accounts')
+                ->select('creator_id', DB::raw('MIN(id) as first_account_id'))
+                ->whereNull('deleted_at')
+                ->groupBy('creator_id');
+
             $baseQuery = CampaignCreator::query()
                 ->join('creators', 'creators.id', '=', 'campaign_creators.creator_id')
                 ->join('campaigns', 'campaigns.id', '=', 'campaign_creators.campaign_id')
-                ->leftJoin('creator_accounts', function ($join) {
-                    $join->on('creator_accounts.creator_id', '=', 'creators.id')
-                        ->whereRaw('creator_accounts.id = (SELECT id FROM creator_accounts ca WHERE ca.creator_id = creators.id AND ca.deleted_at IS NULL LIMIT 1)');
-                })
+                ->leftJoinSub($firstAccountsSub, 'first_accounts', 'first_accounts.creator_id', '=', 'creators.id')
+                ->leftJoin('creator_accounts', 'creator_accounts.id', '=', 'first_accounts.first_account_id')
                 ->leftJoin('content_posts', function ($join) use ($dateRange) {
                     $join->on('content_posts.campaign_creator_id', '=', 'campaign_creators.id')
                         ->whereNull('content_posts.deleted_at');
@@ -699,14 +717,17 @@ class ReportCalculationService
         $cacheKey = "report_video_details:v1:{$ver}:{$campaignId}:" . md5(json_encode($dateRange));
 
         return Cache::remember($cacheKey, self::CACHE_TTL_SECONDS, function () use ($campaignId, $dateRange) {
+            $firstAccountsSub = DB::table('creator_accounts')
+                ->select('creator_id', DB::raw('MIN(id) as first_account_id'))
+                ->whereNull('deleted_at')
+                ->groupBy('creator_id');
+
             $query = ContentPost::query()
                 ->join('campaign_creators', 'campaign_creators.id', '=', 'content_posts.campaign_creator_id')
                 ->join('creators', 'creators.id', '=', 'campaign_creators.creator_id')
                 ->join('campaigns', 'campaigns.id', '=', 'campaign_creators.campaign_id')
-                ->leftJoin('creator_accounts', function ($join) {
-                    $join->on('creator_accounts.creator_id', '=', 'creators.id')
-                        ->whereRaw('creator_accounts.id = (SELECT id FROM creator_accounts ca WHERE ca.creator_id = creators.id AND ca.deleted_at IS NULL LIMIT 1)');
-                })
+                ->leftJoinSub($firstAccountsSub, 'first_accounts', 'first_accounts.creator_id', '=', 'creators.id')
+                ->leftJoin('creator_accounts', 'creator_accounts.id', '=', 'first_accounts.first_account_id')
                 ->leftJoin('users', 'users.id', '=', 'campaign_creators.assigned_to')
                 ->whereNull('campaign_creators.deleted_at')
                 ->whereNull('creators.deleted_at')
