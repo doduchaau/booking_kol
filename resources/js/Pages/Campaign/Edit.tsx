@@ -40,6 +40,7 @@ interface Campaign {
     sample_requirement_file_url?: string | null;
     key_messages?: string | null;
     hashtags?: string | null;
+    brand_tag?: string | null;
     dos_and_donts?: string | null;
     discount_code?: string | null;
     affiliate_link?: string | null;
@@ -105,6 +106,7 @@ export default function Edit({ campaign, statuses }: Props) {
         remove_sample_requirement_file: false,
         key_messages: campaign.key_messages || '',
         hashtags: campaign.hashtags || '',
+        brand_tag: campaign.brand_tag || '',
         dos_and_donts: campaign.dos_and_donts || '',
         discount_code: campaign.discount_code || '',
         affiliate_link: campaign.affiliate_link || '',
@@ -431,6 +433,18 @@ export default function Edit({ campaign, statuses }: Props) {
                                     value={data.hashtags}
                                     onChange={(e) => setData('hashtags', e.target.value)}
                                     placeholder="#SonKemLi #BeautyReview #ReviewMỹPhẩm #BookingKOL"
+                                />
+                            </FormField>
+
+                            <FormField
+                                label="Tài khoản mạng xã hội của Brand cần tag (@mention)"
+                                hint="Ví dụ: @official_brand_vn (hệ thống sẽ tự động quét và kiểm tra xem KOC có tag tài khoản này khi nộp video không)"
+                                error={errors.brand_tag}
+                            >
+                                <TextInput
+                                    value={data.brand_tag}
+                                    onChange={(e) => setData('brand_tag', e.target.value)}
+                                    placeholder="@official_brand_vn"
                                 />
                             </FormField>
 

@@ -160,5 +160,99 @@ class VideoComplianceServiceTest extends TestCase
         $this->assertNotNull($evaluated['post']->compliance_checked_at);
         $this->assertIsArray($evaluated['post']->compliance_checklist);
     }
+
+    /**
+     * Test: Kiểm tra yêu cầu Tag tài khoản thương hiệu (brand_tag)
+     */
+    public function test_evaluating_video_with_brand_tag_requirement(): void
+    {
+        $this->campaign->update(['brand_tag' => '@glow_beauty_vn']);
+
+        // Case 1: Caption có tag @glow_beauty_vn
+        $metadataSuccess = [
+            'is_available' => true,
+            'caption' => 'Video review đỉnh chóp cùng @glow_beauty_vn #kemchongnangglow #glowsummer2026 nhập mã GLOW20K',
+            'hashtags' => ['#kemchongnangglow', '#glowsummer2026'],
+            'mentions' => ['glow_beauty_vn'],
+            'author_handle' => 'thutrang_beauty',
+            'error_message' => null,
+        ];
+
+        $resultSuccess = $this->complianceService->evaluate(
+            platform: 'tiktok',
+            url: 'https://www.tiktok.com/@thutrang_beauty/video/7300000000000005',
+            metadata: $metadataSuccess,
+            campaign: $this->campaign,
+            creator: $this->creator
+        );
+
+        $this->assertEquals('passed', $resultSuccess['status']);
+        $this->assertEquals(100, $resultSuccess['score']);
+
+        // Case 2: Caption thiếu tag thương hiệu -> Warning và có thông báo lỗi
+        $metadataMissing = [
+            'is_available' => true,
+            'caption' => 'Video review đỉnh chóp #kemchongnangglow #glowsummer2026 nhập mã GLOW20K',
+            'hashtags' => ['#kemchongnangglow', '#glowsummer2026'],
+            'mentions' => [],
+            'author_handle' => 'thutrang_beauty',
+            'error_message' => null,
+        ];
+
+        $resultMissing = $this->complianceService->evaluate(
+            platform: 'tiktok',
+            url: 'https://www.tiktok.com/@thutrang_beauty/video/7300000000000006',
+            metadata: $metadataMissing,
+            campaign: $this->campaign,
+            creator: $this->creator
+        );
+
+        $this->assertEquals('warning', $resultMissing['status']);
+        $this->assertContains('Chưa tag tài khoản thương hiệu: @glow_beauty_vn', $resultMissing['issues']);
+    }
+
+    /**
+     * Test: Kiểm tra kết hợp hashtag riêng của sản phẩm mẫu KOC được phân bổ
+     */
+    public function test_evaluating_video_with_product_specific_hashtags(): void
+    {
+        $product = \Modules\Campaign\Models\CampaignProduct::create([
+            'campaign_id' => $this->campaign->id,
+            'product_name' => 'Kem Chống Nắng Tone Up',
+            'retail_price' => 250000,
+            'hashtags' => '#ToneUpGlow',
+        ]);
+
+        \Modules\Campaign\Models\CampaignCreatorProduct::create([
+            'campaign_creator_id' => $this->campaignCreator->id,
+            'campaign_product_id' => $product->id,
+            'quantity_assigned' => 1,
+            'quantity_sent' => 1,
+            'sample_status' => \Modules\Campaign\Enums\SampleStatusEnum::RECEIVED,
+        ]);
+
+        $this->campaignCreator->load('creatorProducts.campaignProduct');
+
+        // Video chỉ có hashtag chiến dịch, thiếu hashtag sản phẩm #toneupglow -> warning
+        $metadata = [
+            'is_available' => true,
+            'caption' => 'Review kem chống nắng #kemchongnangglow #glowsummer2026 mã GLOW20K',
+            'hashtags' => ['#kemchongnangglow', '#glowsummer2026'],
+            'author_handle' => 'thutrang_beauty',
+            'error_message' => null,
+        ];
+
+        $result = $this->complianceService->evaluate(
+            platform: 'tiktok',
+            url: 'https://www.tiktok.com/@thutrang_beauty/video/7300000000000007',
+            metadata: $metadata,
+            campaign: $this->campaign,
+            creator: $this->creator,
+            campaignCreator: $this->campaignCreator
+        );
+
+        $this->assertEquals('warning', $result['status']);
+        $this->assertContains('Thiếu hashtag: #toneupglow', $result['issues']);
+    }
 }
 

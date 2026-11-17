@@ -142,7 +142,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Render Hero
         creatorNameHeader.innerText = profile.name || profile.handle;
         creatorHandleHeader.innerText = `@${profile.handle}`;
-        platformBadge.innerText = (profile.platform || 'TIKTOK').toUpperCase();
+        const plat = (profile.platform || 'tiktok').toLowerCase();
+        platformBadge.innerText = plat.toUpperCase();
+        if (plat === 'shopee') {
+            platformBadge.style.backgroundColor = '#EE4D2D';
+            platformBadge.style.color = '#ffffff';
+        } else if (plat === 'facebook') {
+            platformBadge.style.backgroundColor = '#1877F2';
+            platformBadge.style.color = '#ffffff';
+        } else if (plat === 'instagram') {
+            platformBadge.style.background = 'linear-gradient(45deg, #f09433, #dc2743, #bc1888)';
+            platformBadge.style.color = '#ffffff';
+        } else {
+            platformBadge.style.backgroundColor = '#0f172a';
+            platformBadge.style.color = '#ffffff';
+        }
         followersBadge.innerText = `${profile.followers_raw || profile.followers_count.toLocaleString()} followers`;
 
         if (profile.avatar_url) {

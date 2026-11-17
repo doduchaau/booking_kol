@@ -190,7 +190,7 @@ class PortalService
         $platform = $data['platform'] ?? 'tiktok';
         $postUrl = $data['post_url'] ?? '';
 
-        $campaignCreator->loadMissing(['campaign', 'creator.accounts']);
+        $campaignCreator->loadMissing(['campaign', 'creator.accounts', 'creatorProducts.campaignProduct']);
         $campaign = $campaignCreator->campaign;
         $creator = $campaignCreator->creator;
 
@@ -204,7 +204,8 @@ class PortalService
             url: $postUrl,
             metadata: $metadata,
             campaign: $campaign,
-            creator: $creator
+            creator: $creator,
+            campaignCreator: $campaignCreator
         );
     }
 }

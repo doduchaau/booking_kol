@@ -249,20 +249,33 @@ class ContentController extends Controller
             'post_url' => ['required', 'url'],
             'platform' => ['required', 'string'],
             'campaign_id' => ['nullable', 'integer'],
+            'campaign_creator_id' => ['nullable', 'integer'],
         ]);
 
         $url = $request->input('post_url');
         $platform = $request->input('platform');
         $campaignId = $request->input('campaign_id');
+        $campaignCreatorId = $request->input('campaign_creator_id');
 
-        $campaign = $campaignId ? Campaign::find($campaignId) : null;
+        $campaignCreator = null;
+        if ($campaignCreatorId) {
+            $campaignCreator = \Modules\Campaign\Models\CampaignCreator::with(['campaign', 'creator.accounts', 'creatorProducts.campaignProduct'])->find($campaignCreatorId);
+            $campaign = $campaignCreator?->campaign;
+            $creator = $campaignCreator?->creator;
+        } else {
+            $campaign = $campaignId ? Campaign::find($campaignId) : null;
+            $creator = null;
+        }
+
         $metadata = $extractor->extract($platform, $url);
 
         $result = $complianceService->evaluate(
             platform: $platform,
             url: $url,
             metadata: $metadata,
-            campaign: $campaign
+            campaign: $campaign,
+            creator: $creator,
+            campaignCreator: $campaignCreator
         );
 
         return response()->json($result);

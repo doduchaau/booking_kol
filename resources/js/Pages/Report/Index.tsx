@@ -40,6 +40,9 @@ import FunnelAnalysisSection, {
     TierConversionItem,
     CycleTimeInfo,
 } from '@/Pages/Report/Partials/FunnelAnalysisSection';
+import PlatformComparisonSection, {
+    PlatformComparisonData,
+} from '@/Pages/Report/Partials/PlatformComparisonSection';
 import ExportReportModal from '@/Pages/Report/Partials/ExportReportModal';
 import EditVideoMetricsModal from '@/Pages/Report/Partials/EditVideoMetricsModal';
 import {
@@ -189,6 +192,7 @@ export interface ReportIndexProps {
     };
     staffPerformance: StaffPerformanceItem[];
     videoDetails?: KocVideoDetailItem[];
+    platformComparison?: PlatformComparisonData | null;
 }
 
 export default function ReportIndex({
@@ -200,6 +204,7 @@ export default function ReportIndex({
     leaderboard,
     staffPerformance,
     videoDetails = [],
+    platformComparison,
 }: ReportIndexProps) {
     const now = new Date();
     const currentMonth = now.getMonth() + 1;
@@ -838,6 +843,13 @@ export default function ReportIndex({
                         </div>
                     </div>
                 </div>
+
+                {/* 4.4. So Sánh Hiệu Quả Đa Nền Tảng (TikTok vs Shopee Video vs Facebook Reels) */}
+                <PlatformComparisonSection
+                    data={platformComparison}
+                    formatVND={formatVND}
+                    formatNumber={formatNumber}
+                />
 
                 {/* 4.5. Phân Tích Chuyên Sâu Hao Hụt & Chuyển Đổi Phễu */}
                 <FunnelAnalysisSection funnel={funnel} formatVND={formatVND} />

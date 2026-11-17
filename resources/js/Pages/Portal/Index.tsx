@@ -33,6 +33,7 @@ import TextInput from '@/Components/Form/TextInput';
 import Select from '@/Components/Form/Select';
 import Textarea from '@/Components/Form/Textarea';
 import Toast from '@/Components/Common/Toast';
+import ConfirmDialog from '@/Components/Common/ConfirmDialog';
 import PlatformIcon from '@/Components/Common/PlatformIcon';
 
 export interface CampaignFileItem {
@@ -83,6 +84,7 @@ interface CampaignInfo {
     content_guidelines: string | null;
     key_messages?: string | null;
     hashtags?: string | null;
+    brand_tag?: string | null;
     dos_and_donts?: string | null;
     discount_code?: string | null;
     affiliate_link?: string | null;
@@ -188,16 +190,25 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
     };
 
     const [copiedHashtags, setCopiedHashtags] = useState(false);
+    const [copiedBrandTag, setCopiedBrandTag] = useState(false);
     const [copiedCode, setCopiedCode] = useState(false);
     const [showBrief, setShowBrief] = useState(true);
     const [copiedProductHashtagId, setCopiedProductHashtagId] = useState<number | null>(null);
     const [expandedProductBriefId, setExpandedProductBriefId] = useState<number | null>(null);
+    const [showWarningConfirmModal, setShowWarningConfirmModal] = useState(false);
 
     const handleCopyHashtags = async () => {
         if (!campaign.hashtags) return;
         await navigator.clipboard.writeText(campaign.hashtags);
         setCopiedHashtags(true);
         setTimeout(() => setCopiedHashtags(false), 2500);
+    };
+
+    const handleCopyBrandTag = async () => {
+        if (!campaign.brand_tag) return;
+        await navigator.clipboard.writeText(campaign.brand_tag);
+        setCopiedBrandTag(true);
+        setTimeout(() => setCopiedBrandTag(false), 2500);
     };
 
     const handleCopyProductHashtags = async (prodId: number, hashtags: string) => {
@@ -226,9 +237,18 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
 
     const handleVideoSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        if (precheckResult && (precheckResult.status === 'warning' || precheckResult.status === 'failed')) {
+            setShowWarningConfirmModal(true);
+            return;
+        }
+        executeSubmitVideo();
+    };
+
+    const executeSubmitVideo = () => {
         videoForm.post(route('portal.submit-video', token), {
             onSuccess: () => {
                 videoForm.reset('post_url', 'video_title');
+                setShowWarningConfirmModal(false);
             },
         });
     };
@@ -646,6 +666,29 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
                                     </div>
                                 )}
 
+                                {/* Tag tài khoản thương hiệu bắt buộc */}
+                                {campaign.brand_tag && (
+                                    <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <span className="font-bold text-slate-800 flex items-center gap-1">
+                                                <Radio className="h-3.5 w-3.5 text-indigo-600" />
+                                                Tài khoản Brand cần tag (@mention):
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={handleCopyBrandTag}
+                                                className="text-primary-600 hover:text-primary-700 font-semibold flex items-center gap-1 text-[11px]"
+                                            >
+                                                {copiedBrandTag ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
+                                                <span>{copiedBrandTag ? 'Đã sao chép' : 'Sao chép'}</span>
+                                            </button>
+                                        </div>
+                                        <div className="font-mono text-xs text-indigo-700 font-semibold bg-white px-2.5 py-1 rounded-md border border-slate-200 inline-block shadow-2xs">
+                                            {campaign.brand_tag.startsWith('@') ? campaign.brand_tag : `@${campaign.brand_tag}`}
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* Lưu ý Do's and Don'ts */}
                                 {campaign.dos_and_donts && (
                                     <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
@@ -1058,69 +1101,164 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
                             <FormField
                                 label="Đường link video trực tiếp (URL)"
                                 required
-                                hint="Dán đường link chia sẻ từ ứng dụng TikTok hoặc Facebook (Hệ thống sẽ tự động kiểm tra hashtag & brief)"
+                                hint="Dán đường link chia sẻ từ ứng dụng TikTok, Shopee Video hoặc Facebook Reels (Hệ thống sẽ tự động kiểm tra hashtag & brief)"
                                 error={videoForm.errors.post_url}
                             >
-                                <div className="space-y-2">
-                                    <div className="relative">
-                                        <TextInput
-                                            type="url"
-                                            value={videoForm.data.post_url}
-                                            onChange={(e) => {
-                                                videoForm.setData('post_url', e.target.value);
-                                            }}
-                                            onBlur={() => {
-                                                runPrecheck(videoForm.data.post_url, videoForm.data.platform);
-                                            }}
-                                            placeholder="https://www.tiktok.com/@user/video/..."
-                                        />
-                                        {isPrechecking && (
-                                            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-xs text-indigo-600 bg-white px-2 py-1 rounded-md border border-indigo-100 shadow-xs">
-                                                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                                                <span>Đang quét...</span>
-                                            </div>
-                                        )}
+                                <div className="space-y-3">
+                                    <div className="flex gap-2">
+                                        <div className="relative flex-1">
+                                            <TextInput
+                                                type="url"
+                                                value={videoForm.data.post_url}
+                                                onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    let detected = videoForm.data.platform;
+                                                    if (val.includes('tiktok.com')) detected = 'tiktok';
+                                                    else if (val.includes('shopee.vn') || val.includes('vn.shp.ee')) detected = 'shopee';
+                                                    else if (val.includes('facebook.com') || val.includes('fb.watch')) detected = 'facebook';
+                                                    else if (val.includes('youtube.com') || val.includes('youtu.be')) detected = 'youtube';
+                                                    else if (val.includes('instagram.com')) detected = 'instagram';
+
+                                                    videoForm.setData({
+                                                        ...videoForm.data,
+                                                        post_url: val,
+                                                        platform: detected,
+                                                    });
+                                                }}
+                                                onBlur={() => {
+                                                    runPrecheck(videoForm.data.post_url, videoForm.data.platform);
+                                                }}
+                                                placeholder="https://www.tiktok.com/... hoặc https://shopee.vn/universal-link/video/... hoặc https://www.facebook.com/reel/..."
+                                            />
+                                            {isPrechecking && (
+                                                <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-xs text-indigo-600 bg-white px-2 py-1 rounded-md border border-indigo-100 shadow-xs">
+                                                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                                                    <span>Đang quét...</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <Button
+                                            type="button"
+                                            variant="secondary"
+                                            size="sm"
+                                            loading={isPrechecking}
+                                            onClick={() => runPrecheck(videoForm.data.post_url, videoForm.data.platform)}
+                                            iconLeft={<RefreshCw className="h-3.5 w-3.5 text-indigo-600" />}
+                                            className="shrink-0"
+                                        >
+                                            Kiểm tra
+                                        </Button>
                                     </div>
 
-                                    {/* Hộp Thông Báo Kiểm Tra Tuân Thủ Nhanh Cho KOC */}
+                                    {/* Hộp Bảng Kiểm Tra Tuân Thủ Tự Động Chi Tiết (Pre-Check Checklist) */}
                                     {precheckResult && (
                                         <div
-                                            className={`p-3 rounded-xl border text-xs flex items-start gap-2.5 transition-all animate-in fade-in duration-200 ${
+                                            className={`p-3.5 rounded-2xl border text-xs space-y-3 transition-all animate-in fade-in duration-200 ${
                                                 precheckResult.status === 'passed'
-                                                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                                                    ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
                                                     : precheckResult.status === 'warning'
-                                                    ? 'bg-amber-50 border-amber-200 text-amber-800'
-                                                    : 'bg-rose-50 border-rose-200 text-rose-800'
+                                                    ? 'bg-amber-50/70 border-amber-200 text-amber-950'
+                                                    : 'bg-rose-50/70 border-rose-200 text-rose-950'
                                             }`}
                                         >
-                                            {precheckResult.status === 'passed' ? (
-                                                <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
-                                            ) : precheckResult.status === 'warning' ? (
-                                                <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-                                            ) : (
-                                                <AlertCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
-                                            )}
-                                            <div className="space-y-1">
-                                                <div className="font-bold">
-                                                    {precheckResult.status === 'passed'
-                                                        ? '✓ Tuyệt vời! Video của bạn đã đủ hashtag và yêu cầu brief.'
-                                                        : precheckResult.status === 'warning'
-                                                        ? '⚠️ Lưu ý kiểm tra lại caption video:'
-                                                        : '❌ Video không thể truy cập hoặc ở chế độ riêng tư.'}
+                                            {/* Header trạng thái & Điểm số */}
+                                            <div className="flex items-center justify-between pb-2 border-b border-black/5">
+                                                <div className="flex items-center gap-2 font-bold">
+                                                    {precheckResult.status === 'passed' ? (
+                                                        <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                                                    ) : precheckResult.status === 'warning' ? (
+                                                        <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                                                    ) : (
+                                                        <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+                                                    )}
+                                                    <span>
+                                                        {precheckResult.status === 'passed'
+                                                            ? '✓ Đạt chuẩn 100% theo Brief'
+                                                            : precheckResult.status === 'warning'
+                                                            ? `⚠️ Cần lưu ý (${precheckResult.issues?.length || 0} điểm chưa khớp)`
+                                                            : '❌ Video không hợp lệ hoặc riêng tư'}
+                                                    </span>
                                                 </div>
-                                                {precheckResult.issues && precheckResult.issues.length > 0 && (
-                                                    <ul className="list-disc list-inside space-y-0.5 text-[11px]">
-                                                        {precheckResult.issues.map((issue: string, idx: number) => (
-                                                            <li key={idx}>{issue}</li>
-                                                        ))}
-                                                    </ul>
-                                                )}
-                                                {precheckResult.status === 'warning' && (
-                                                    <p className="text-[11px] text-amber-700 italic pt-0.5">
-                                                        Mẹo: Bạn có thể cập nhật caption trên TikTok/MXH cho đúng brief trước khi bấm gửi để được duyệt nghiệm thu nhanh nhất nhé!
-                                                    </p>
-                                                )}
+                                                <span
+                                                    className={`px-2 py-0.5 rounded-full text-[11px] font-bold border ${
+                                                        precheckResult.status === 'passed'
+                                                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                                            : precheckResult.status === 'warning'
+                                                            ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                                            : 'bg-rose-100 text-rose-800 border-rose-300'
+                                                    }`}
+                                                >
+                                                    {precheckResult.score ?? 0}/100đ
+                                                </span>
                                             </div>
+
+                                            {/* Danh sách tiêu chí tuân thủ (Checklist breakdown) */}
+                                            {precheckResult.checklist && precheckResult.checklist.length > 0 && (
+                                                <div className="space-y-2 pt-1">
+                                                    {precheckResult.checklist.map((item: any, idx: number) => (
+                                                        <div
+                                                            key={idx}
+                                                            className="p-2.5 rounded-xl bg-white/90 border border-black/5 shadow-2xs space-y-1"
+                                                        >
+                                                            <div className="flex items-center justify-between">
+                                                                <div className="flex items-center gap-1.5 font-semibold text-slate-900">
+                                                                    {item.status === 'passed' ? (
+                                                                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                                                                    ) : item.status === 'warning' ? (
+                                                                        <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                                                                    ) : (
+                                                                        <AlertCircle className="h-3.5 w-3.5 text-rose-600 shrink-0" />
+                                                                    )}
+                                                                    <span>{item.label}</span>
+                                                                </div>
+                                                                <span className="text-[10px] text-slate-500 font-mono">
+                                                                    {item.score}/{item.max_score}đ
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-[11px] text-slate-600 pl-5">
+                                                                {item.message}
+                                                            </p>
+
+                                                            {/* Chi tiết hashtag còn thiếu hoặc đã khớp */}
+                                                            {item.key === 'hashtags' && (
+                                                                <div className="pl-5 pt-1 flex flex-wrap gap-1">
+                                                                    {item.found && item.found.map((tag: string, tIdx: number) => (
+                                                                        <span key={tIdx} className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-mono font-medium border border-emerald-200">
+                                                                            ✓ {tag}
+                                                                        </span>
+                                                                    ))}
+                                                                    {item.missing && item.missing.map((tag: string, mIdx: number) => (
+                                                                        <span key={mIdx} className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 text-[10px] font-mono font-bold border border-rose-300">
+                                                                            Thiếu: {tag}
+                                                                        </span>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+
+                                                            {/* Chi tiết tag thương hiệu */}
+                                                            {item.key === 'brand_tag' && item.expected && (
+                                                                <div className="pl-5 pt-1">
+                                                                    {item.status === 'passed' ? (
+                                                                        <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-mono font-bold border border-emerald-200">
+                                                                            ✓ Đã tag {item.found || item.expected}
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="px-2 py-0.5 rounded bg-rose-50 text-rose-700 text-[10px] font-mono font-bold border border-rose-300">
+                                                                            Chưa tag {item.expected}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            {precheckResult.status === 'warning' && (
+                                                <div className="p-2.5 rounded-xl bg-amber-100/60 border border-amber-300 text-amber-900 text-[11px] leading-relaxed">
+                                                    💡 <strong>Mẹo dành cho bạn:</strong> Bạn có thể vào TikTok/MXH chỉnh sửa lại caption cho đúng brief rồi bấm nút <strong>"Kiểm tra lại"</strong> để video được duyệt nghiệm thu và đối soát thù lao nhanh nhất nhé!
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -1147,6 +1285,30 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
                         </form>
                     )}
                 </div>
+
+                {/* Hộp thoại cảnh báo khi nộp video chưa đạt chuẩn 100% */}
+                <ConfirmDialog
+                    isOpen={showWarningConfirmModal}
+                    onClose={() => setShowWarningConfirmModal(false)}
+                    onConfirm={executeSubmitVideo}
+                    title="Video Chưa Khớp Hoàn Toàn Yêu Cầu Brief"
+                    message="Hệ thống phát hiện video của bạn đang thiếu một số yêu cầu bắt buộc theo brief (như hashtag hoặc tag tài khoản thương hiệu). Việc nộp video không đúng brief có thể làm chậm quá trình nghiệm thu và chuyển thù lao."
+                    confirmText="Tôi hiểu và vẫn muốn nộp"
+                    cancelText="Để tôi sửa caption trên TikTok"
+                    variant="warning"
+                    loading={videoForm.processing}
+                >
+                    {precheckResult?.issues && precheckResult.issues.length > 0 && (
+                        <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
+                            <strong className="block mb-1">Các điểm cần lưu ý:</strong>
+                            <ul className="list-disc list-inside space-y-0.5 text-[11px]">
+                                {precheckResult.issues.map((issue: string, idx: number) => (
+                                    <li key={idx}>{issue}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                </ConfirmDialog>
 
                 {/* Footer Chân Trang */}
                 <div className="text-center text-xs text-slate-400 pt-2 pb-6">

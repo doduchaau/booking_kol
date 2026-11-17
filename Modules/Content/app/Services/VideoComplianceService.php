@@ -3,6 +3,7 @@
 namespace Modules\Content\Services;
 
 use Modules\Campaign\Models\Campaign;
+use Modules\Campaign\Models\CampaignCreator;
 use Modules\Content\Models\ContentPost;
 use Modules\Creator\Models\Creator;
 
@@ -17,8 +18,12 @@ class VideoComplianceService
      */
     public function evaluatePost(ContentPost $post): array
     {
-        $campaign = $post->campaignCreator?->campaign;
-        $creator = $post->campaignCreator?->creator;
+        $campaignCreator = $post->campaignCreator;
+        if ($campaignCreator) {
+            $campaignCreator->loadMissing(['campaign', 'creator.accounts', 'creatorProducts.campaignProduct']);
+        }
+        $campaign = $campaignCreator?->campaign;
+        $creator = $campaignCreator?->creator;
 
         $metadata = $this->metadataExtractor->extract($post->platform, $post->post_url);
 
@@ -35,7 +40,8 @@ class VideoComplianceService
             url: $post->post_url,
             metadata: $metadata,
             campaign: $campaign,
-            creator: $creator
+            creator: $creator,
+            campaignCreator: $campaignCreator
         );
 
         // Lưu kết quả vào DB
@@ -62,7 +68,8 @@ class VideoComplianceService
         string $url,
         array $metadata,
         ?Campaign $campaign,
-        ?Creator $creator = null
+        ?Creator $creator = null,
+        ?CampaignCreator $campaignCreator = null
     ): array {
         $checklist = [];
         $score = 0;
@@ -99,18 +106,27 @@ class VideoComplianceService
         }
 
         // -------------------------------------------------------------
-        // Tiêu chí 2: Khớp Hashtag Chiến Dịch (Trọng số: 40 điểm)
+        // Tiêu chí 2: Khớp Hashtag Chiến Dịch & Sản Phẩm (Trọng số: 35 điểm)
         // -------------------------------------------------------------
-        $campaignHashtags = $this->parseHashtags($campaign?->hashtags ?? '');
+        $allHashtagStrings = [$campaign?->hashtags ?? ''];
+        if ($campaignCreator && $campaignCreator->relationLoaded('creatorProducts')) {
+            foreach ($campaignCreator->creatorProducts as $cp) {
+                if (!empty($cp->campaignProduct?->hashtags)) {
+                    $allHashtagStrings[] = $cp->campaignProduct->hashtags;
+                }
+            }
+        }
+        $campaignHashtags = $this->parseHashtags(implode(' ', $allHashtagStrings));
+
         if (empty($campaignHashtags)) {
             // Không yêu cầu hashtag cụ thể -> Tự động đạt điểm tối đa
-            $score += 40;
+            $score += 35;
             $checklist[] = [
                 'key' => 'hashtags',
-                'label' => 'Hashtag Chiến Dịch',
+                'label' => 'Hashtag Chiến Dịch & Sản Phẩm',
                 'status' => 'passed',
-                'score' => 40,
-                'max_score' => 40,
+                'score' => 35,
+                'max_score' => 35,
                 'expected' => [],
                 'found' => $hashtagsFound,
                 'message' => 'Chiến dịch không yêu cầu hashtag bắt buộc.',
@@ -137,16 +153,16 @@ class VideoComplianceService
             }
 
             $tagRatio = count($matchedTags) / count($campaignHashtags);
-            $tagScore = (int) round($tagRatio * 40);
+            $tagScore = (int) round($tagRatio * 35);
             $score += $tagScore;
 
             if (empty($missingTags)) {
                 $checklist[] = [
                     'key' => 'hashtags',
-                    'label' => 'Hashtag Chiến Dịch',
+                    'label' => 'Hashtag Chiến Dịch & Sản Phẩm',
                     'status' => 'passed',
-                    'score' => 40,
-                    'max_score' => 40,
+                    'score' => 35,
+                    'max_score' => 35,
                     'expected' => $campaignHashtags,
                     'found' => $matchedTags,
                     'message' => 'Đã gắn đầy đủ ' . count($matchedTags) . '/' . count($campaignHashtags) . ' hashtag yêu cầu.',
@@ -155,10 +171,10 @@ class VideoComplianceService
                 $issues[] = 'Thiếu hashtag: ' . implode(', ', $missingTags);
                 $checklist[] = [
                     'key' => 'hashtags',
-                    'label' => 'Hashtag Chiến Dịch',
+                    'label' => 'Hashtag Chiến Dịch & Sản Phẩm',
                     'status' => count($matchedTags) > 0 ? 'warning' : 'failed',
                     'score' => $tagScore,
-                    'max_score' => 40,
+                    'max_score' => 35,
                     'expected' => $campaignHashtags,
                     'found' => $matchedTags,
                     'missing' => $missingTags,
@@ -168,31 +184,83 @@ class VideoComplianceService
         }
 
         // -------------------------------------------------------------
-        // Tiêu chí 3: Mã Giảm Giá / Voucher Độc Quyền (Trọng số: 25 điểm)
+        // Tiêu chí 3: Tag / Nhắc Tài Khoản Thương Hiệu (Trọng số: 15 điểm)
+        // -------------------------------------------------------------
+        $brandTag = trim((string) ($campaign?->brand_tag ?? ''));
+        if (empty($brandTag)) {
+            // Không yêu cầu tag thương hiệu -> Tự động đạt điểm tối đa
+            $score += 15;
+            $checklist[] = [
+                'key' => 'brand_tag',
+                'label' => 'Tag Tài Khoản Thương Hiệu',
+                'status' => 'passed',
+                'score' => 15,
+                'max_score' => 15,
+                'expected' => null,
+                'message' => 'Chiến dịch không yêu cầu tag tài khoản thương hiệu cụ thể.',
+            ];
+        } else {
+            $normalizedBrand = strtolower(trim(ltrim($brandTag, '@')));
+            $mentionsFound = array_map(fn($m) => strtolower(trim(ltrim($m, '@'))), (array) ($metadata['mentions'] ?? []));
+            $captionLower = mb_strtolower($caption, 'UTF-8');
+
+            $hasMention = in_array($normalizedBrand, $mentionsFound)
+                || str_contains($captionLower, '@' . $normalizedBrand)
+                || str_contains($captionLower, $normalizedBrand);
+
+            if ($hasMention) {
+                $score += 15;
+                $checklist[] = [
+                    'key' => 'brand_tag',
+                    'label' => 'Tag Tài Khoản Thương Hiệu',
+                    'status' => 'passed',
+                    'score' => 15,
+                    'max_score' => 15,
+                    'expected' => '@' . $normalizedBrand,
+                    'found' => '@' . $normalizedBrand,
+                    'message' => "Đã tag tài khoản thương hiệu @{$normalizedBrand} trong caption.",
+                ];
+            } else {
+                $issues[] = "Chưa tag tài khoản thương hiệu: @{$normalizedBrand}";
+                $checklist[] = [
+                    'key' => 'brand_tag',
+                    'label' => 'Tag Tài Khoản Thương Hiệu',
+                    'status' => 'warning',
+                    'score' => 0,
+                    'max_score' => 15,
+                    'expected' => '@' . $normalizedBrand,
+                    'missing' => ['@' . $normalizedBrand],
+                    'message' => "Caption chưa tag tài khoản thương hiệu @{$normalizedBrand}.",
+                ];
+            }
+        }
+
+        // -------------------------------------------------------------
+        // Tiêu chí 4: Mã Giảm Giá / Voucher Độc Quyền (Trọng số: 15 điểm)
         // -------------------------------------------------------------
         $discountCode = trim((string) ($campaign?->discount_code ?? ''));
         if (empty($discountCode)) {
             // Không yêu cầu mã giảm giá -> Tự động đạt điểm tối đa
-            $score += 25;
+            $score += 15;
             $checklist[] = [
                 'key' => 'discount_code',
                 'label' => 'Mã Giảm Giá Độc Quyền',
                 'status' => 'passed',
-                'score' => 25,
-                'max_score' => 25,
+                'score' => 15,
+                'max_score' => 15,
                 'expected' => null,
                 'message' => 'Chiến dịch không có mã giảm giá bắt buộc.',
             ];
         } else {
             $hasCode = !empty($caption) && stripos($caption, $discountCode) !== false;
             if ($hasCode) {
-                $score += 25;
+                $score += 15;
                 $checklist[] = [
                     'key' => 'discount_code',
                     'label' => 'Mã Giảm Giá Độc Quyền',
                     'status' => 'passed',
-                    'score' => 25,
-                    'max_score' => 25,
+                    'score' => 15,
+                    'max_score' => 15,
                     'expected' => $discountCode,
                     'message' => "Đã có mã giảm giá '{$discountCode}' trong caption.",
                 ];
@@ -203,7 +271,7 @@ class VideoComplianceService
                     'label' => 'Mã Giảm Giá Độc Quyền',
                     'status' => 'warning',
                     'score' => 0,
-                    'max_score' => 25,
+                    'max_score' => 15,
                     'expected' => $discountCode,
                     'message' => "Caption chưa đề cập mã giảm giá '{$discountCode}'.",
                 ];
@@ -211,7 +279,7 @@ class VideoComplianceService
         }
 
         // -------------------------------------------------------------
-        // Tiêu chí 4: Kênh Xuất Bản Chính Chủ (Trọng số: 15 điểm)
+        // Tiêu chí 5: Kênh Xuất Bản Chính Chủ (Trọng số: 15 điểm)
         // -------------------------------------------------------------
         $registeredHandles = [];
         if ($creator && $creator->relationLoaded('accounts')) {
@@ -269,7 +337,7 @@ class VideoComplianceService
         $status = 'passed';
         if (!$isAvailable) {
             $status = 'failed';
-        } elseif ($score < 60 || !empty($missingTags)) {
+        } elseif ($score < 100 || !empty($missingTags) || !empty($issues)) {
             $status = 'warning';
         }
 

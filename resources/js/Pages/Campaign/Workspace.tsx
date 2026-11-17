@@ -82,6 +82,9 @@ export interface ContentPostItem {
     comments_count?: number;
     gmv_amount?: number;
     posted_at?: string | null;
+    compliance_status?: string | null;
+    compliance_score?: number | null;
+    compliance_checklist?: any[] | null;
 }
 
 export interface WorkspaceKocItem {

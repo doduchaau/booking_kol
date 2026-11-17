@@ -67,6 +67,9 @@ class ReportController extends Controller
         // 4. Danh sách video KOC chi tiết (để xem trực tiếp hoặc hỗ trợ modal)
         $videoDetails = $this->reportService->getKocVideoPerformanceDetails($campaignId, $dateRange);
 
+        // 5. So sánh hiệu quả đa kênh (TikTok vs Shopee Video vs Facebook Reels)
+        $platformComparison = $this->reportService->getPlatformComparisonMetrics($campaignId, $dateRange);
+
         $selectedCampaign = $campaignId ? $campaigns->firstWhere('id', $campaignId) : null;
 
         return Inertia::render('Report/Index', [
@@ -86,6 +89,7 @@ class ReportController extends Controller
             'leaderboard' => $leaderboard,
             'staffPerformance' => $staffPerformance,
             'videoDetails' => $videoDetails,
+            'platformComparison' => $platformComparison,
         ]);
     }
 

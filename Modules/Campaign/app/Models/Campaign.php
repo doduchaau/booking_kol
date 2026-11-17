@@ -31,6 +31,7 @@ class Campaign extends Model
         'content_guidelines_file',
         'key_messages',
         'hashtags',
+        'brand_tag',
         'dos_and_donts',
         'discount_code',
         'affiliate_link',

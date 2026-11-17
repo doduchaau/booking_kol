@@ -106,6 +106,8 @@ class ContentMetricsSyncService
         return match ($platform) {
             'youtube' => $this->fetchYouTubeMetrics($url),
             'tiktok' => $this->fetchTikTokMetrics($url),
+            'shopee' => $this->fetchShopeeMetrics($url),
+            'facebook' => $this->fetchFacebookMetrics($url),
             default => $this->fetchGenericOEmbedMetrics($platform, $url),
         };
     }
@@ -366,6 +368,256 @@ class ContentMetricsSyncService
         }
 
         return $url;
+    }
+
+    /**
+     * Bóc tách chỉ số Shopee Video (Views, Likes, Comments, Shares)
+     */
+    protected function fetchShopeeMetrics(string $url): array
+    {
+        $canonicalUrl = $this->resolveShopeeCanonicalUrl($url);
+        $videoId = $this->extractShopeeVideoId($canonicalUrl);
+
+        if ($videoId) {
+            try {
+                // Tầng 1: Shopee Video Public Detail API
+                $apiUrl = "https://shopee.vn/api/v4/video/get_video_detail?video_id={$videoId}";
+                $res = Http::timeout(6)
+                    ->withHeaders([
+                        'User-Agent' => 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Shopee',
+                        'Accept' => 'application/json',
+                    ])
+                    ->get($apiUrl);
+
+                if ($res->successful()) {
+                    $json = $res->json();
+                    $data = $json['data'] ?? [];
+                    if (!empty($data)) {
+                        $views = (int) ($data['play_count'] ?? ($data['view_count'] ?? 0));
+                        $likes = (int) ($data['like_count'] ?? ($data['digg_count'] ?? 0));
+                        $comments = (int) ($data['comment_count'] ?? 0);
+                        $shares = (int) ($data['share_count'] ?? 0);
+                        $title = (string) ($data['caption'] ?? ($data['description'] ?? ($data['title'] ?? null)));
+                        $authorName = $data['author']['nickname'] ?? ($data['author_name'] ?? null);
+
+                        return [
+                            'source' => 'shopee_public_api',
+                            'title' => $title,
+                            'author_name' => $authorName,
+                            'views_count' => $views,
+                            'likes_count' => $likes,
+                            'comments_count' => $comments,
+                            'shares_count' => $shares,
+                        ];
+                    }
+                }
+            } catch (\Throwable $e) {
+                Log::warning("Shopee Video API fetch failed: " . $e->getMessage(), ['url' => $url]);
+            }
+        }
+
+        // Tầng 2: Scraping HTML trang Shopee Video
+        try {
+            $htmlRes = Http::timeout(6)
+                ->withHeaders([
+                    'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                ])
+                ->get($canonicalUrl);
+
+            if ($htmlRes->successful()) {
+                $html = $htmlRes->body();
+                $title = null;
+                if (preg_match('/<meta\s+property=["\']og:description["\']\s+content=["\'](.*?)["\']/i', $html, $m)) {
+                    $title = html_entity_decode($m[1], ENT_QUOTES | ENT_HTML5, 'UTF-8');
+                }
+
+                $views = 0;
+                $likes = 0;
+                if (preg_match('/([0-9.,KkMmNnTr]+)\s*(?:lượt xem|views|plays)/i', $html, $m)) {
+                    $views = $this->parseCountString($m[1]);
+                }
+                if (preg_match('/([0-9.,KkMmNnTr]+)\s*(?:lượt thích|likes)/i', $html, $m)) {
+                    $likes = $this->parseCountString($m[1]);
+                }
+
+                if ($views > 0 || $likes > 0 || $title) {
+                    return [
+                        'source' => 'shopee_html_scrape',
+                        'title' => $title,
+                        'author_name' => null,
+                        'views_count' => $views,
+                        'likes_count' => $likes,
+                        'comments_count' => 0,
+                        'shares_count' => 0,
+                    ];
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning("Shopee Video HTML scrape failed: " . $e->getMessage(), ['url' => $url]);
+        }
+
+        return [
+            'source' => 'shopee_fallback',
+            'title' => null,
+            'author_name' => null,
+        ];
+    }
+
+    /**
+     * Bóc tách chỉ số Facebook Reels / Video (Views, Likes, Comments)
+     */
+    protected function fetchFacebookMetrics(string $url): array
+    {
+        $canonicalUrl = $this->resolveFacebookCanonicalUrl($url);
+
+        // 1. Meta Graph API oEmbed nếu có cấu hình Facebook Client Token
+        $clientToken = config('services.facebook.client_token');
+        if (!empty($clientToken)) {
+            try {
+                $oembedUrl = 'https://graph.facebook.com/v19.0/oembed_post?url=' . urlencode($canonicalUrl) . '&access_token=' . urlencode($clientToken);
+                $res = Http::timeout(6)->get($oembedUrl);
+                if ($res->successful()) {
+                    $data = $res->json();
+                    $title = strip_tags($data['html'] ?? '');
+                    $authorName = $data['author_name'] ?? null;
+
+                    return [
+                        'source' => 'facebook_oembed',
+                        'title' => !empty($title) ? mb_substr($title, 0, 250) : null,
+                        'author_name' => $authorName,
+                    ];
+                }
+            } catch (\Throwable $e) {
+                Log::warning("Facebook oEmbed fetch failed: " . $e->getMessage(), ['url' => $url]);
+            }
+        }
+
+        // 2. OpenGraph & HTML Scraper công khai
+        try {
+            $res = Http::timeout(6)
+                ->withHeaders([
+                    'User-Agent' => 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+                    'Accept-Language' => 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
+                ])
+                ->get($canonicalUrl);
+
+            if ($res->successful()) {
+                $html = $res->body();
+                $title = null;
+                if (preg_match('/<meta\s+property=["\']og:description["\']\s+content=["\'](.*?)["\']/i', $html, $m)) {
+                    $title = html_entity_decode($m[1], ENT_QUOTES | ENT_HTML5, 'UTF-8');
+                } elseif (preg_match('/<meta\s+property=["\']og:title["\']\s+content=["\'](.*?)["\']/i', $html, $m)) {
+                    $title = html_entity_decode($m[1], ENT_QUOTES | ENT_HTML5, 'UTF-8');
+                }
+
+                $views = 0;
+                $likes = 0;
+                $comments = 0;
+
+                // Quét chỉ số hiển thị công khai trên HTML Reels
+                if (preg_match('/([0-9.,KkMmNnTr]+)\s*(?:lượt xem|plays|views)/i', $html, $m)) {
+                    $views = $this->parseCountString($m[1]);
+                }
+                if (preg_match('/([0-9.,KkMmNnTr]+)\s*(?:lượt thích|likes)/i', $html, $m)) {
+                    $likes = $this->parseCountString($m[1]);
+                }
+                if (preg_match('/([0-9.,KkMmNnTr]+)\s*(?:bình luận|comments)/i', $html, $m)) {
+                    $comments = $this->parseCountString($m[1]);
+                }
+
+                return [
+                    'source' => 'facebook_opengraph',
+                    'title' => $title,
+                    'author_name' => null,
+                    'views_count' => $views,
+                    'likes_count' => $likes,
+                    'comments_count' => $comments,
+                    'shares_count' => 0,
+                ];
+            }
+        } catch (\Throwable $e) {
+            Log::warning("Facebook HTML scrape failed: " . $e->getMessage(), ['url' => $url]);
+        }
+
+        return [
+            'source' => 'facebook_fallback',
+            'title' => null,
+            'author_name' => null,
+        ];
+    }
+
+    /**
+     * Chuyển đổi chuỗi số lượng rút gọn (10.5K, 1.2M, 2Tr) thành số nguyên
+     */
+    public function parseCountString(?string $text): int
+    {
+        if (empty($text)) {
+            return 0;
+        }
+
+        $clean = strtoupper(trim(str_replace(',', '.', $text)));
+        if (str_contains($clean, 'M') || str_contains($clean, 'TR')) {
+            $num = (float) preg_replace('/[^0-9.]/', '', $clean);
+            return (int) round($num * 1000000);
+        }
+        if (str_contains($clean, 'K') || str_contains($clean, 'N')) {
+            $num = (float) preg_replace('/[^0-9.]/', '', $clean);
+            return (int) round($num * 1000);
+        }
+
+        $num = (int) preg_replace('/[^0-9]/', '', $clean);
+        return $num;
+    }
+
+    /**
+     * Trích xuất Video ID từ URL Shopee Video
+     */
+    public function extractShopeeVideoId(string $url): ?string
+    {
+        if (preg_match('/(?:universal-link\/video|video|feed\/video)\/([a-zA-Z0-9_-]+)/i', $url, $matches)) {
+            return $matches[1];
+        }
+        return null;
+    }
+
+    /**
+     * Chuẩn hóa URL Shopee Video & phân giải Shortlink (vn.shp.ee)
+     */
+    public function resolveShopeeCanonicalUrl(string $url): string
+    {
+        $url = trim($url);
+        if (preg_match('/vn\.shp\.ee\/(?:video\/)?([a-zA-Z0-9._-]+)/i', $url)) {
+            try {
+                $response = Http::timeout(4)->withoutRedirecting()->head($url);
+                $location = $response->header('Location');
+                if ($location) {
+                    return strtok($location, '?');
+                }
+            } catch (\Throwable) {
+                // Tiếp tục
+            }
+        }
+        return strtok($url, '?');
+    }
+
+    /**
+     * Chuẩn hóa URL Facebook Reels / Video & phân giải Shortlink
+     */
+    public function resolveFacebookCanonicalUrl(string $url): string
+    {
+        $url = trim($url);
+        if (preg_match('/(?:fb\.watch|facebook\.com\/share\/r)\/([a-zA-Z0-9._-]+)/i', $url)) {
+            try {
+                $response = Http::timeout(4)->withoutRedirecting()->head($url);
+                $location = $response->header('Location');
+                if ($location) {
+                    return strtok($location, '?');
+                }
+            } catch (\Throwable) {
+                // Tiếp tục
+            }
+        }
+        return strtok($url, '?');
     }
 
     /**

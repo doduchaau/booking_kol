@@ -71,6 +71,75 @@ function extractTikTokProfile() {
     };
 }
 
+function extractShopeeProfile() {
+    const url = window.location.href;
+    const cleanUrl = url.split('?')[0];
+    let handle = window.location.pathname.replace(/^\//, '').split('/')[0];
+    
+    // Nếu đang ở trang video Shopee
+    if (url.includes('/video/') || url.includes('/universal-link/video/')) {
+        const videoMatch = url.match(/(?:universal-link\/video|video|feed\/video)\/([a-zA-Z0-9_-]+)/);
+        const videoId = videoMatch ? videoMatch[1] : 'video';
+        
+        const authorEl = document.querySelector('[class*="author-name"], [class*="authorName"], [class*="nickname"], [class*="creator-name"]');
+        const authorName = authorEl ? authorEl.innerText.trim() : `Shopee Creator #${videoId}`;
+        
+        const captionEl = document.querySelector('[class*="caption"], [class*="video-desc"], [class*="description"]');
+        const bio = captionEl ? captionEl.innerText.trim() : '';
+
+        const avatarEl = document.querySelector('[class*="author"] img, [class*="avatar"] img, img[class*="Avatar"]');
+        const avatarUrl = avatarEl ? avatarEl.src : null;
+
+        return {
+            platform: 'shopee',
+            name: authorName,
+            handle: `shopee_video_${videoId}`,
+            url: cleanUrl,
+            followers_count: 0,
+            followers_raw: '0',
+            bio: bio,
+            phone: extractPhoneFromText(bio),
+            email: extractEmailFromText(bio),
+            avatar_url: avatarUrl,
+        };
+    }
+
+    // Nếu đang ở trang Shop / KOC Shopee profile
+    const nameEl = document.querySelector('.section-seller-overview-horizontal__seller-name, .shop-page-shop-description__shop-name, .section-seller-overview__seller-name, h1');
+    const name = nameEl ? nameEl.innerText.trim() : handle;
+
+    let followersCount = 0;
+    let followersRaw = '0';
+    const bodyText = document.body.innerText;
+    const followerMatch = bodyText.match(/([0-9.,KkMmNnTr]+)\s*(?:Người theo dõi|người theo dõi|Followers|followers)/i);
+    if (followerMatch) {
+        followersRaw = followerMatch[1];
+        followersCount = parseFollowerCount(followersRaw);
+    }
+
+    const bioEl = document.querySelector('.shop-page-shop-description__text, .section-seller-overview-horizontal__desc, .seller-overview-horizontal__desc');
+    const bio = bioEl ? bioEl.innerText.trim() : '';
+
+    const avatarEl = document.querySelector('.shopee-avatar__img, .section-seller-overview-horizontal__portrait img, img[class*="avatar"]');
+    const avatarUrl = avatarEl ? avatarEl.src : null;
+
+    const phone = extractPhoneFromText(bio) || extractPhoneFromText(bodyText.slice(0, 3000));
+    const email = extractEmailFromText(bio) || extractEmailFromText(bodyText.slice(0, 3000));
+
+    return {
+        platform: 'shopee',
+        name: name || handle,
+        handle: handle,
+        url: cleanUrl,
+        followers_count: followersCount,
+        followers_raw: followersRaw,
+        bio: bio.slice(0, 500),
+        phone: phone,
+        email: email,
+        avatar_url: avatarUrl,
+    };
+}
+
 function extractFacebookProfile() {
     const url = window.location.href;
     let handle = window.location.pathname.replace(/^\//, '').split('/')[0];
@@ -84,18 +153,36 @@ function extractFacebookProfile() {
 
     let followersCount = 0;
     let followersRaw = '0';
-    const bodyText = document.body.innerText;
-    const followerMatch = bodyText.match(/([0-9.,KkMmNnTr]+)\s*(?:người theo dõi|followers)/i);
-    if (followerMatch) {
-        followersRaw = followerMatch[1];
-        followersCount = parseFollowerCount(followersRaw);
+
+    // 1. Thử lấy từ meta description
+    const metaDesc = document.querySelector('meta[name="description"]')?.content || document.querySelector('meta[property="og:description"]')?.content;
+    if (metaDesc) {
+        const metaMatch = metaDesc.match(/([0-9.,KkMmNnTr]+)\s*(?:người theo dõi|followers)/i);
+        if (metaMatch) {
+            followersRaw = metaMatch[1];
+            followersCount = parseFollowerCount(followersRaw);
+        }
     }
 
-    const bioEl = document.querySelector('div[dir="auto"]');
+    // 2. Thử lấy từ body text nếu meta không có
+    const bodyText = document.body.innerText;
+    if (followersCount === 0) {
+        const followerMatch = bodyText.match(/([0-9.,KkMmNnTr]+)\s*(?:người theo dõi|followers)/i);
+        if (followerMatch) {
+            followersRaw = followerMatch[1];
+            followersCount = parseFollowerCount(followersRaw);
+        }
+    }
+
+    const bioEl = document.querySelector('div[dir="auto"], [data-testid="post_message"]');
     const bio = bioEl ? bioEl.innerText.trim() : '';
 
-    const phone = extractPhoneFromText(bodyText.slice(0, 5000));
-    const email = extractEmailFromText(bodyText.slice(0, 5000));
+    const avatarEl = document.querySelector('svg[aria-label] image, div[role="img"] image, img[data-imgperflogname="profileCoverPhoto"] ~ div img')
+        || document.querySelector('meta[property="og:image"]');
+    const avatarUrl = avatarEl ? (avatarEl.src || avatarEl.content || null) : null;
+
+    const phone = extractPhoneFromText(bio) || extractPhoneFromText(bodyText.slice(0, 5000));
+    const email = extractEmailFromText(bio) || extractEmailFromText(bodyText.slice(0, 5000));
 
     return {
         platform: 'facebook',
@@ -107,7 +194,7 @@ function extractFacebookProfile() {
         bio: bio,
         phone: phone,
         email: email,
-        avatar_url: null,
+        avatar_url: avatarUrl,
     };
 }
 
@@ -154,6 +241,9 @@ function extractCurrentProfile() {
     const host = window.location.hostname.toLowerCase();
     if (host.includes('tiktok.com')) {
         return extractTikTokProfile();
+    }
+    if (host.includes('shopee.vn')) {
+        return extractShopeeProfile();
     }
     if (host.includes('facebook.com')) {
         return extractFacebookProfile();

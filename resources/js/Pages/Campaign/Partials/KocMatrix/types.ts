@@ -40,6 +40,9 @@ export interface ContentPostItem {
     views_count?: number;
     likes_count?: number;
     comments_count?: number;
+    compliance_status?: string | null;
+    compliance_score?: number | null;
+    compliance_checklist?: any[] | null;
     benchmark?: {
         average_channel_views: number;
         current_views: number;

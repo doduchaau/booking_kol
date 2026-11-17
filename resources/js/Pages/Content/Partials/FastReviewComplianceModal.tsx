@@ -89,6 +89,8 @@ export default function FastReviewComplianceModal({ post, onClose, onStatusUpdat
                 missingItems.push(`hashtag [${item.missing.join(', ')}]`);
             } else if (item.key === 'discount_code') {
                 missingItems.push(`mã giảm giá [${post.campaign_creator?.campaign?.discount_code || ''}]`);
+            } else if (item.key === 'brand_tag') {
+                missingItems.push(`tag tài khoản thương hiệu [${item.expected || ''}]`);
             } else {
                 missingItems.push(item.label.toLowerCase());
             }
@@ -292,7 +294,7 @@ export default function FastReviewComplianceModal({ post, onClose, onStatusUpdat
                     {/* Danh Sách Tiêu Chí Tuân Thủ (Checklist) */}
                     <div className="space-y-2">
                         <span className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                            Chi Tiết 4 Tiêu Chí Kịch Bản & Brief
+                            Chi Tiết Tiêu Chí Kịch Bản & Brief
                         </span>
                         <div className="space-y-2">
                             {post.compliance_checklist && post.compliance_checklist.length > 0 ? (

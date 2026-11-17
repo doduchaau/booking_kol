@@ -92,7 +92,58 @@ class UrlNormalizer
             }
         }
 
-        // 6. Facebook Profile / Fanpage
+        // 6. Facebook (Profile, Fanpage, Reels, Videos, Shortlinks)
+        if (preg_match('/fb\.watch\/([a-zA-Z0-9_-]+)/i', $url, $matches)) {
+            $shortCode = $matches[1];
+            try {
+                $response = Http::timeout(4)->withoutRedirecting()->get($url);
+                $location = $response->header('Location');
+                if ($location) {
+                    $cleanLoc = strtok($location, '?');
+                    if (preg_match('/facebook\.com\/([a-zA-Z0-9._-]+)\/videos\/([0-9]+)/i', $cleanLoc, $m)) {
+                        $handle = CreatorNormalizationService::normalizeHandle($m[1]);
+                        return [
+                            'platform' => PlatformEnum::FACEBOOK,
+                            'handle' => $handle,
+                            'url' => $location,
+                        ];
+                    }
+                }
+            } catch (\Throwable) {
+                // fallback
+            }
+            return [
+                'platform' => PlatformEnum::FACEBOOK,
+                'handle' => "fb_watch_{$shortCode}",
+                'url' => $url,
+            ];
+        }
+
+        if (preg_match('/facebook\.com\/share\/r\/([a-zA-Z0-9_-]+)/i', $url, $matches)) {
+            return [
+                'platform' => PlatformEnum::FACEBOOK,
+                'handle' => "fb_reel_{$matches[1]}",
+                'url' => $cleanUrl,
+            ];
+        }
+
+        if (preg_match('/facebook\.com\/reel\/([a-zA-Z0-9._-]+)/i', $cleanUrl, $matches)) {
+            return [
+                'platform' => PlatformEnum::FACEBOOK,
+                'handle' => "fb_reel_{$matches[1]}",
+                'url' => "https://www.facebook.com/reel/{$matches[1]}",
+            ];
+        }
+
+        if (preg_match('/facebook\.com\/([a-zA-Z0-9._-]+)\/videos\/([0-9]+)/i', $cleanUrl, $matches)) {
+            $handle = CreatorNormalizationService::normalizeHandle($matches[1]);
+            return [
+                'platform' => PlatformEnum::FACEBOOK,
+                'handle' => $handle,
+                'url' => "https://www.facebook.com/{$handle}",
+            ];
+        }
+
         if (preg_match('/facebook\.com\/profile\.php/i', $url) && preg_match('/[?&]id=([0-9]+)/i', $url, $matches)) {
             $handle = $matches[1];
             return [
@@ -111,15 +162,65 @@ class UrlNormalizer
             }
         }
 
-        // 7. Shopee Video / Shop
-        if (preg_match('/shopee\.vn\/universal-link\/video\/([a-zA-Z0-9._-]+)/i', $cleanUrl, $matches)
-            || preg_match('/shopee\.vn\/shop\/([0-9]+)/i', $cleanUrl, $matches)) {
+        // 7. Shopee Video / Shop / Shortlinks (vn.shp.ee & shopee.vn)
+        if (preg_match('/vn\.shp\.ee\/(?:video\/)?([a-zA-Z0-9._-]+)/i', $url, $matches)) {
+            $shortCode = $matches[1];
+            try {
+                $response = Http::timeout(4)->withoutRedirecting()->get($url);
+                $location = $response->header('Location');
+                if ($location) {
+                    $cleanLoc = strtok($location, '?');
+                    if (preg_match('/shopee\.vn\/(?:universal-link\/video|video|feed\/video)\/([a-zA-Z0-9._-]+)/i', $cleanLoc, $m)) {
+                        return [
+                            'platform' => PlatformEnum::SHOPEE,
+                            'handle' => "shopee_video_{$m[1]}",
+                            'url' => $location,
+                        ];
+                    }
+                }
+            } catch (\Throwable) {
+                // fallback
+            }
+
+            return [
+                'platform' => PlatformEnum::SHOPEE,
+                'handle' => "shopee_video_{$shortCode}",
+                'url' => $url,
+            ];
+        }
+
+        if (preg_match('/shopee\.vn\/(?:universal-link\/video|video|feed\/video)\/([a-zA-Z0-9._-]+)/i', $cleanUrl, $matches)) {
+            $videoId = $matches[1];
+            return [
+                'platform' => PlatformEnum::SHOPEE,
+                'handle' => "shopee_video_{$videoId}",
+                'url' => "https://shopee.vn/universal-link/video/{$videoId}",
+            ];
+        }
+
+        if (preg_match('/shopee\.vn\/shop\/([0-9]+)/i', $cleanUrl, $matches)) {
             $handle = CreatorNormalizationService::normalizeHandle($matches[1]);
             return [
                 'platform' => PlatformEnum::SHOPEE,
                 'handle' => $handle,
-                'url' => $cleanUrl,
+                'url' => "https://shopee.vn/shop/{$handle}",
             ];
+        }
+
+        if (preg_match('/shopee\.vn\/([a-zA-Z0-9._-]+)/i', $cleanUrl, $matches)) {
+            $handle = CreatorNormalizationService::normalizeHandle($matches[1]);
+            $excludedShopeeKeywords = [
+                'buyer', 'cart', 'search', 'flash_sale', 'portal', 'api', 'product',
+                'm', 'universal-link', 'video', 'feed', 'affiliate', 'seller',
+                'daily_discover', 'user', 'help', 'mall'
+            ];
+            if (!in_array($handle, $excludedShopeeKeywords)) {
+                return [
+                    'platform' => PlatformEnum::SHOPEE,
+                    'handle' => $handle,
+                    'url' => "https://shopee.vn/{$handle}",
+                ];
+            }
         }
 
         // 8. Hỗ trợ nhập trực tiếp @handle

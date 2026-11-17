@@ -62,6 +62,7 @@ class UpdateCampaignRequest extends FormRequest
             'remove_content_guidelines_file' => ['nullable', 'boolean'],
             'key_messages' => ['nullable', 'string'],
             'hashtags' => ['nullable', 'string', 'max:500'],
+            'brand_tag' => ['nullable', 'string', 'max:100'],
             'dos_and_donts' => ['nullable', 'string'],
             'discount_code' => ['nullable', 'string', 'max:100'],
             'affiliate_link' => ['nullable', 'string', 'max:500'],

@@ -390,6 +390,20 @@ export default React.memo(function KocMatrixRow({
                                         <span>Xem video</span>
                                         <ExternalLink className="h-2.5 w-2.5 text-slate-400" />
                                     </a>
+                                    {latest.compliance_status && latest.compliance_status !== 'not_checked' && (
+                                        <span
+                                            title={`Điểm tuân thủ brief: ${latest.compliance_score || 0}/100đ`}
+                                            className={`inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[9px] font-bold border ${
+                                                latest.compliance_status === 'passed'
+                                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                    : latest.compliance_status === 'warning'
+                                                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                                    : 'bg-rose-50 text-rose-700 border-rose-200'
+                                            }`}
+                                        >
+                                            {latest.compliance_status === 'passed' ? '✓ Đạt brief' : `⚠️ Brief (${latest.compliance_score || 0}đ)`}
+                                        </span>
+                                    )}
                                     {latest.benchmark && (
                                         <span
                                             title={`Lượt xem: ${(latest.views_count || 0).toLocaleString(

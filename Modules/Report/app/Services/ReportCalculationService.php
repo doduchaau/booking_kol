@@ -853,6 +853,106 @@ class ReportCalculationService
     }
 
     /**
+     * So sánh hiệu quả đa kênh (TikTok vs Shopee Video vs Facebook Reels vs YouTube)
+     */
+    public function getPlatformComparisonMetrics(?int $campaignId = null, ?array $dateRange = null): array
+    {
+        $ver = self::getCacheVersion($campaignId);
+        $cacheKey = "report_platform_comparison:v1:{$ver}:{$campaignId}:" . md5(json_encode($dateRange));
+
+        return Cache::remember($cacheKey, self::CACHE_TTL_SECONDS, function () use ($campaignId, $dateRange) {
+            $query = ContentPost::query()
+                ->join('campaign_creators', 'campaign_creators.id', '=', 'content_posts.campaign_creator_id')
+                ->whereNull('campaign_creators.deleted_at')
+                ->whereNull('content_posts.deleted_at');
+
+            if ($campaignId) {
+                $query->where('campaign_creators.campaign_id', $campaignId);
+            }
+
+            if (!empty($dateRange['start_date'])) {
+                $query->whereDate('content_posts.posted_at', '>=', $dateRange['start_date']);
+            }
+            if (!empty($dateRange['end_date'])) {
+                $query->whereDate('content_posts.posted_at', '<=', $dateRange['end_date']);
+            }
+
+            $rows = $query->select([
+                DB::raw("LOWER(COALESCE(content_posts.platform, 'tiktok')) as platform"),
+                DB::raw('COUNT(content_posts.id) as total_videos'),
+                DB::raw('SUM(COALESCE(content_posts.views_count, 0)) as total_views'),
+                DB::raw('SUM(COALESCE(content_posts.likes_count, 0)) as total_likes'),
+                DB::raw('SUM(COALESCE(content_posts.comments_count, 0)) as total_comments'),
+                DB::raw('SUM(COALESCE(content_posts.shares_count, 0)) as total_shares'),
+                DB::raw('SUM(COALESCE(content_posts.gmv_amount, 0)) as total_gmv'),
+                DB::raw('SUM(COALESCE(campaign_creators.booking_fee, 0)) as total_cost'),
+                DB::raw("COUNT(CASE WHEN content_posts.compliance_status = 'passed' THEN 1 END) as passed_compliance_count"),
+                DB::raw('AVG(COALESCE(content_posts.compliance_score, 0)) as avg_compliance_score'),
+            ])
+            ->groupBy(DB::raw("LOWER(COALESCE(content_posts.platform, 'tiktok'))"))
+            ->get();
+
+            $totalAllViews = (int) $rows->sum('total_views');
+            $totalAllCost = (float) $rows->sum('total_cost');
+
+            $platforms = [];
+            foreach ($rows as $row) {
+                $plat = strtolower($row->platform);
+                $views = (int) $row->total_views;
+                $cost = (float) $row->total_cost;
+                $likes = (int) $row->total_likes;
+                $comments = (int) $row->total_comments;
+                $shares = (int) $row->total_shares;
+                $videos = (int) $row->total_videos;
+                $passedCompliance = (int) $row->passed_compliance_count;
+
+                $interactions = $likes + $comments + $shares;
+                $er = $views > 0 ? round(($interactions / $views) * 100, 2) : 0.0;
+                $cpv = $views > 0 ? round($cost / $views, 2) : 0.0;
+                $complianceRate = $videos > 0 ? round(($passedCompliance / $videos) * 100, 1) : 0.0;
+                $viewsShare = $totalAllViews > 0 ? round(($views / $totalAllViews) * 100, 1) : 0.0;
+                $costShare = $totalAllCost > 0 ? round(($cost / $totalAllCost) * 100, 1) : 0.0;
+
+                $label = match ($plat) {
+                    'tiktok' => 'TikTok',
+                    'shopee' => 'Shopee Video',
+                    'facebook' => 'Facebook Reels',
+                    'youtube' => 'YouTube Shorts',
+                    'instagram' => 'Instagram Reels',
+                    default => ucfirst($plat),
+                };
+
+                $platforms[] = [
+                    'platform' => $plat,
+                    'label' => $label,
+                    'video_count' => $videos,
+                    'views_count' => $views,
+                    'likes_count' => $likes,
+                    'comments_count' => $comments,
+                    'shares_count' => $shares,
+                    'gmv_amount' => (float) $row->total_gmv,
+                    'cost' => $cost,
+                    'cpv' => $cpv,
+                    'engagement_rate' => $er,
+                    'compliance_rate' => $complianceRate,
+                    'avg_compliance_score' => round((float) $row->avg_compliance_score, 1),
+                    'views_share' => $viewsShare,
+                    'cost_share' => $costShare,
+                ];
+            }
+
+            usort($platforms, fn ($a, $b) => $b['views_count'] <=> $a['views_count']);
+
+            return [
+                'total_platforms' => count($platforms),
+                'platforms' => $platforms,
+                'total_views' => $totalAllViews,
+                'total_cost' => $totalAllCost,
+            ];
+        });
+    }
+
+    /**
      * Báo cáo diễn biến hiệu quả 12 tháng trong năm (Monthly Breakdown)
      */
     public function getMonthlyBreakdown(?int $campaignId = null, ?int $year = null): array

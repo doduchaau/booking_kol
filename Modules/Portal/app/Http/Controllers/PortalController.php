@@ -35,6 +35,7 @@ class PortalController extends Controller
                     'content_guidelines' => $campaignCreator->campaign->content_guidelines,
                     'key_messages' => $campaignCreator->campaign->key_messages,
                     'hashtags' => $campaignCreator->campaign->hashtags,
+                    'brand_tag' => $campaignCreator->campaign->brand_tag,
                     'dos_and_donts' => $campaignCreator->campaign->dos_and_donts,
                     'discount_code' => $campaignCreator->campaign->discount_code,
                     'affiliate_link' => $campaignCreator->campaign->affiliate_link,

@@ -50,6 +50,42 @@ class UrlNormalizerTest extends TestCase
         $this->assertEquals('zuck', $result['handle']);
     }
 
+    public function test_can_parse_facebook_reel_and_video(): void
+    {
+        $reelUrl = 'https://www.facebook.com/reel/1234567890123456?s=yWDuG2&fs=e';
+        $resReel = UrlNormalizer::parse($reelUrl);
+        $this->assertNotNull($resReel);
+        $this->assertEquals(PlatformEnum::FACEBOOK, $resReel['platform']);
+        $this->assertEquals('fb_reel_1234567890123456', $resReel['handle']);
+
+        $pageVideoUrl = 'https://www.facebook.com/mybrandvn/videos/9876543210';
+        $resVideo = UrlNormalizer::parse($pageVideoUrl);
+        $this->assertNotNull($resVideo);
+        $this->assertEquals(PlatformEnum::FACEBOOK, $resVideo['platform']);
+        $this->assertEquals('mybrandvn', $resVideo['handle']);
+    }
+
+    public function test_can_parse_shopee_video_and_shop(): void
+    {
+        $shopeeVideoUrl = 'https://shopee.vn/universal-link/video/9988776655?type=2';
+        $resVideo = UrlNormalizer::parse($shopeeVideoUrl);
+        $this->assertNotNull($resVideo);
+        $this->assertEquals(PlatformEnum::SHOPEE, $resVideo['platform']);
+        $this->assertEquals('shopee_video_9988776655', $resVideo['handle']);
+
+        $shopeeShortUrl = 'https://vn.shp.ee/video/shortCode123';
+        $resShort = UrlNormalizer::parse($shopeeShortUrl);
+        $this->assertNotNull($resShort);
+        $this->assertEquals(PlatformEnum::SHOPEE, $resShort['platform']);
+        $this->assertEquals('shopee_video_shortCode123', $resShort['handle']);
+
+        $shopeeShopUrl = 'https://shopee.vn/shop/1234567';
+        $resShop = UrlNormalizer::parse($shopeeShopUrl);
+        $this->assertNotNull($resShop);
+        $this->assertEquals(PlatformEnum::SHOPEE, $resShop['platform']);
+        $this->assertEquals('1234567', $resShop['handle']);
+    }
+
     public function test_can_parse_batch_urls(): void
     {
         $batch = "https://www.tiktok.com/@user1\nhttps://www.youtube.com/@user2\nInvalidUrlHere";

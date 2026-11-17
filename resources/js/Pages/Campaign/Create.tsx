@@ -46,6 +46,7 @@ export default function Create({ statuses, totalCreatorsCount = 0 }: Props) {
         sample_requirement_file: null as File | null,
         key_messages: '',
         hashtags: '',
+        brand_tag: '',
         dos_and_donts: '',
         discount_code: '',
         affiliate_link: '',
@@ -297,6 +298,18 @@ export default function Create({ statuses, totalCreatorsCount = 0 }: Props) {
                                     value={data.hashtags}
                                     onChange={(e) => setData('hashtags', e.target.value)}
                                     placeholder="#SonKemLi #BeautyReview #ReviewMỹPhẩm #BookingKOL"
+                                />
+                            </FormField>
+
+                            <FormField
+                                label="Tài khoản mạng xã hội của Brand cần tag (@mention)"
+                                hint="Ví dụ: @official_brand_vn (hệ thống sẽ tự động quét và kiểm tra xem KOC có tag tài khoản này khi nộp video không)"
+                                error={errors.brand_tag}
+                            >
+                                <TextInput
+                                    value={data.brand_tag}
+                                    onChange={(e) => setData('brand_tag', e.target.value)}
+                                    placeholder="@official_brand_vn"
                                 />
                             </FormField>
 
