@@ -117,7 +117,10 @@ class ContentMetricsSyncService
      */
     protected function fetchYouTubeMetrics(string $url): array
     {
-        $apiKey = config('services.youtube.api_key');
+        // 1. Lấy YouTube API Key từ Cài đặt Database (ưu tiên) hoặc .env
+        $apiKey = class_exists(\Modules\Settings\Models\Setting::class)
+            ? (\Modules\Settings\Models\Setting::get('youtube_api_key') ?: config('services.youtube.api_key'))
+            : config('services.youtube.api_key');
         $videoId = $this->extractYouTubeVideoId($url);
 
         // 1. Nếu có Google / YouTube API Key, gọi lấy số liệu thật 100%
@@ -184,10 +187,17 @@ class ContentMetricsSyncService
             return $scrapedData;
         }
 
-        // 3. TẦNG 3: RapidAPI / TikAPI nếu có cấu hình API Key trả phí
-        $apiKey = config('services.social_data_provider.api_key');
-        $driver = strtolower(config('services.social_data_provider.driver', 'sandbox'));
-        $apiHost = config('services.social_data_provider.api_host', 'tiktok-api23.p.rapidapi.com');
+        // 3. TẦNG 3: RapidAPI / TikAPI nếu có cấu hình API Key (ưu tiên Database Settings, fallback .env)
+        $hasSettings = class_exists(\Modules\Settings\Models\Setting::class);
+        $apiKey = $hasSettings
+            ? (\Modules\Settings\Models\Setting::get('social_data_provider_api_key') ?: config('services.social_data_provider.api_key'))
+            : config('services.social_data_provider.api_key');
+        $driver = strtolower($hasSettings
+            ? (\Modules\Settings\Models\Setting::get('social_data_provider_driver') ?: config('services.social_data_provider.driver', 'sandbox'))
+            : config('services.social_data_provider.driver', 'sandbox'));
+        $apiHost = $hasSettings
+            ? (\Modules\Settings\Models\Setting::get('social_data_provider_api_host') ?: config('services.social_data_provider.api_host', 'tiktok-api23.p.rapidapi.com'))
+            : config('services.social_data_provider.api_host', 'tiktok-api23.p.rapidapi.com');
 
         if (!empty($apiKey) && $driver !== 'sandbox' && $videoId) {
             try {
@@ -486,8 +496,10 @@ class ContentMetricsSyncService
     {
         $canonicalUrl = $this->resolveFacebookCanonicalUrl($url);
 
-        // 1. Meta Graph API oEmbed nếu có cấu hình Facebook Client Token
-        $clientToken = config('services.facebook.client_token');
+        // 1. Meta Graph API oEmbed nếu có cấu hình Facebook Client Token (ưu tiên Database Settings, fallback .env)
+        $clientToken = class_exists(\Modules\Settings\Models\Setting::class)
+            ? (\Modules\Settings\Models\Setting::get('facebook_client_token') ?: config('services.facebook.client_token'))
+            : config('services.facebook.client_token');
         if (!empty($clientToken)) {
             try {
                 $oembedUrl = 'https://graph.facebook.com/v19.0/oembed_post?url=' . urlencode($canonicalUrl) . '&access_token=' . urlencode($clientToken);

@@ -13,8 +13,13 @@ class DataProviderConnector
      */
     public function fetchProfileWithPosts(string $handle, PlatformEnum $platform): array
     {
-        $driver = strtolower(config('services.social_data_provider.driver', 'sandbox'));
-        $apiKey = config('services.social_data_provider.api_key');
+        $hasSettings = class_exists(\Modules\Settings\Models\Setting::class);
+        $driver = strtolower($hasSettings
+            ? (\Modules\Settings\Models\Setting::get('social_data_provider_driver') ?: config('services.social_data_provider.driver', 'sandbox'))
+            : config('services.social_data_provider.driver', 'sandbox'));
+        $apiKey = $hasSettings
+            ? (\Modules\Settings\Models\Setting::get('social_data_provider_api_key') ?: config('services.social_data_provider.api_key'))
+            : config('services.social_data_provider.api_key');
 
         if (!empty($apiKey) && $driver !== 'sandbox') {
             try {
@@ -39,7 +44,10 @@ class DataProviderConnector
      */
     protected function fetchFromRapidApi(string $handle, PlatformEnum $platform, string $apiKey): array
     {
-        $apiHost = config('services.social_data_provider.api_host', 'tiktok-api23.p.rapidapi.com');
+        $hasSettings = class_exists(\Modules\Settings\Models\Setting::class);
+        $apiHost = $hasSettings
+            ? (\Modules\Settings\Models\Setting::get('social_data_provider_api_host') ?: config('services.social_data_provider.api_host', 'tiktok-api23.p.rapidapi.com'))
+            : config('services.social_data_provider.api_host', 'tiktok-api23.p.rapidapi.com');
         $baseUrl = config('services.social_data_provider.base_url') ?: "https://{$apiHost}";
 
         // Trường hợp 1: tiktok-api23 (Lundehund)

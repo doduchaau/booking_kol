@@ -19,6 +19,11 @@ import {
     UserCheck,
     Info,
     Sparkles,
+    Globe,
+    RefreshCw,
+    ExternalLink,
+    Share2,
+    Radio,
 } from 'lucide-react';
 import PageHeader from '@/Components/Common/PageHeader';
 import Button from '@/Components/Common/Button';
@@ -42,6 +47,11 @@ export interface SettingsData {
     zalo_oa_id: string;
     groq_api_key?: string;
     openai_api_key?: string;
+    social_data_provider_driver?: string;
+    social_data_provider_api_key?: string;
+    social_data_provider_api_host?: string;
+    youtube_api_key?: string;
+    facebook_client_token?: string;
 }
 
 export interface SettingsIndexProps {
@@ -63,6 +73,13 @@ export default function SettingsIndex({
     const [showZaloSecret, setShowZaloSecret] = useState(false);
     const [showGroqKey, setShowGroqKey] = useState(false);
     const [showOpenaiKey, setShowOpenaiKey] = useState(false);
+    const [showRapidApiKey, setShowRapidApiKey] = useState(false);
+    const [showYoutubeKey, setShowYoutubeKey] = useState(false);
+    const [showFacebookToken, setShowFacebookToken] = useState(false);
+
+    // API Testing State
+    const [testingTarget, setTestingTarget] = useState<string | null>(null);
+    const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string }>>({});
 
     // Form: General Settings
     const generalForm = useForm({
@@ -78,7 +95,67 @@ export default function SettingsIndex({
         zalo_oa_id: settings.zalo_oa_id || '',
         groq_api_key: settings.groq_api_key ? '••••••••••••••••' : '',
         openai_api_key: settings.openai_api_key ? '••••••••••••••••' : '',
+        social_data_provider_driver: settings.social_data_provider_driver || 'sandbox',
+        social_data_provider_api_key: settings.social_data_provider_api_key ? '••••••••••••••••' : '',
+        social_data_provider_api_host: settings.social_data_provider_api_host || 'tiktok-api23.p.rapidapi.com',
+        youtube_api_key: settings.youtube_api_key ? '••••••••••••••••' : '',
+        facebook_client_token: settings.facebook_client_token ? '••••••••••••••••' : '',
     });
+
+    const handleTestConnection = async (target: 'rapidapi' | 'youtube' | 'groq' | 'openai') => {
+        setTestingTarget(target);
+        try {
+            let apiKey = '';
+            let apiHost = '';
+            if (target === 'rapidapi') {
+                apiKey = integrationForm.data.social_data_provider_api_key;
+                apiHost = integrationForm.data.social_data_provider_api_host;
+            } else if (target === 'youtube') {
+                apiKey = integrationForm.data.youtube_api_key;
+            } else if (target === 'groq') {
+                apiKey = integrationForm.data.groq_api_key;
+            } else if (target === 'openai') {
+                apiKey = integrationForm.data.openai_api_key;
+            }
+
+            // @ts-ignore
+            const url = typeof route === 'function' ? route('settings.integrations.test') : '/settings/integrations/test';
+            const csrfToken = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || '';
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken,
+                    'Accept': 'application/json',
+                },
+                body: JSON.stringify({
+                    target,
+                    api_key: apiKey,
+                    api_host: apiHost,
+                }),
+            });
+
+            const data = await response.json();
+            setTestResults((prev) => ({
+                ...prev,
+                [target]: {
+                    success: !!data.success,
+                    message: data.message || (data.success ? 'Kết nối thành công!' : 'Kết nối thất bại'),
+                },
+            }));
+        } catch (err: any) {
+            setTestResults((prev) => ({
+                ...prev,
+                [target]: {
+                    success: false,
+                    message: 'Lỗi mạng hoặc server không phản hồi: ' + (err.message || 'Lỗi không xác định'),
+                },
+            }));
+        } finally {
+            setTestingTarget(null);
+        }
+    };
 
     // Form: Create User
     const createUserForm = useForm({
@@ -631,7 +708,32 @@ export default function SettingsIndex({
                                                     {showGroqKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                                                 </button>
                                             </div>
-                                            <p className="text-[11px] text-slate-400 mt-1">Lấy key tại console.groq.com/keys</p>
+                                            <div className="flex items-center justify-between mt-1">
+                                                <span className="text-[11px] text-slate-400">Lấy key tại console.groq.com/keys</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleTestConnection('groq')}
+                                                    disabled={testingTarget === 'groq'}
+                                                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-600 hover:text-primary-700 disabled:opacity-50"
+                                                >
+                                                    <RefreshCw className={`h-3 w-3 ${testingTarget === 'groq' ? 'animate-spin' : ''}`} />
+                                                    <span>{testingTarget === 'groq' ? 'Đang test...' : 'Test kết nối'}</span>
+                                                </button>
+                                            </div>
+                                            {testResults.groq && (
+                                                <div className={`mt-2 p-2 rounded-lg text-xs flex items-center gap-1.5 ${
+                                                    testResults.groq.success
+                                                        ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                                        : 'bg-rose-50 text-rose-800 border border-rose-200'
+                                                }`}>
+                                                    {testResults.groq.success ? (
+                                                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                                                    ) : (
+                                                        <AlertCircle className="h-3.5 w-3.5 text-rose-600 shrink-0" />
+                                                    )}
+                                                    <span>{testResults.groq.message}</span>
+                                                </div>
+                                            )}
                                         </div>
 
                                         <div>
@@ -656,7 +758,248 @@ export default function SettingsIndex({
                                                     {showOpenaiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                                                 </button>
                                             </div>
-                                            <p className="text-[11px] text-slate-400 mt-1">Lấy key tại platform.openai.com/api-keys</p>
+                                            <div className="flex items-center justify-between mt-1">
+                                                <span className="text-[11px] text-slate-400">Lấy key tại platform.openai.com/api-keys</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleTestConnection('openai')}
+                                                    disabled={testingTarget === 'openai'}
+                                                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-600 hover:text-primary-700 disabled:opacity-50"
+                                                >
+                                                    <RefreshCw className={`h-3 w-3 ${testingTarget === 'openai' ? 'animate-spin' : ''}`} />
+                                                    <span>{testingTarget === 'openai' ? 'Đang test...' : 'Test kết nối'}</span>
+                                                </button>
+                                            </div>
+                                            {testResults.openai && (
+                                                <div className={`mt-2 p-2 rounded-lg text-xs flex items-center gap-1.5 ${
+                                                    testResults.openai.success
+                                                        ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                                        : 'bg-rose-50 text-rose-800 border border-rose-200'
+                                                }`}>
+                                                    {testResults.openai.success ? (
+                                                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                                                    ) : (
+                                                        <AlertCircle className="h-3.5 w-3.5 text-rose-600 shrink-0" />
+                                                    )}
+                                                    <span>{testResults.openai.message}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* SOCIAL DATA PROVIDERS (TIKTOK & CÁC NỀN TẢNG) */}
+                            <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+                                <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="h-10 w-10 rounded-lg bg-pink-50 flex items-center justify-center text-pink-600">
+                                            <Radio className="h-5 w-5" />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-sm font-bold text-slate-900">
+                                                Nhà Cung Cấp Số Liệu Mạng Xã Hội (TikTok & Video Sync)
+                                            </h3>
+                                            <p className="text-xs text-slate-500">
+                                                Cấu hình API Key nhà cung cấp dữ liệu mạng xã hội để tự động quét lượt xem (views), tương tác real-time từ máy chủ mà không bị chặn IP
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                        Mã hóa AES-256
+                                    </span>
+                                </div>
+                                <div className="p-6 space-y-5">
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                                        {/* Driver Selector */}
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                                                Cơ Chế Kết Nối (Driver)
+                                            </label>
+                                            <select
+                                                value={integrationForm.data.social_data_provider_driver}
+                                                onChange={(e) =>
+                                                    integrationForm.setData('social_data_provider_driver', e.target.value)
+                                                }
+                                                className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500 bg-white"
+                                            >
+                                                <option value="sandbox">Sandbox / Miễn phí (Chỉ dùng Chrome Extension)</option>
+                                                <option value="rapidapi">RapidAPI (Khuyên dùng - Cào ổn định qua Proxy dân cư)</option>
+                                                <option value="apify">Apify Actor (Scraper)</option>
+                                                <option value="tikapi">TikAPI (Chuyên dụng TikTok)</option>
+                                            </select>
+                                            <p className="text-[11px] text-slate-400 mt-1">Chọn RapidAPI nếu muốn server tự động cào view TikTok real-time.</p>
+                                        </div>
+
+                                        {/* API Host */}
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                                                API Host (Dành cho RapidAPI)
+                                            </label>
+                                            <input
+                                                type="text"
+                                                placeholder="tiktok-api23.p.rapidapi.com"
+                                                value={integrationForm.data.social_data_provider_api_host}
+                                                onChange={(e) =>
+                                                    integrationForm.setData('social_data_provider_api_host', e.target.value)
+                                                }
+                                                className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500 font-mono"
+                                            />
+                                            <p className="text-[11px] text-slate-400 mt-1">Mặc định: <code className="bg-slate-100 px-1 py-0.5 rounded">tiktok-api23.p.rapidapi.com</code></p>
+                                        </div>
+
+                                        {/* API Key */}
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                                                API Key (RapidAPI / Apify / TikAPI)
+                                            </label>
+                                            <div className="relative">
+                                                <input
+                                                    type={showRapidApiKey ? 'text' : 'password'}
+                                                    placeholder="Nhập khóa API Key..."
+                                                    value={integrationForm.data.social_data_provider_api_key}
+                                                    onChange={(e) =>
+                                                        integrationForm.setData('social_data_provider_api_key', e.target.value)
+                                                    }
+                                                    className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500 font-mono pr-10"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowRapidApiKey(!showRapidApiKey)}
+                                                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
+                                                >
+                                                    {showRapidApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                                </button>
+                                            </div>
+                                            <div className="flex items-center justify-between mt-1">
+                                                <span className="text-[11px] text-slate-400">Lấy key tại rapidapi.com</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleTestConnection('rapidapi')}
+                                                    disabled={testingTarget === 'rapidapi'}
+                                                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-600 hover:text-primary-700 disabled:opacity-50 cursor-pointer"
+                                                >
+                                                    <RefreshCw className={`h-3 w-3 ${testingTarget === 'rapidapi' ? 'animate-spin' : ''}`} />
+                                                    <span>{testingTarget === 'rapidapi' ? 'Đang test...' : 'Test kết nối'}</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {testResults.rapidapi && (
+                                        <div className={`p-3 rounded-lg text-xs flex items-center gap-2 ${
+                                            testResults.rapidapi.success
+                                                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                                : 'bg-rose-50 text-rose-800 border border-rose-200'
+                                        }`}>
+                                            {testResults.rapidapi.success ? (
+                                                <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                                            ) : (
+                                                <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+                                            )}
+                                            <span>{testResults.rapidapi.message}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* YOUTUBE DATA API & FACEBOOK TOKEN */}
+                            <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+                                <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="h-10 w-10 rounded-lg bg-red-50 flex items-center justify-center text-red-600">
+                                            <Share2 className="h-5 w-5" />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-sm font-bold text-slate-900">
+                                                YouTube Data API & Facebook Client Token
+                                            </h3>
+                                            <p className="text-xs text-slate-500">
+                                                Cấu hình khóa API chính thức để đồng bộ số liệu video YouTube và Facebook Reels
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                        Mã hóa AES-256
+                                    </span>
+                                </div>
+                                <div className="p-6 space-y-5">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                        {/* YouTube API Key */}
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                                                YouTube Data API v3 Key (Google Cloud Console)
+                                            </label>
+                                            <div className="relative">
+                                                <input
+                                                    type={showYoutubeKey ? 'text' : 'password'}
+                                                    placeholder="AIzaSy..."
+                                                    value={integrationForm.data.youtube_api_key}
+                                                    onChange={(e) =>
+                                                        integrationForm.setData('youtube_api_key', e.target.value)
+                                                    }
+                                                    className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500 font-mono pr-10"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowYoutubeKey(!showYoutubeKey)}
+                                                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
+                                                >
+                                                    {showYoutubeKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                                </button>
+                                            </div>
+                                            <div className="flex items-center justify-between mt-1">
+                                                <span className="text-[11px] text-slate-400">Lấy key tại console.cloud.google.com</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleTestConnection('youtube')}
+                                                    disabled={testingTarget === 'youtube'}
+                                                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-600 hover:text-primary-700 disabled:opacity-50 cursor-pointer"
+                                                >
+                                                    <RefreshCw className={`h-3 w-3 ${testingTarget === 'youtube' ? 'animate-spin' : ''}`} />
+                                                    <span>{testingTarget === 'youtube' ? 'Đang test...' : 'Test kết nối'}</span>
+                                                </button>
+                                            </div>
+                                            {testResults.youtube && (
+                                                <div className={`mt-2 p-2.5 rounded-lg text-xs flex items-center gap-2 ${
+                                                    testResults.youtube.success
+                                                        ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                                        : 'bg-rose-50 text-rose-800 border border-rose-200'
+                                                }`}>
+                                                    {testResults.youtube.success ? (
+                                                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                                                    ) : (
+                                                        <AlertCircle className="h-3.5 w-3.5 text-rose-600 shrink-0" />
+                                                    )}
+                                                    <span>{testResults.youtube.message}</span>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Facebook Client Token */}
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                                                Facebook / Meta Client Token (Meta for Developers)
+                                            </label>
+                                            <div className="relative">
+                                                <input
+                                                    type={showFacebookToken ? 'text' : 'password'}
+                                                    placeholder="Nhập Meta App Client Token..."
+                                                    value={integrationForm.data.facebook_client_token}
+                                                    onChange={(e) =>
+                                                        integrationForm.setData('facebook_client_token', e.target.value)
+                                                    }
+                                                    className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500 font-mono pr-10"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowFacebookToken(!showFacebookToken)}
+                                                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
+                                                >
+                                                    {showFacebookToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                                </button>
+                                            </div>
+                                            <p className="text-[11px] text-slate-400 mt-1">Lấy token tại developers.facebook.com/apps</p>
                                         </div>
                                     </div>
                                 </div>
