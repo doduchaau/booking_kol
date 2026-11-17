@@ -232,34 +232,50 @@ class ContentMetricsSyncService
      */
     public function fetchFromTikWmApi(string $url): array
     {
-        try {
-            $res = Http::timeout(8)->get('https://www.tikwm.com/api/', [
-                'url' => $url,
-                'count' => 12,
-                'cursor' => 0,
-                'web' => 1,
-            ]);
+        $headers = [
+            'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept' => 'application/json, text/plain, */*',
+            'Referer' => 'https://www.tikwm.com/',
+        ];
 
-            if ($res->successful()) {
-                $json = $res->json();
-                if (($json['code'] ?? -1) === 0 && isset($json['data'])) {
-                    $d = $json['data'];
-                    $playCount = isset($d['play_count']) ? (int) $d['play_count'] : null;
-                    if ($playCount !== null) {
-                        return [
-                            'source' => 'tikwm_public_api',
-                            'title' => $d['title'] ?? null,
-                            'author_name' => $d['author']['nickname'] ?? ($d['author']['unique_id'] ?? null),
-                            'views_count' => $playCount,
-                            'likes_count' => (int) ($d['digg_count'] ?? 0),
-                            'comments_count' => (int) ($d['comment_count'] ?? 0),
-                            'shares_count' => (int) ($d['share_count'] ?? 0),
-                        ];
+        $endpoints = [
+            'https://www.tikwm.com/api/',
+            'https://api.tikwm.com/',
+        ];
+
+        foreach ($endpoints as $apiEndpoint) {
+            try {
+                $res = Http::withHeaders($headers)
+                    ->timeout(6)
+                    ->retry(1, 200)
+                    ->get($apiEndpoint, [
+                        'url' => $url,
+                        'count' => 12,
+                        'cursor' => 0,
+                        'web' => 1,
+                    ]);
+
+                if ($res->successful()) {
+                    $json = $res->json();
+                    if (($json['code'] ?? -1) === 0 && isset($json['data'])) {
+                        $d = $json['data'];
+                        $playCount = isset($d['play_count']) ? (int) $d['play_count'] : null;
+                        if ($playCount !== null) {
+                            return [
+                                'source' => 'tikwm_public_api',
+                                'title' => $d['title'] ?? null,
+                                'author_name' => $d['author']['nickname'] ?? ($d['author']['unique_id'] ?? null),
+                                'views_count' => $playCount,
+                                'likes_count' => (int) ($d['digg_count'] ?? 0),
+                                'comments_count' => (int) ($d['comment_count'] ?? 0),
+                                'shares_count' => (int) ($d['share_count'] ?? 0),
+                            ];
+                        }
                     }
                 }
+            } catch (\Throwable $e) {
+                Log::warning("TikWM fetch failed at {$apiEndpoint}: " . $e->getMessage(), ['url' => $url]);
             }
-        } catch (\Throwable $e) {
-            Log::warning("TikWM fetch failed: " . $e->getMessage(), ['url' => $url]);
         }
 
         return [];

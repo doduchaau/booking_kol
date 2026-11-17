@@ -651,6 +651,10 @@ class CreatorController extends Controller
             true // forceRefresh
         );
 
+        if (class_exists(\App\Services\SystemCacheService::class)) {
+            \App\Services\SystemCacheService::flushAll();
+        }
+
         return back()->with('success', "Đã làm mới số liệu thành công cho @{$account->handle}.");
     }
 

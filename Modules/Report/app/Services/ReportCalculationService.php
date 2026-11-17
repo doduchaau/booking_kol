@@ -29,18 +29,20 @@ class ReportCalculationService
 
     /**
      * Xóa cache báo cáo (tự động kích hoạt khi có thay đổi trạng thái Pipeline, duyệt video hoặc đồng bộ GMV)
+     * Sử dụng timestamp time() đảm bảo 100% Cache bị vô hiệu hoá tức thì trên mọi driver (database, redis, file)
      */
     public static function flushReportCache(?int $campaignId = null): void
     {
+        $timestamp = time();
         try {
-            Cache::increment('report_cache_ver:global');
+            Cache::forever('report_cache_ver:global', $timestamp);
             if ($campaignId) {
-                Cache::increment("report_cache_ver:campaign_{$campaignId}");
+                Cache::forever("report_cache_ver:campaign_{$campaignId}", $timestamp);
             }
         } catch (\Throwable $e) {
-            Cache::put('report_cache_ver:global', time(), 86400 * 30);
+            Cache::put('report_cache_ver:global', $timestamp, 86400 * 30);
             if ($campaignId) {
-                Cache::put("report_cache_ver:campaign_{$campaignId}", time(), 86400 * 30);
+                Cache::put("report_cache_ver:campaign_{$campaignId}", $timestamp, 86400 * 30);
             }
         }
     }

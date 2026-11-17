@@ -27,6 +27,12 @@ class ReportController extends Controller
     {
         $campaignId = $request->filled('campaign_id') ? (int) $request->input('campaign_id') : null;
 
+        // Nếu người dùng yêu cầu ép làm mới (Bust Cache)
+        if ($request->boolean('force_refresh')) {
+            ReportCalculationService::flushReportCache($campaignId);
+            \App\Services\SystemCacheService::flushAll();
+        }
+
         $month = $request->filled('month') ? (int) $request->input('month') : null;
         $year = $request->filled('year') ? (int) $request->input('year') : null;
         $filterType = $request->input('filter_type', $month ? 'month' : 'date_range');

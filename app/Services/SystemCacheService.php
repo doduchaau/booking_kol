@@ -15,18 +15,15 @@ class SystemCacheService
     }
 
     /**
-     * Vô hiệu hóa cache Dashboard bằng cách tăng Version siêu tốc
+     * Vô hiệu hóa cache Dashboard bằng cách gán Version timestamp mới
      */
     public static function flushDashboardCache(): void
     {
+        $timestamp = time();
         try {
-            if (!Cache::has('dashboard_cache_ver')) {
-                Cache::forever('dashboard_cache_ver', 2);
-            } else {
-                Cache::increment('dashboard_cache_ver');
-            }
+            Cache::forever('dashboard_cache_ver', $timestamp);
         } catch (\Throwable $e) {
-            Cache::put('dashboard_cache_ver', time(), 86400 * 30);
+            Cache::put('dashboard_cache_ver', $timestamp, 86400 * 30);
         }
     }
 
@@ -50,18 +47,15 @@ class SystemCacheService
     }
 
     /**
-     * Vô hiệu hóa cache Bàn làm việc
+     * Vô hiệu hóa cache Bàn làm việc bằng cách gán Version timestamp mới
      */
     public static function flushWorkspaceCache(): void
     {
+        $timestamp = time();
         try {
-            if (!Cache::has('workspace_cache_ver')) {
-                Cache::forever('workspace_cache_ver', 2);
-            } else {
-                Cache::increment('workspace_cache_ver');
-            }
+            Cache::forever('workspace_cache_ver', $timestamp);
         } catch (\Throwable $e) {
-            Cache::put('workspace_cache_ver', time(), 86400 * 30);
+            Cache::put('workspace_cache_ver', $timestamp, 86400 * 30);
         }
     }
 

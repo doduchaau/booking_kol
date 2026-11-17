@@ -229,7 +229,29 @@ export default function ReportIndex({
     const [videoSearchQuery, setVideoSearchQuery] = useState<string>('');
     const [syncingPostId, setSyncingPostId] = useState<number | null>(null);
     const [isSyncingAll, setIsSyncingAll] = useState<boolean>(false);
+    const [isForceRefreshing, setIsForceRefreshing] = useState<boolean>(false);
     const [editingVideo, setEditingVideo] = useState<KocVideoDetailItem | null>(null);
+
+    const handleForceRefreshReport = () => {
+        setIsForceRefreshing(true);
+        router.get(
+            // @ts-ignore
+            typeof route === 'function' ? route('reports.index') : '/reports',
+            {
+                campaign_id: selectedCampaignId || undefined,
+                filter_type: filterType,
+                month: filterType === 'month' ? selectedMonth : undefined,
+                year: filterType === 'month' ? selectedYear : undefined,
+                start_date: filterType === 'date_range' ? startDate : undefined,
+                end_date: filterType === 'date_range' ? endDate : undefined,
+                force_refresh: 1,
+            },
+            {
+                preserveScroll: true,
+                onFinish: () => setIsForceRefreshing(false),
+            }
+        );
+    };
 
     const handleSyncSingleVideo = (postId: number) => {
         setSyncingPostId(postId);
@@ -537,6 +559,16 @@ export default function ReportIndex({
                             <Button type="submit" variant="primary" size="sm">
                                 Áp dụng
                             </Button>
+                            <button
+                                type="button"
+                                onClick={handleForceRefreshReport}
+                                disabled={isForceRefreshing}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors shadow-2xs disabled:opacity-50"
+                                title="Bỏ qua bộ nhớ tạm và tính toán lại số liệu real-time mới nhất"
+                            >
+                                <RefreshCw className={`h-3.5 w-3.5 ${isForceRefreshing ? 'animate-spin text-primary-600' : 'text-slate-500'}`} />
+                                <span>{isForceRefreshing ? 'Đang tính lại...' : 'Làm mới'}</span>
+                            </button>
                             {(selectedCampaignId || startDate || endDate || filters.month) && (
                                 <button
                                     type="button"

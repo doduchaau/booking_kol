@@ -171,6 +171,11 @@ class ContentController extends Controller
 
         $result = $syncService->syncPost($post, $custom);
 
+        // Xóa sạch toàn bộ cache báo cáo, dashboard và workspace để phản ánh tức thì
+        if (class_exists(\App\Services\SystemCacheService::class)) {
+            \App\Services\SystemCacheService::flushAll();
+        }
+
         $sourceLabel = match ($result['source'] ?? '') {
             'tikwm_public_api' => 'TikWM Real-time API',
             'tiktok_html_hydration', 'tiktok_html_regex', 'tiktok_sigi_state' => 'TikTok Web Scraper',
@@ -194,6 +199,11 @@ class ContentController extends Controller
     public function syncAll(ContentMetricsSyncService $syncService): RedirectResponse
     {
         $count = $syncService->syncAllActivePosts();
+
+        // Xóa sạch toàn bộ cache báo cáo, dashboard và workspace để phản ánh tức thì
+        if (class_exists(\App\Services\SystemCacheService::class)) {
+            \App\Services\SystemCacheService::flushAll();
+        }
 
         return back()->with('success', "Đã đồng bộ chỉ số hàng ngày cho {$count} video thành công.");
     }
