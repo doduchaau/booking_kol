@@ -24,6 +24,12 @@ class DashboardTest extends TestCase
         $response->assertRedirect('/login');
     }
 
+    public function test_guest_user_on_root_is_redirected_to_login(): void
+    {
+        $response = $this->get('/');
+        $response->assertRedirect('/login');
+    }
+
     public function test_authenticated_user_on_root_is_redirected_to_dashboard(): void
     {
         $user = User::factory()->create();
