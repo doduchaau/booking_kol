@@ -4,6 +4,7 @@ namespace Modules\Campaign\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\AuthHelper;
 use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -70,7 +71,7 @@ class PipelineController extends Controller
 
         // Phân quyền: Chỉ Admin/Leader mới được sửa toàn bộ KOC, còn lại chỉ được sửa KOC mình được phân công
         $currentUser = auth()->user();
-        if (\Spatie\Permission\Models\Role::count() > 0 && (!$currentUser || !$currentUser->hasAnyRole(['Admin', 'Leader']))) {
+        if (!AuthHelper::isLeaderOrAdmin($currentUser)) {
             if ($campaignCreator->assigned_to !== null && $campaignCreator->assigned_to !== $currentUser->id) {
                 $msg = 'Bạn chỉ được sửa trạng thái của KOC mà mình được phân công.';
                 return $request->wantsJson()
@@ -224,7 +225,7 @@ class PipelineController extends Controller
 
         // Phân quyền: Chỉ Admin/Leader mới được sửa toàn bộ KOC, còn lại chỉ được sửa KOC mình được phân công
         $currentUser = auth()->user();
-        if (\Spatie\Permission\Models\Role::count() > 0 && (!$currentUser || !$currentUser->hasAnyRole(['Admin', 'Leader']))) {
+        if (!AuthHelper::isLeaderOrAdmin($currentUser)) {
             if ($campaignCreator->assigned_to !== null && $campaignCreator->assigned_to !== $currentUser->id) {
                 $msg = 'Bạn chỉ được chỉnh sửa KOC mà mình được phân công.';
                 return $request->wantsJson()
@@ -279,7 +280,7 @@ class PipelineController extends Controller
 
         // Phân quyền: Chỉ Admin/Leader mới được duyệt chi phí toàn bộ KOC, còn lại chỉ được thao tác KOC mình được phân công
         $currentUser = auth()->user();
-        if (\Spatie\Permission\Models\Role::count() > 0 && (!$currentUser || !$currentUser->hasAnyRole(['Admin', 'Leader']))) {
+        if (!AuthHelper::isLeaderOrAdmin($currentUser)) {
             if ($campaignCreator->assigned_to !== null && $campaignCreator->assigned_to !== $currentUser->id) {
                 $msg = 'Bạn chỉ được xác nhận duyệt chi phí cho KOC mà mình được phân công.';
                 return $request->wantsJson()
@@ -327,7 +328,7 @@ class PipelineController extends Controller
 
         // Phân quyền: Chỉ Admin/Leader mới được mở lại deal toàn bộ KOC, còn lại chỉ được thao tác KOC mình được phân công
         $currentUser = auth()->user();
-        if (\Spatie\Permission\Models\Role::count() > 0 && (!$currentUser || !$currentUser->hasAnyRole(['Admin', 'Leader']))) {
+        if (!AuthHelper::isLeaderOrAdmin($currentUser)) {
             if ($campaignCreator->assigned_to !== null && $campaignCreator->assigned_to !== $currentUser->id) {
                 $msg = 'Bạn chỉ được thao tác KOC mà mình được phân công.';
                 return $request->wantsJson()

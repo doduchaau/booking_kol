@@ -2,10 +2,10 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\AuthHelper;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Spatie\Permission\Models\Role;
 use Symfony\Component\HttpFoundation\Response;
 
 class EnsureUserHasRole
@@ -22,7 +22,7 @@ class EnsureUserHasRole
 
         if ($user) {
             // Trong môi trường testing, nếu test case chưa khởi tạo Roles thì cho phép chạy qua
-            if (app()->environment('testing') && Role::count() === 0) {
+            if (app()->environment('testing') && !AuthHelper::hasRoles()) {
                 return $next($request);
             }
 

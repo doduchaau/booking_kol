@@ -4,6 +4,7 @@ namespace Modules\Campaign\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\AuthHelper;
 use Carbon\Carbon;
 use Exception;
 use Illuminate\Http\JsonResponse;
@@ -169,7 +170,7 @@ class CampaignController extends Controller
     public function show(int $id): Response
     {
         $currentUser = auth()->user();
-        $isLeaderOrAdmin = $currentUser && (\Spatie\Permission\Models\Role::count() === 0 || $currentUser->hasAnyRole(['Admin', 'Leader']));
+        $isLeaderOrAdmin = AuthHelper::isLeaderOrAdmin($currentUser);
         $isStaffOnly = !$isLeaderOrAdmin;
 
         $campaign = Campaign::with([
@@ -189,8 +190,14 @@ class CampaignController extends Controller
 
         $stats = $this->campaignService->calculateCampaignStats($campaign);
 
-        // Đính kèm deadline_info cho từng KOC
-        $campaign->campaignCreators->transform(function ($cc) {
+        // Đính kèm deadline_info cho từng KOC và gán quan hệ ngược 2 chiều để loại bỏ hoàn toàn N+1 queries
+        $campaign->campaignCreators->transform(function ($cc) use ($campaign) {
+            $cc->setRelation('campaign', $campaign);
+            if ($cc->relationLoaded('contentPosts')) {
+                $cc->contentPosts->each(function ($post) use ($cc) {
+                    $post->setRelation('campaignCreator', $cc);
+                });
+            }
             $cc->deadline_info = $this->pipelineService->calculateDeadline($cc);
             return $cc;
         });
@@ -222,13 +229,16 @@ class CampaignController extends Controller
             ]))->count(),
         ];
 
-        // Lấy danh sách ID các creator đã có trong campaign
-        $existingCreatorIds = $campaign->campaignCreators->pluck('creator_id')->toArray();
-
-        // Đếm tổng số Creator khả dụng trong kho dữ liệu chưa gán vào chiến dịch này
+        // Đếm tổng số Creator khả dụng trong kho dữ liệu chưa gán vào chiến dịch này (sử dụng whereNotExists tối ưu index)
         $totalAvailableCount = Creator::query()
             ->whereNull('merged_into_creator_id')
-            ->whereNotIn('id', $existingCreatorIds)
+            ->whereNotExists(function ($subQuery) use ($id) {
+                $subQuery->select(\Illuminate\Support\Facades\DB::raw(1))
+                    ->from('campaign_creators')
+                    ->whereColumn('campaign_creators.creator_id', 'creators.id')
+                    ->where('campaign_creators.campaign_id', $id)
+                    ->whereNull('campaign_creators.deleted_at');
+            })
             ->count();
 
         // Lấy danh sách nhân viên nội bộ
@@ -240,7 +250,13 @@ class CampaignController extends Controller
             'stageCounts' => $stageCounts,
             'availableCreators' => Inertia::lazy(fn () => Creator::query()
                 ->whereNull('merged_into_creator_id')
-                ->whereNotIn('id', $existingCreatorIds)
+                ->whereNotExists(function ($subQuery) use ($id) {
+                    $subQuery->select(\Illuminate\Support\Facades\DB::raw(1))
+                        ->from('campaign_creators')
+                        ->whereColumn('campaign_creators.creator_id', 'creators.id')
+                        ->where('campaign_creators.campaign_id', $id)
+                        ->whereNull('campaign_creators.deleted_at');
+                })
                 ->with(['accounts:id,creator_id,platform,handle,followers_count'])
                 ->select(['id', 'name', 'phone', 'niche', 'tier'])
                 ->latest('id')
@@ -279,7 +295,7 @@ class CampaignController extends Controller
         // Phân quyền: Chỉ Admin/Leader mới được duyệt thay đổi ngân sách
         if (isset($data['budget']) && (float)$data['budget'] !== (float)$campaign->budget) {
             $currentUser = auth()->user();
-            if (\Spatie\Permission\Models\Role::count() > 0 && (!$currentUser || !$currentUser->hasAnyRole(['Admin', 'Leader']))) {
+            if (!AuthHelper::isLeaderOrAdmin($currentUser)) {
                 return back()->withErrors(['budget' => 'Chỉ Admin hoặc Leader mới có quyền duyệt thay đổi ngân sách chiến dịch.']);
             }
         }
@@ -416,7 +432,7 @@ class CampaignController extends Controller
     {
         // Phân quyền: Chỉ Admin/Leader mới được xóa chiến dịch
         $currentUser = auth()->user();
-        if (\Spatie\Permission\Models\Role::count() > 0 && (!$currentUser || !$currentUser->hasAnyRole(['Admin', 'Leader']))) {
+        if (!AuthHelper::isLeaderOrAdmin($currentUser)) {
             return back()->withErrors(['error' => 'Chỉ Admin hoặc Leader mới có quyền xóa chiến dịch.']);
         }
 
@@ -452,7 +468,7 @@ class CampaignController extends Controller
 
         // Phân quyền: Staff chỉ được xóa KOC mình được phân công
         $currentUser = auth()->user();
-        if (\Spatie\Permission\Models\Role::count() > 0 && (!$currentUser || !$currentUser->hasAnyRole(['Admin', 'Leader']))) {
+        if (!AuthHelper::isLeaderOrAdmin($currentUser)) {
             if ($campaignCreator->assigned_to !== null && $campaignCreator->assigned_to !== $currentUser->id) {
                 return back()->withErrors(['error' => 'Bạn chỉ được xóa KOC mà mình được phân công khỏi chiến dịch.']);
             }
@@ -494,7 +510,7 @@ class CampaignController extends Controller
 
         // Phân quyền: Staff chỉ được sửa KOC mình được phân công
         $currentUser = auth()->user();
-        if (\Spatie\Permission\Models\Role::count() > 0 && (!$currentUser || !$currentUser->hasAnyRole(['Admin', 'Leader']))) {
+        if (!AuthHelper::isLeaderOrAdmin($currentUser)) {
             if ($campaignCreator->assigned_to !== null && $campaignCreator->assigned_to !== $currentUser->id) {
                 $msg = 'Bạn chỉ được xác nhận gửi mẫu cho KOC mà mình được phân công.';
                 return $request->wantsJson()
@@ -649,7 +665,7 @@ class CampaignController extends Controller
 
         // Phân quyền: Staff chỉ được thêm video cho KOC mình được phân công
         $currentUser = auth()->user();
-        if (\Spatie\Permission\Models\Role::count() > 0 && (!$currentUser || !$currentUser->hasAnyRole(['Admin', 'Leader']))) {
+        if (!AuthHelper::isLeaderOrAdmin($currentUser)) {
             if ($campaignCreator->assigned_to !== null && $campaignCreator->assigned_to !== $currentUser->id) {
                 return back()->withErrors(['error' => 'Bạn chỉ được thêm video cho KOC mà mình được phân công.']);
             }

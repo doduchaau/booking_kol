@@ -3,6 +3,7 @@
 namespace Modules\Creator\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Services\AuthHelper;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -721,7 +722,7 @@ class CreatorController extends Controller
     {
         // Phân quyền: Chỉ Admin/Leader mới được xóa hồ sơ Creator
         $currentUser = auth()->user();
-        if (\Spatie\Permission\Models\Role::count() > 0 && (!$currentUser || !$currentUser->hasAnyRole(['Admin', 'Leader']))) {
+        if (!AuthHelper::isLeaderOrAdmin($currentUser)) {
             return back()->withErrors(['error' => 'Chỉ Admin hoặc Leader mới có quyền xóa hồ sơ Creator.']);
         }
 

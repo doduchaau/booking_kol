@@ -82,6 +82,12 @@ class SystemCacheService
             \Modules\Report\Services\ReportCalculationService::flushReportCache();
         }
 
+        if (class_exists(\Modules\Settings\Models\Setting::class)) {
+            \Modules\Settings\Models\Setting::clearCache();
+        }
+
+        \App\Services\AuthHelper::clearCache();
+
         Cache::forget('creators:available_niches');
     }
 }

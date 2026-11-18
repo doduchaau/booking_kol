@@ -3,6 +3,7 @@
 namespace Modules\Settings\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Log;
 
@@ -22,37 +23,64 @@ class Setting extends Model
     ];
 
     /**
-     * Lấy giá trị của một cài đặt
+     * Bộ nhớ đệm runtime trong cùng một vòng đời request
      */
-    public static function get(string $key, mixed $default = null): mixed
+    protected static ?array $runtimeCache = null;
+
+    protected static function booted(): void
     {
-        try {
-            if (!\Illuminate\Support\Facades\Schema::hasTable('settings')) {
-                return $default;
-            }
-
-            $setting = static::where('key', $key)->first();
-            if (!$setting || $setting->value === null) {
-                return $default;
-            }
-
-            if ($setting->is_encrypted) {
-                try {
-                    return Crypt::decryptString($setting->value);
-                } catch (\Exception $e) {
-                    Log::warning("Không thể giải mã cấu hình [{$key}]: " . $e->getMessage());
-                    return $default;
-                }
-            }
-
-            return $setting->value;
-        } catch (\Throwable $e) {
-            return $default;
-        }
+        static::saved(fn () => static::clearCache());
+        static::deleted(fn () => static::clearCache());
     }
 
     /**
-     * Lưu hoặc cập nhật một cài đặt
+     * Tải và giải mã toàn bộ cấu hình vào cache (giảm từ N câu query xuống 0 query trong request)
+     */
+    public static function loadAll(): array
+    {
+        if (static::$runtimeCache !== null) {
+            return static::$runtimeCache;
+        }
+
+        try {
+            static::$runtimeCache = Cache::remember('system_settings_map', 3600, function () {
+                $rows = static::query()->get();
+                $map = [];
+                foreach ($rows as $row) {
+                    $val = $row->value;
+                    if ($row->is_encrypted && $val !== null && $val !== '') {
+                        try {
+                            $val = Crypt::decryptString($val);
+                        } catch (\Throwable $e) {
+                            Log::warning("Không thể giải mã cấu hình [{$row->key}]: " . $e->getMessage());
+                        }
+                    }
+                    $map[$row->key] = $val;
+                }
+                return $map;
+            });
+        } catch (\Throwable $e) {
+            static::$runtimeCache = [];
+        }
+
+        return static::$runtimeCache ?? [];
+    }
+
+    /**
+     * Lấy giá trị của một cài đặt (Đọc trực tiếp từ bộ nhớ đệm Cache/Runtime)
+     */
+    public static function get(string $key, mixed $default = null): mixed
+    {
+        $all = static::loadAll();
+        if (array_key_exists($key, $all) && $all[$key] !== null) {
+            return $all[$key];
+        }
+
+        return $default;
+    }
+
+    /**
+     * Lưu hoặc cập nhật một cài đặt và làm mới cache
      */
     public static function set(string $key, mixed $value, string $group = 'general', bool $isEncrypted = false): static
     {
@@ -61,7 +89,7 @@ class Setting extends Model
             $storedValue = Crypt::encryptString((string) $value);
         }
 
-        return static::updateOrCreate(
+        $result = static::updateOrCreate(
             ['key' => $key],
             [
                 'value' => $storedValue,
@@ -69,6 +97,19 @@ class Setting extends Model
                 'is_encrypted' => $isEncrypted,
             ]
         );
+
+        static::clearCache();
+
+        return $result;
+    }
+
+    /**
+     * Xóa sạch cache cấu hình hệ thống
+     */
+    public static function clearCache(): void
+    {
+        static::$runtimeCache = null;
+        Cache::forget('system_settings_map');
     }
 }
 

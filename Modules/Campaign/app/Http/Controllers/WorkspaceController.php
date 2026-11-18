@@ -130,8 +130,13 @@ class WorkspaceController extends Controller
 
         $allKocs = $query->latest('updated_at')->get();
 
-        // Tính deadline_info cho từng KOC
+        // Tính deadline_info cho từng KOC và gán quan hệ ngược cho contentPosts để loại bỏ hoàn toàn N+1 queries khi serialize
         $allKocs->each(function ($item) {
+            if ($item->relationLoaded('contentPosts')) {
+                $item->contentPosts->each(function ($post) use ($item) {
+                    $post->setRelation('campaignCreator', $item);
+                });
+            }
             $item->deadline_info = $this->pipelineService->calculateDeadline($item);
         });
 
