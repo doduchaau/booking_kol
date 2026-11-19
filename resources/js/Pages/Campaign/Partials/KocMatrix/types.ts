@@ -5,6 +5,7 @@ export interface CreatorAccount {
     platform: string;
     handle: string;
     followers_count: number;
+    url?: string | null;
 }
 
 export interface Creator {
@@ -90,6 +91,19 @@ export interface CampaignCreatorPivot {
     assigned_to: number | null;
     status: string;
     collaboration_type?: 'video' | 'livestream' | 'both';
+    booking_platforms?: string[];
+    platform_deliverables?: {
+        total_platforms: number;
+        completed_platforms: number;
+        is_all_completed: boolean;
+        items: Array<{
+            platform: string;
+            has_post: boolean;
+            is_completed: boolean;
+            posts_count: number;
+            latest_post?: any;
+        }>;
+    };
     total_samples_assigned?: number;
     total_samples_sent?: number;
     booking_fee: string | number;
@@ -117,6 +131,7 @@ export interface Campaign {
     id: number;
     name: string;
     product_name: string;
+    target_platforms?: string[];
     budget: string | number;
     target_creators_count: number;
     video_deadline_days?: number;

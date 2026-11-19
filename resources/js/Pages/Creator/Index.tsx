@@ -17,6 +17,7 @@ import PageHeader from '@/Components/Common/PageHeader';
 import Button from '@/Components/Common/Button';
 import Badge, { BadgeVariant } from '@/Components/Common/Badge';
 import PlatformBadge from '@/Components/Common/PlatformBadge';
+import KocPlatformCluster from '@/Components/Common/KocPlatformCluster';
 import ConfirmDialog from '@/Components/Common/ConfirmDialog';
 import FilterBar from '@/Components/Table/FilterBar';
 import DataTable, { Column, PaginationMeta } from '@/Components/Table/DataTable';
@@ -285,22 +286,11 @@ export default function Index({ creators, filters, availableNiches, tiers }: Pro
 
                         {/* Kênh mạng xã hội */}
                         <td className="px-4 py-3.5">
-                            <div className="flex flex-wrap gap-1.5">
-                                {c.accounts && c.accounts.length > 0 ? (
-                                    c.accounts.map((acc: CreatorAccount) => (
-                                        <PlatformBadge
-                                            key={acc.id}
-                                            platform={acc.platform}
-                                            handle={acc.handle}
-                                            followersCount={acc.followers_count}
-                                            url={acc.url}
-                                            size="sm"
-                                        />
-                                    ))
-                                ) : (
-                                    <span className="text-xs text-slate-400 italic">Chưa liên kết</span>
-                                )}
-                            </div>
+                            <KocPlatformCluster
+                                accounts={c.accounts}
+                                size="sm"
+                                emptyText="Chưa liên kết kênh"
+                            />
                         </td>
 
                         {/* Ngành hàng */}

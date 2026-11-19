@@ -20,11 +20,14 @@ use Modules\Campaign\Http\Requests\StoreCampaignRequest;
 use Modules\Campaign\Http\Requests\UpdateCampaignRequest;
 use Modules\Campaign\Models\Campaign;
 use Modules\Campaign\Models\CampaignCreator;
+use Modules\Campaign\Services\CampaignCreatorImportService;
+use Modules\Campaign\Services\CampaignCreatorTemplateService;
 use Modules\Campaign\Services\CampaignService;
 use Modules\Campaign\Services\PipelineService;
 use Modules\Content\Models\ContentPost;
 use Modules\Creator\Models\Creator;
 use Modules\Creator\Services\CreatorNormalizationService;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class CampaignController extends Controller
 {
@@ -180,7 +183,7 @@ class CampaignController extends Controller
                 $q->when($isStaffOnly, fn ($sq) => $sq->where('assigned_to', $currentUser->id))
                   ->with([
                       'creator:id,name,phone,shipping_address,city_province,district,ward,niche,tier,trust_score,blacklist_status',
-                      'creator.accounts:id,creator_id,platform,handle,followers_count,engagement_rate,average_views',
+                      'creator.accounts:id,creator_id,platform,handle,followers_count,engagement_rate,average_views,url',
                       'creatorProducts.campaignProduct',
                       'assignee:id,name,email',
                       'contentPosts:id,campaign_creator_id,platform,post_url,video_title,posted_at,status,views_count,likes_count,comments_count,gmv_amount',
@@ -415,7 +418,8 @@ class CampaignController extends Controller
             selectAllInDb: $selectAllInDb,
             collaborationType: $validated['collaboration_type'] ?? 'video',
             productIds: $validated['product_ids'] ?? [],
-            productQuantities: $validated['product_quantities'] ?? []
+            productQuantities: $validated['product_quantities'] ?? [],
+            bookingPlatforms: $validated['booking_platforms'] ?? null
         );
 
         $msg = $selectAllInDb
@@ -460,7 +464,7 @@ class CampaignController extends Controller
     }
 
     /**
-     * Xóa KOC khỏi chiến dịch (chỉ cho phép khi chưa gửi mẫu)
+     * Xóa KOC khỏi chiến dịch
      */
     public function removeCreator(int $id, int $pivotId): RedirectResponse
     {
@@ -472,17 +476,44 @@ class CampaignController extends Controller
             if ($campaignCreator->assigned_to !== null && $campaignCreator->assigned_to !== $currentUser->id) {
                 return back()->withErrors(['error' => 'Bạn chỉ được xóa KOC mà mình được phân công khỏi chiến dịch.']);
             }
-        }
 
-        if (!in_array($campaignCreator->status, [PipelineStatusEnum::NEW, PipelineStatusEnum::CONTACTED, PipelineStatusEnum::DECLINED])) {
-            return back()->withErrors([
-                'error' => 'Chỉ có thể xóa KOC đang ở trạng thái Mới thêm, Đã liên hệ hoặc Từ chối khỏi chiến dịch.',
-            ]);
+            if (in_array($campaignCreator->status, [PipelineStatusEnum::POSTED, PipelineStatusEnum::COMPLETED])) {
+                return back()->withErrors([
+                    'error' => 'KOC đã hoàn thành video hoặc kết thúc hợp tác, không thể xóa.',
+                ]);
+            }
         }
 
         $campaignCreator->delete();
 
         return back()->with('success', 'Đã xóa KOC khỏi chiến dịch thành công.');
+    }
+
+    /**
+     * Xóa hàng loạt KOC khỏi chiến dịch
+     */
+    public function bulkRemoveCreators(Request $request, int $id): RedirectResponse
+    {
+        $validated = $request->validate([
+            'ids' => ['required', 'array'],
+            'ids.*' => ['integer'],
+        ]);
+
+        $currentUser = auth()->user();
+        $isLeader = AuthHelper::isLeaderOrAdmin($currentUser);
+
+        $query = CampaignCreator::where('campaign_id', $id)
+            ->whereIn('id', $validated['ids']);
+
+        if (!$isLeader) {
+            $query->where(function ($q) use ($currentUser) {
+                $q->whereNull('assigned_to')->orWhere('assigned_to', $currentUser->id);
+            })->whereNotIn('status', [PipelineStatusEnum::POSTED, PipelineStatusEnum::COMPLETED]);
+        }
+
+        $deletedCount = $query->delete();
+
+        return back()->with('success', "Đã xóa {$deletedCount} KOC khỏi chiến dịch thành công.");
     }
 
     /**
@@ -707,5 +738,121 @@ class CampaignController extends Controller
         }
 
         return back()->with('success', "Đã ghi nhận thêm video mới cho KOC {$campaignCreator->creator->name}.");
+    }
+
+    /**
+     * Tải file mẫu Excel import KOC cho chiến dịch
+     */
+    public function downloadCreatorImportTemplate(
+        Request $request,
+        int $id,
+        CampaignCreatorTemplateService $templateService
+    ): BinaryFileResponse {
+        Campaign::findOrFail($id);
+        return $templateService->downloadTemplate();
+    }
+
+    /**
+     * Phân tích và kiểm tra trùng trước khi import KOC từ file mẫu
+     */
+    public function previewCreatorImport(
+        Request $request,
+        int $id,
+        CampaignCreatorImportService $importService
+    ): JsonResponse {
+        $campaign = Campaign::findOrFail($id);
+
+        if ($campaign->status === CampaignStatusEnum::COMPLETED) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Chiến dịch đã kết thúc, không thể import thêm KOC mới.',
+            ], 422);
+        }
+
+        $request->validate([
+            'file' => ['required', 'file', 'mimes:xlsx,xls,csv', 'max:15360'],
+        ], [
+            'file.required' => 'Vui lòng chọn file Excel hoặc CSV để tải lên.',
+            'file.mimes' => 'Hệ thống chỉ hỗ trợ định dạng file .xlsx, .xls hoặc .csv.',
+            'file.max' => 'Dung lượng file không được vượt quá 15MB.',
+        ]);
+
+        try {
+            $result = $importService->previewImport($request->file('file'), $campaign);
+
+            return response()->json([
+                'success' => true,
+                'data' => $result,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Lỗi khi đọc file Excel: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Xác nhận import KOC vào chiến dịch và đồng bộ vào kho CRM
+     */
+    public function confirmCreatorImport(
+        Request $request,
+        int $id,
+        CampaignCreatorImportService $importService
+    ): JsonResponse|RedirectResponse {
+        $campaign = Campaign::findOrFail($id);
+
+        if ($campaign->status === CampaignStatusEnum::COMPLETED) {
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Chiến dịch đã kết thúc, không thể import thêm KOC mới.',
+                ], 422);
+            }
+            return back()->withErrors(['error' => 'Chiến dịch đã kết thúc, không thể import thêm KOC mới.']);
+        }
+
+        $validated = $request->validate([
+            'token' => ['required', 'string'],
+            'resolutions' => ['nullable', 'array'],
+            'assigned_to' => ['nullable', 'exists:users,id'],
+            'default_booking_fee' => ['nullable', 'numeric', 'min:0'],
+            'default_platforms' => ['nullable', 'array'],
+        ]);
+
+        try {
+            $result = $importService->confirmImport(
+                campaign: $campaign,
+                token: $validated['token'],
+                resolutions: $validated['resolutions'] ?? [],
+                assignedTo: !empty($validated['assigned_to']) ? (int) $validated['assigned_to'] : null,
+                defaultBookingFee: (float) ($validated['default_booking_fee'] ?? 0),
+                defaultPlatforms: !empty($validated['default_platforms']) ? $validated['default_platforms'] : ($campaign->target_platforms ?: ['tiktok']),
+                user: $request->user()
+            );
+
+            $msg = "Đã import thành công: {$result['created_crm']} KOC mới vào kho CRM, cập nhật {$result['updated_crm']} KOC cũ và gán {$result['assigned_campaign']} KOC vào chiến dịch.";
+            if ($result['skipped'] > 0) {
+                $msg .= " ({$result['skipped']} KOC được bỏ qua theo yêu cầu).";
+            }
+
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => $msg,
+                    'data' => $result,
+                ]);
+            }
+
+            return back()->with('success', $msg);
+        } catch (\Throwable $e) {
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 500);
+            }
+            return back()->withErrors(['error' => $e->getMessage()]);
+        }
     }
 }

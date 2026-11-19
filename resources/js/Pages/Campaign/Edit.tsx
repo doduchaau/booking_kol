@@ -8,6 +8,7 @@ import FormField from '@/Components/Form/FormField';
 import TextInput from '@/Components/Form/TextInput';
 import Select from '@/Components/Form/Select';
 import Textarea from '@/Components/Form/Textarea';
+import PlatformLogo, { getPlatformDisplayName } from '@/Components/Common/PlatformLogo';
 import CampaignProductsBuilder, { CampaignProductFormItem } from './Partials/CampaignProductsBuilder';
 
 interface CampaignProduct {
@@ -28,6 +29,7 @@ interface Campaign {
     name: string;
     product_name: string;
     product_sku: string | null;
+    target_platforms?: string[];
     budget: string | number;
     target_creators_count: number;
     start_date: string;
@@ -93,6 +95,9 @@ export default function Edit({ campaign, statuses }: Props) {
         name: campaign.name,
         product_name: campaign.product_name,
         product_sku: campaign.product_sku || '',
+        target_platforms: (campaign.target_platforms && campaign.target_platforms.length > 0)
+            ? campaign.target_platforms
+            : (['tiktok'] as string[]),
         products: initialProducts,
         budget: campaign.budget.toString(),
         target_creators_count: campaign.target_creators_count,
@@ -170,6 +175,48 @@ export default function Edit({ campaign, statuses }: Props) {
                                     />
                                 </FormField>
                             </div>
+
+                            {/* Nền tảng mục tiêu chiến dịch */}
+                            <FormField
+                                label="Nền tảng mục tiêu chiến dịch"
+                                required
+                                hint="Chọn các mạng xã hội nhãn hàng muốn phủ sóng video trong chiến dịch này"
+                                error={(errors as any).target_platforms}
+                            >
+                                <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                                    {(['tiktok', 'shopee', 'facebook', 'youtube', 'instagram'] as const).map((plat) => {
+                                        const isSelected = data.target_platforms.includes(plat);
+                                        return (
+                                            <button
+                                                key={plat}
+                                                type="button"
+                                                onClick={() => {
+                                                    const cur = data.target_platforms;
+                                                    let next: string[];
+                                                    if (isSelected) {
+                                                        if (cur.length <= 1) return; // Giữ ít nhất 1 nền tảng
+                                                        next = cur.filter((p) => p !== plat);
+                                                    } else {
+                                                        next = [...cur, plat];
+                                                    }
+                                                    setData('target_platforms', next);
+                                                }}
+                                                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer shadow-2xs select-none ${
+                                                    isSelected
+                                                        ? 'bg-slate-900 text-white border-slate-900 ring-2 ring-primary-500/30'
+                                                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300'
+                                                }`}
+                                            >
+                                                <PlatformLogo platform={plat} size="xs" />
+                                                <span>{getPlatformDisplayName(plat)}</span>
+                                                {isSelected && (
+                                                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 ml-0.5" />
+                                                )}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </FormField>
                         </div>
 
                         {/* Khối Sản phẩm & Brief độc lập từng món */}

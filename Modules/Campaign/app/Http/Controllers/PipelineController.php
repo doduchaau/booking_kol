@@ -219,6 +219,8 @@ class PipelineController extends Controller
             'assigned_to' => ['nullable', 'exists:users,id'],
             'status' => ['nullable', 'string', 'in:' . implode(',', array_column(PipelineStatusEnum::cases(), 'value'))],
             'collaboration_type' => ['nullable', 'string', 'in:video,livestream,both'],
+            'booking_platforms' => ['nullable', 'array'],
+            'booking_platforms.*' => ['string', 'in:tiktok,facebook,shopee,youtube,instagram,zalo'],
         ]);
 
         $campaignCreator = CampaignCreator::where('campaign_id', $campaignId)->findOrFail($pivotId);
@@ -241,6 +243,7 @@ class PipelineController extends Controller
                 'assigned_to',
                 'status',
                 'collaboration_type',
+                'booking_platforms',
             ]));
 
             if ($request->wantsJson()) {

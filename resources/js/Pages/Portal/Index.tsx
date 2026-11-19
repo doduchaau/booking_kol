@@ -34,7 +34,7 @@ import Select from '@/Components/Form/Select';
 import Textarea from '@/Components/Form/Textarea';
 import Toast from '@/Components/Common/Toast';
 import ConfirmDialog from '@/Components/Common/ConfirmDialog';
-import PlatformIcon from '@/Components/Common/PlatformIcon';
+import PlatformLogo from '@/Components/Common/PlatformLogo';
 
 export interface CampaignFileItem {
     type: string;
@@ -94,6 +94,7 @@ interface CampaignInfo {
     content_guidelines_file_name?: string | null;
     sample_requirement_file_url?: string | null;
     sample_requirement_file_name?: string | null;
+    target_platforms?: string[];
     products?: CampaignProductItem[];
     files?: CampaignFileItem[];
 }
@@ -113,6 +114,26 @@ interface PipelineInfo {
     status_label: string;
     collaboration_type?: string;
     collaboration_type_label?: string;
+    booking_platforms?: string[];
+    platform_deliverables?: {
+        total_platforms: number;
+        completed_platforms: number;
+        is_all_completed: boolean;
+        items: Array<{
+            platform: string;
+            has_post: boolean;
+            is_completed: boolean;
+            posts_count: number;
+            latest_post?: {
+                id: number;
+                post_url: string;
+                video_title?: string | null;
+                status: string;
+                views_count?: number;
+                posted_at?: string | null;
+            } | null;
+        }>;
+    };
     total_samples_assigned?: number;
     total_samples_sent?: number;
     sample_sent_at?: string;
@@ -145,8 +166,12 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
     const receiptForm = useForm({});
 
     // Form nộp link video
+    const defaultPlatform = (pipeline.booking_platforms && pipeline.booking_platforms.length > 0)
+        ? pipeline.booking_platforms[0]
+        : 'tiktok';
+
     const videoForm = useForm({
-        platform: 'tiktok',
+        platform: defaultPlatform,
         post_url: '',
         video_title: '',
     });
@@ -311,6 +336,22 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
                         <p className="text-xs text-slate-500 mt-1">
                             Sản phẩm trải nghiệm: <span className="font-semibold text-slate-800">{campaign.product_name}</span>
                         </p>
+                        {pipeline.booking_platforms && pipeline.booking_platforms.length > 0 && (
+                            <div className="flex items-center justify-center gap-1.5 flex-wrap mt-2.5">
+                                <span className="text-[11px] font-medium text-slate-500">Nền tảng bạn thực hiện:</span>
+                                <div className="flex items-center gap-1.5">
+                                    {pipeline.booking_platforms.map((plat) => (
+                                        <span
+                                            key={plat}
+                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-800 border border-slate-200"
+                                        >
+                                            <PlatformLogo platform={plat} size="xs" />
+                                            <span className="capitalize">{plat}</span>
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <div className="rounded-lg bg-slate-50 p-2.5 text-xs text-slate-600 border border-slate-100">
@@ -1068,6 +1109,44 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
                         )}
                     </div>
 
+                    {pipeline.platform_deliverables?.items && pipeline.platform_deliverables.items.length > 0 && (
+                        <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2">
+                            <div className="flex items-center justify-between">
+                                <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                                    Tiến độ video theo nền tảng được giao
+                                </span>
+                                <span className="text-[11px] font-semibold text-slate-500">
+                                    {pipeline.platform_deliverables.completed_platforms}/{pipeline.platform_deliverables.total_platforms} hoàn thành
+                                </span>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                {pipeline.platform_deliverables.items.map((item) => (
+                                    <div
+                                        key={item.platform}
+                                        className={`flex items-center justify-between p-2 rounded-lg border text-xs ${item.is_completed
+                                            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                                            : 'bg-white border-slate-200 text-slate-700'
+                                            }`}
+                                    >
+                                        <div className="flex items-center gap-1.5">
+                                            <PlatformLogo platform={item.platform} size="xs" />
+                                            <span className="font-semibold capitalize">{item.platform}</span>
+                                        </div>
+                                        {item.is_completed ? (
+                                            <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
+                                                <CheckCircle2 className="h-3.5 w-3.5" /> Đã nộp
+                                            </span>
+                                        ) : (
+                                            <span className="flex items-center gap-1 text-[11px] font-semibold text-amber-600">
+                                                <Clock className="h-3.5 w-3.5" /> Chờ nộp
+                                            </span>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {!isSampleReceivedDone ? (
                         <div className="rounded-lg bg-slate-50 p-3.5 text-xs text-slate-600 leading-relaxed border border-slate-200 flex items-start gap-2.5">
                             <AlertCircle className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
@@ -1080,7 +1159,7 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
                             <FormField label="Nền tảng xuất bản" required error={videoForm.errors.platform}>
                                 <div className="flex items-center gap-2">
                                     <div className="p-2 rounded-lg bg-white border border-slate-200 shadow-2xs shrink-0 flex items-center justify-center">
-                                        <PlatformIcon platform={videoForm.data.platform} className="h-4 w-4" />
+                                        <PlatformLogo platform={videoForm.data.platform} size="sm" />
                                     </div>
                                     <div className="flex-1">
                                         <Select
@@ -1092,7 +1171,12 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
                                                 { value: 'instagram', label: 'Instagram Reels' },
                                                 { value: 'youtube', label: 'YouTube Shorts / Video' },
                                                 { value: 'shopee', label: 'Shopee Video' },
-                                            ]}
+                                            ].map((opt) => ({
+                                                ...opt,
+                                                label: pipeline.booking_platforms?.includes(opt.value)
+                                                    ? `${opt.label} ★ (Được giao)`
+                                                    : opt.label,
+                                            }))}
                                         />
                                     </div>
                                 </div>
@@ -1153,13 +1237,12 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
                                     {/* Hộp Bảng Kiểm Tra Tuân Thủ Tự Động Chi Tiết (Pre-Check Checklist) */}
                                     {precheckResult && (
                                         <div
-                                            className={`p-3.5 rounded-2xl border text-xs space-y-3 transition-all animate-in fade-in duration-200 ${
-                                                precheckResult.status === 'passed'
-                                                    ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
-                                                    : precheckResult.status === 'warning'
+                                            className={`p-3.5 rounded-2xl border text-xs space-y-3 transition-all animate-in fade-in duration-200 ${precheckResult.status === 'passed'
+                                                ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
+                                                : precheckResult.status === 'warning'
                                                     ? 'bg-amber-50/70 border-amber-200 text-amber-950'
                                                     : 'bg-rose-50/70 border-rose-200 text-rose-950'
-                                            }`}
+                                                }`}
                                         >
                                             {/* Header trạng thái & Điểm số */}
                                             <div className="flex items-center justify-between pb-2 border-b border-black/5">
@@ -1175,18 +1258,17 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
                                                         {precheckResult.status === 'passed'
                                                             ? '✓ Đạt chuẩn 100% theo Brief'
                                                             : precheckResult.status === 'warning'
-                                                            ? `⚠️ Cần lưu ý (${precheckResult.issues?.length || 0} điểm chưa khớp)`
-                                                            : '❌ Video không hợp lệ hoặc riêng tư'}
+                                                                ? `⚠️ Cần lưu ý (${precheckResult.issues?.length || 0} điểm chưa khớp)`
+                                                                : '❌ Video không hợp lệ hoặc riêng tư'}
                                                     </span>
                                                 </div>
                                                 <span
-                                                    className={`px-2 py-0.5 rounded-full text-[11px] font-bold border ${
-                                                        precheckResult.status === 'passed'
-                                                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                                            : precheckResult.status === 'warning'
+                                                    className={`px-2 py-0.5 rounded-full text-[11px] font-bold border ${precheckResult.status === 'passed'
+                                                        ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                                        : precheckResult.status === 'warning'
                                                             ? 'bg-amber-100 text-amber-800 border-amber-300'
                                                             : 'bg-rose-100 text-rose-800 border-rose-300'
-                                                    }`}
+                                                        }`}
                                                 >
                                                     {precheckResult.score ?? 0}/100đ
                                                 </span>

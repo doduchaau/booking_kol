@@ -24,6 +24,7 @@ class CampaignCreator extends Model
         'assigned_to',
         'status',
         'collaboration_type',
+        'booking_platforms',
         'total_samples_assigned',
         'total_samples_sent',
         'live_target_gmv',
@@ -48,9 +49,14 @@ class CampaignCreator extends Model
         'no_show_at',
     ];
 
+    protected $appends = [
+        'platform_deliverables',
+    ];
+
     protected $casts = [
         'status' => PipelineStatusEnum::class,
         'collaboration_type' => CollaborationTypeEnum::class,
+        'booking_platforms' => 'array',
         'total_samples_assigned' => 'integer',
         'total_samples_sent' => 'integer',
         'live_target_gmv' => 'decimal:2',
@@ -151,5 +157,72 @@ class CampaignCreator extends Model
         }
 
         return !is_null($this->approved_cost_at);
+    }
+
+    /**
+     * Danh sách nền tảng KOC cam kết làm (Mặc định tiktok nếu chưa thiết lập)
+     */
+    public function getBookingPlatformsAttribute($value): array
+    {
+        if (is_array($value)) {
+            return !empty($value) ? array_values(array_unique($value)) : ['tiktok'];
+        }
+
+        if (is_string($value) && !empty($value)) {
+            $decoded = json_decode($value, true);
+            if (is_array($decoded) && !empty($decoded)) {
+                return array_values(array_unique($decoded));
+            }
+        }
+
+        return ['tiktok'];
+    }
+
+    /**
+     * Bảng tổng hợp trạng thái tiến độ video theo từng nền tảng KOC được giao
+     */
+    public function getPlatformDeliverablesAttribute(): array
+    {
+        $platforms = $this->booking_platforms;
+        $posts = $this->relationLoaded('contentPosts') ? $this->contentPosts : $this->contentPosts()->get();
+
+        $deliverables = [];
+        $completedCount = 0;
+
+        foreach ($platforms as $platform) {
+            $matchedPosts = $posts->filter(function ($post) use ($platform) {
+                return strtolower((string) $post->platform) === strtolower((string) $platform);
+            })->values();
+
+            $hasPost = $matchedPosts->isNotEmpty();
+            $latestPost = $hasPost ? $matchedPosts->first() : null;
+            $isCompleted = $hasPost && ($latestPost->status === 'published' || $latestPost->status === 'approved' || !empty($latestPost->posted_at));
+
+            if ($isCompleted) {
+                $completedCount++;
+            }
+
+            $deliverables[] = [
+                'platform' => $platform,
+                'has_post' => $hasPost,
+                'is_completed' => $isCompleted,
+                'posts_count' => $matchedPosts->count(),
+                'latest_post' => $latestPost ? [
+                    'id' => $latestPost->id,
+                    'post_url' => $latestPost->post_url,
+                    'video_title' => $latestPost->video_title,
+                    'status' => $latestPost->status,
+                    'views_count' => (int) ($latestPost->views_count ?? 0),
+                    'posted_at' => $latestPost->posted_at ? $latestPost->posted_at->format('d/m/Y') : null,
+                ] : null,
+            ];
+        }
+
+        return [
+            'total_platforms' => count($platforms),
+            'completed_platforms' => $completedCount,
+            'is_all_completed' => count($platforms) > 0 && $completedCount >= count($platforms),
+            'items' => $deliverables,
+        ];
     }
 }

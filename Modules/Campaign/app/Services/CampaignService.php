@@ -63,7 +63,8 @@ class CampaignService
         bool $selectAllInDb = false,
         string $collaborationType = 'video',
         array $productIds = [],
-        array $productQuantities = []
+        array $productQuantities = [],
+        ?array $bookingPlatforms = null
     ): array {
         if ($selectAllInDb) {
             $existingCreatorIds = CampaignCreator::where('campaign_id', $campaign->id)
@@ -103,6 +104,7 @@ class CampaignService
             $productIds,
             $productQuantities,
             $totalAssignedSamples,
+            $bookingPlatforms,
             &$added,
             &$skipped
         ) {
@@ -113,6 +115,9 @@ class CampaignService
 
             $now = now();
             $expiresAt = $now->copy()->addDays(14);
+            $effectivePlatforms = !empty($bookingPlatforms)
+                ? array_values(array_unique($bookingPlatforms))
+                : (!empty($campaign->target_platforms) ? $campaign->target_platforms : ['tiktok']);
 
             foreach ($creatorIds as $creatorId) {
                 if (isset($existingSet[$creatorId])) {
@@ -126,6 +131,7 @@ class CampaignService
                     'assigned_to' => $assignedTo,
                     'status' => PipelineStatusEnum::NEW->value,
                     'collaboration_type' => $collaborationType ?? 'video',
+                    'booking_platforms' => $effectivePlatforms,
                     'total_samples_assigned' => $totalAssignedSamples,
                     'total_samples_sent' => 0,
                     'booking_fee' => $bookingFee,
@@ -169,5 +175,26 @@ class CampaignService
             'added' => $added,
             'skipped' => $skipped,
         ];
+    }
+
+    /**
+     * Cập nhật danh sách nền tảng KOC cam kết làm trong chiến dịch
+     */
+    public function updateCreatorPlatforms(CampaignCreator $campaignCreator, array $platforms): CampaignCreator
+    {
+        $cleanPlatforms = array_values(array_unique(array_filter($platforms)));
+        if (empty($cleanPlatforms)) {
+            $cleanPlatforms = ['tiktok'];
+        }
+
+        $campaignCreator->update([
+            'booking_platforms' => $cleanPlatforms,
+        ]);
+
+        if (class_exists(\App\Services\SystemCacheService::class)) {
+            \App\Services\SystemCacheService::flushWorkspaceCache();
+        }
+
+        return $campaignCreator;
     }
 }

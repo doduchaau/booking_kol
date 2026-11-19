@@ -20,9 +20,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // Quản lý Creator trong chiến dịch
     Route::post('/campaigns/{id}/creators', [CampaignController::class, 'addCreators'])->name('campaigns.creators.add');
+    Route::get('/campaigns/{id}/creators/import-template', [CampaignController::class, 'downloadCreatorImportTemplate'])->name('campaigns.creators.import-template');
+    Route::post('/campaigns/{id}/creators/import-preview', [CampaignController::class, 'previewCreatorImport'])->name('campaigns.creators.import-preview');
+    Route::post('/campaigns/{id}/creators/import-confirm', [CampaignController::class, 'confirmCreatorImport'])->name('campaigns.creators.import-confirm');
     Route::delete('/campaigns/{id}/creators/{pivotId}', [CampaignController::class, 'removeCreator'])->name('campaigns.creators.remove');
     Route::post('/campaigns/{id}/creators/bulk-status', [PipelineController::class, 'bulkUpdateStatus'])->name('campaigns.creators.bulk-status');
     Route::post('/campaigns/{id}/creators/bulk-assign', [PipelineController::class, 'bulkAssignStaff'])->name('campaigns.creators.bulk-assign');
+    Route::post('/campaigns/{id}/creators/bulk-remove', [CampaignController::class, 'bulkRemoveCreators'])->name('campaigns.creators.bulk-remove');
     Route::patch('/campaigns/{id}/creators/{pivotId}/quick-update', [PipelineController::class, 'quickUpdate'])->name('campaigns.creators.quick-update');
     Route::post('/campaigns/{id}/creators/{pivotId}/shipments', [CampaignController::class, 'addShipment'])->name('campaigns.creators.shipments.store');
     Route::post('/campaigns/{id}/creators/{pivotId}/videos', [CampaignController::class, 'addVideo'])->name('campaigns.creators.videos.store');

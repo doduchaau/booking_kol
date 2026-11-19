@@ -1,6 +1,6 @@
 import React from 'react';
 import { ExternalLink } from 'lucide-react';
-import PlatformIcon, { normalizePlatform, getPlatformLabel } from './PlatformIcon';
+import PlatformLogo, { getPlatformDisplayName as getPlatformLabel, normalizePlatformName as normalizePlatform } from './PlatformLogo';
 
 export interface PlatformBadgeProps {
     platform: string;
@@ -100,10 +100,9 @@ export default function PlatformBadge({
     const content = (
         <>
             {showIcon && (
-                <PlatformIcon
+                <PlatformLogo
                     platform={norm}
-                    className={sizeConfig.icon}
-                    colorMode={iconColorMode}
+                    size={size === 'md' ? 'sm' : 'xs'}
                 />
             )}
 

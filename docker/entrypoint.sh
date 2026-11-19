@@ -22,7 +22,17 @@ done
 php /var/www/html/artisan view:cache || true
 
 # Tự động chạy migration database
-php /var/www/html/artisan migrate --force || true
+if [ "$RESET_DB" = "true" ]; then
+    echo ">>> RESET_DB=true: Xóa toàn bộ dữ liệu và chạy lại migration..."
+    php /var/www/html/artisan migrate:fresh --force || echo ">>> MIGRATE:FRESH FAILED"
+else
+    php /var/www/html/artisan migrate --force || true
+fi
+
+if [ "$RUN_SEED" = "true" ]; then
+    echo ">>> Đang chạy seeder..."
+    php /var/www/html/artisan db:seed --force || echo ">>> SEED FAILED"
+fi
 
 
 #if [ "$RUN_SEED" = "true" ]; then

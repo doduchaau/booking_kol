@@ -42,6 +42,8 @@ class StoreCampaignRequest extends FormRequest
             'name' => ['required', 'string', 'max:200'],
             'product_name' => ['required', 'string', 'max:200'],
             'product_sku' => ['nullable', 'string', 'max:100'],
+            'target_platforms' => ['nullable', 'array'],
+            'target_platforms.*' => ['string', 'in:tiktok,facebook,shopee,youtube,instagram,zalo'],
             'products' => ['nullable', 'array'],
             'products.*.id' => ['nullable', 'integer'],
             'products.*.name' => ['required_with:products', 'string', 'max:200'],

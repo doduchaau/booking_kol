@@ -6,6 +6,9 @@ import Button from '@/Components/Common/Button';
 import Badge from '@/Components/Common/Badge';
 import PlatformBadge from '@/Components/Common/PlatformBadge';
 import PlatformIcon from '@/Components/Common/PlatformIcon';
+import PlatformLogo, { getPlatformDisplayName } from '@/Components/Common/PlatformLogo';
+import KocPlatformCluster from '@/Components/Common/KocPlatformCluster';
+import CampaignPlatformBadges from '@/Components/Common/CampaignPlatformBadges';
 import QuickZaloReminderModal from '@/Components/Outreach/QuickZaloReminderModal';
 import WorkspaceFilterChips from '@/Pages/Campaign/Partials/Workspace/WorkspaceFilterChips';
 import WorkspaceShipmentModal from '@/Pages/Campaign/Partials/Workspace/WorkspaceShipmentModal';
@@ -93,6 +96,8 @@ export interface WorkspaceKocItem {
     creator_id: number;
     assigned_to: number | null;
     status: string;
+    booking_platforms?: string[];
+    platform_deliverables?: any;
     booking_fee: string | number;
     portal_token: string | null;
     notes: string | null;
@@ -868,12 +873,11 @@ export default function Workspace({
                                                                 </span>
                                                             )}
                                                         </div>
-                                                        <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500">
-                                                            {primaryAccount ? (
-                                                                <PlatformBadge
-                                                                    platform={primaryAccount.platform}
-                                                                    handle={primaryAccount.handle}
-                                                                    url={primaryAccount.url}
+                                                        <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-slate-500 flex-wrap">
+                                                            {item.creator?.accounts && item.creator.accounts.length > 0 ? (
+                                                                <KocPlatformCluster
+                                                                    accounts={item.creator.accounts}
+                                                                    bookedPlatforms={item.booking_platforms}
                                                                     size="xs"
                                                                 />
                                                             ) : (
@@ -912,6 +916,16 @@ export default function Workspace({
                                                 </Link>
                                                 <div className="text-[11px] text-slate-500 mt-0.5 line-clamp-1">
                                                     SP: <span className="font-medium text-slate-700">{item.campaign?.product_name}</span>
+                                                </div>
+
+                                                {/* Nền tảng được giao trong chiến dịch này */}
+                                                <div className="mt-1">
+                                                    <CampaignPlatformBadges
+                                                        platforms={item.booking_platforms}
+                                                        deliverables={item.platform_deliverables}
+                                                        size="xs"
+                                                        showLabel={true}
+                                                    />
                                                 </div>
 
                                                 {/* Hiển thị tóm tắt địa chỉ nếu ở Tab Samples */}

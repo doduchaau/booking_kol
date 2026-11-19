@@ -1,11 +1,12 @@
 import React from 'react';
-import { TrendingUp, Copy, X } from 'lucide-react';
+import { TrendingUp, Copy, X, Trash2 } from 'lucide-react';
 
 interface Props {
     selectedIds: number[];
     onOpenBulkStatusModal: () => void;
     staffUsers: { id: number; name: string; email: string }[];
     onExecuteBulkAssign: (staffId: string) => void;
+    onOpenBulkDeleteConfirm: () => void;
     onCopyPhones: () => void;
     onClearSelection: () => void;
 }
@@ -15,6 +16,7 @@ export default React.memo(function KocMatrixBulkActions({
     onOpenBulkStatusModal,
     staffUsers,
     onExecuteBulkAssign,
+    onOpenBulkDeleteConfirm,
     onCopyPhones,
     onClearSelection,
 }: Props) {
@@ -66,6 +68,17 @@ export default React.memo(function KocMatrixBulkActions({
             >
                 <Copy className="h-3.5 w-3.5" />
                 <span>Copy SĐT</span>
+            </button>
+
+            {/* Xóa hàng loạt khỏi chiến dịch */}
+            <button
+                type="button"
+                onClick={onOpenBulkDeleteConfirm}
+                className="inline-flex items-center gap-1 rounded-xl bg-rose-600/90 hover:bg-rose-600 px-3 py-1.5 text-xs font-bold text-white transition-colors shadow-2xs cursor-pointer"
+                title="Xóa các KOC đã chọn khỏi chiến dịch"
+            >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>Xóa ({selectedIds.length})</span>
             </button>
 
             {/* Bỏ chọn */}

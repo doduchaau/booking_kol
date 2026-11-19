@@ -9,6 +9,7 @@ import {
     X,
 } from 'lucide-react';
 import Button from '@/Components/Common/Button';
+import ConfirmDialog from '@/Components/Common/ConfirmDialog';
 
 // Sub-components
 import KocMatrixFilterBar from './KocMatrix/KocMatrixFilterBar';
@@ -60,6 +61,7 @@ export default function KocMatrixTable({
     const [currentStage, setCurrentStage] = useState<StageType>('all');
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedStaffFilter, setSelectedStaffFilter] = useState<string>('all');
+    const [selectedPlatformFilter, setSelectedPlatformFilter] = useState<string>('all');
     const [riskFilter, setRiskFilter] = useState<RiskFilterType>('all');
 
     const pageUrl = usePage().url;
@@ -107,6 +109,10 @@ export default function KocMatrixTable({
     const [isBulkStatusModalOpen, setIsBulkStatusModalOpen] = useState(false);
     const [bulkSelectedStatus, setBulkSelectedStatus] = useState<string>('contacted');
     const [bulkProcessing, setBulkProcessing] = useState(false);
+    const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
+    const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+    const [singleDeleteTarget, setSingleDeleteTarget] = useState<{ pivotId: number; name: string } | null>(null);
+    const [isSingleDeleting, setIsSingleDeleting] = useState(false);
 
     // Chốt hợp tác modal
     const [dealModalItem, setDealModalItem] = useState<CampaignCreatorPivot | null>(null);
@@ -238,6 +244,12 @@ export default function KocMatrixTable({
                 if (item.assigned_to !== parseInt(selectedStaffFilter, 10)) return false;
             }
 
+            // Lọc theo Nền tảng được giao trong chiến dịch
+            if (selectedPlatformFilter !== 'all') {
+                const booked = (item.booking_platforms || ['tiktok']).map((p) => p.toLowerCase());
+                if (!booked.includes(selectedPlatformFilter.toLowerCase())) return false;
+            }
+
             // Lọc theo Rủi ro
             if (riskFilter === 'overdue') {
                 if (item.deadline_info?.status !== 'overdue') return false;
@@ -249,21 +261,21 @@ export default function KocMatrixTable({
                 if (Boolean(item.creator?.phone?.trim())) return false;
             }
 
-            // Lọc theo Từ khóa tìm kiếm
+            // Lọc theo Từ khóa tìm kiếm (Tên, SĐT, Niche, Tier, hoặc bất kỳ Handle nào của KOC)
             if (searchQuery.trim() !== '') {
                 const q = searchQuery.toLowerCase().trim();
                 const name = item.creator?.name?.toLowerCase() || '';
                 const phone = item.creator?.phone?.toLowerCase() || '';
                 const niche = item.creator?.niche?.toLowerCase() || '';
                 const tier = item.creator?.tier?.toLowerCase() || '';
-                const handle = item.creator?.accounts?.[0]?.handle?.toLowerCase() || '';
+                const allHandles = (item.creator?.accounts || []).map((a) => a.handle.toLowerCase()).join(' ');
 
                 if (
                     !name.includes(q) &&
                     !phone.includes(q) &&
                     !niche.includes(q) &&
                     !tier.includes(q) &&
-                    !handle.includes(q)
+                    !allHandles.includes(q)
                 ) {
                     return false;
                 }
@@ -271,7 +283,7 @@ export default function KocMatrixTable({
 
             return true;
         });
-    }, [items, currentStage, selectedStaffFilter, riskFilter, searchQuery]);
+    }, [items, currentStage, selectedStaffFilter, selectedPlatformFilter, riskFilter, searchQuery]);
 
     // Virtual Scrolling
     const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -451,6 +463,20 @@ export default function KocMatrixTable({
         );
     };
 
+    // Cập nhật nhanh danh sách nền tảng KOC cam kết làm (TikTok, Shopee, FB...)
+    const handleInlinePlatformsChange = (pivotId: number, platforms: string[]) => {
+        router.patch(
+            route('campaigns.creators.quick-update', { id: campaign.id, pivotId }),
+            { booking_platforms: platforms },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    showFeedback('Đã cập nhật nền tảng booking!');
+                },
+            }
+        );
+    };
+
     // Cập nhật nhanh ghi chú nội bộ cho KOC
     const handleInlineNoteChange = (pivotId: number, note: string) => {
         router.patch(
@@ -490,21 +516,54 @@ export default function KocMatrixTable({
         );
     };
 
-    // Xóa KOC khỏi chiến dịch
+    // Mở hộp thoại xác nhận xóa 1 KOC khỏi chiến dịch
     const handleRemoveCreator = (pivotId: number, name: string) => {
-        if (!window.confirm(`Bạn có chắc chắn muốn xóa KOC [${name}] khỏi chiến dịch này?`)) {
-            return;
-        }
+        setSingleDeleteTarget({ pivotId, name });
+    };
 
+    // Thực hiện xóa 1 KOC
+    const handleExecuteSingleRemove = () => {
+        if (!singleDeleteTarget) return;
+
+        setIsSingleDeleting(true);
         router.delete(
-            route('campaigns.creators.remove', { id: campaign.id, pivotId }),
+            route('campaigns.creators.remove', { id: campaign.id, pivotId: singleDeleteTarget.pivotId }),
             {
                 preserveScroll: true,
                 onSuccess: () => {
+                    const name = singleDeleteTarget.name;
+                    setSingleDeleteTarget(null);
+                    setIsSingleDeleting(false);
                     showFeedback(`Đã xóa KOC [${name}] khỏi chiến dịch.`);
                 },
-                onError: (err) => {
-                    alert(err.error || 'Không thể xóa KOC này.');
+                onError: (err: any) => {
+                    setIsSingleDeleting(false);
+                    alert(err?.error || 'Không thể xóa KOC này.');
+                },
+            }
+        );
+    };
+
+    // Thực hiện xóa hàng loạt KOC đã chọn khỏi chiến dịch
+    const handleExecuteBulkRemove = () => {
+        if (selectedIds.length === 0) return;
+
+        setIsBulkDeleting(true);
+        router.post(
+            route('campaigns.creators.bulk-remove', campaign.id),
+            { ids: selectedIds },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    const count = selectedIds.length;
+                    setIsBulkDeleteModalOpen(false);
+                    setSelectedIds([]);
+                    setIsBulkDeleting(false);
+                    showFeedback(`Đã xóa ${count} KOC khỏi chiến dịch.`);
+                },
+                onError: (err: any) => {
+                    setIsBulkDeleting(false);
+                    alert(err?.error || 'Có lỗi xảy ra khi xóa KOC.');
                 },
             }
         );
@@ -915,6 +974,12 @@ export default function KocMatrixTable({
                     if (focusKocId) handleClearFocusKoc();
                     setSelectedStaffFilter(sf);
                 }}
+                selectedPlatformFilter={selectedPlatformFilter}
+                onPlatformFilterChange={(pf) => {
+                    if (focusKocId) handleClearFocusKoc();
+                    setSelectedPlatformFilter(pf);
+                }}
+                targetPlatforms={campaign.target_platforms}
                 staffUsers={staffUsers}
                 videoDeadlineDays={campaign.video_deadline_days}
                 isVirtualEnabled={isVirtualEnabled}
@@ -943,24 +1008,20 @@ export default function KocMatrixTable({
                                         className="rounded border-slate-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
                                     />
                                 </th>
-                                <th className="px-2.5 py-3 min-w-[170px]">Creator / KOC</th>
-                                <th className="px-2.5 py-3 min-w-[115px]">Hình thức HT</th>
-                                <th className="px-2.5 py-3 min-w-[130px]">Trạng thái tiến độ</th>
-                                <th className="px-2.5 py-3 min-w-[105px]">Hạn video</th>
-                                <th className="px-2.5 py-3 min-w-[115px]">Gửi mẫu KOC</th>
-                                <th className="px-2.5 py-3 min-w-[105px]">Video đã lên</th>
-                                <th className="px-2.5 py-3 min-w-[105px]">Phí booking</th>
-                                <th className="px-2.5 py-3 min-w-[120px]">Ghi chú</th>
-                                <th className="px-2.5 py-3 min-w-[95px]">Cổng Portal</th>
-                                <th className="px-2.5 py-3 min-w-[115px]">Phụ trách</th>
-                                <th className="px-2.5 py-3 min-w-[160px] text-right">Hành động 1-Chạm</th>
+                                <th className="px-3 py-3 min-w-[180px]">Creator / Kênh</th>
+                                <th className="px-3 py-3 min-w-[130px]">Nền tảng Book</th>
+                                <th className="px-3 py-3 min-w-[130px]">Trạng thái & Hạn</th>
+                                <th className="px-3 py-3 min-w-[140px]">Mẫu & Video</th>
+                                <th className="px-3 py-3 min-w-[130px]">Phí & Phụ trách</th>
+                                <th className="px-3 py-3 min-w-[140px]">Ghi chú</th>
+                                <th className="px-3 py-3 min-w-[210px] text-right">Kết nối & Thao tác</th>
                             </tr>
                         </thead>
 
                         <tbody className="divide-y divide-slate-100">
                             {topPadding > 0 && (
                                 <tr style={{ height: `${topPadding}px` }} aria-hidden="true">
-                                    <td colSpan={12} className="p-0 border-0" />
+                                    <td colSpan={8} className="p-0 border-0" />
                                 </tr>
                             )}
                             {filteredItems.length > 0 ? (
@@ -972,8 +1033,10 @@ export default function KocMatrixTable({
                                         isFocused={focusKocId === item.id}
                                         onToggleSelect={handleToggleSelect}
                                         staffUsers={staffUsers}
+                                        campaignTargetPlatforms={campaign.target_platforms}
                                         onInlineAssign={handleInlineAssign}
                                         onInlineCollaborationTypeChange={handleInlineCollaborationTypeChange}
+                                        onInlinePlatformsChange={handleInlinePlatformsChange}
                                         onInlineNoteChange={handleInlineNoteChange}
                                         editingFeeId={editingFeeId}
                                         tempFeeValue={tempFeeValue}
@@ -1009,7 +1072,7 @@ export default function KocMatrixTable({
                                 ))
                             ) : items.length === 0 ? (
                                 <tr>
-                                    <td colSpan={12} className="py-14 text-center">
+                                    <td colSpan={8} className="py-14 text-center">
                                         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-primary-600 mb-3 shadow-inner">
                                             <Users className="h-7 w-7" />
                                         </div>
@@ -1043,7 +1106,7 @@ export default function KocMatrixTable({
                                 </tr>
                             ) : (
                                 <tr>
-                                    <td colSpan={12} className="py-12 text-center text-slate-400">
+                                    <td colSpan={8} className="py-12 text-center text-slate-400">
                                         <Users className="mx-auto h-8 w-8 text-slate-300 mb-2" />
                                         <p className="font-semibold text-slate-700">
                                             Không tìm thấy KOC nào phù hợp bộ lọc
@@ -1056,7 +1119,7 @@ export default function KocMatrixTable({
                             )}
                             {bottomPadding > 0 && (
                                 <tr style={{ height: `${bottomPadding}px` }} aria-hidden="true">
-                                    <td colSpan={12} className="p-0 border-0" />
+                                    <td colSpan={8} className="p-0 border-0" />
                                 </tr>
                             )}
                         </tbody>
@@ -1105,6 +1168,7 @@ export default function KocMatrixTable({
                 onOpenBulkStatusModal={() => setIsBulkStatusModalOpen(true)}
                 staffUsers={staffUsers}
                 onExecuteBulkAssign={handleExecuteBulkAssign}
+                onOpenBulkDeleteConfirm={() => setIsBulkDeleteModalOpen(true)}
                 onCopyPhones={handleCopyPhones}
                 onClearSelection={() => setSelectedIds([])}
             />
@@ -1193,6 +1257,32 @@ export default function KocMatrixTable({
 
                 formatCurrency={formatCurrency}
                 formatDate={formatDate}
+            />
+
+            {/* Hộp Thoại Xác Nhận Xóa 1 KOC */}
+            <ConfirmDialog
+                isOpen={Boolean(singleDeleteTarget)}
+                onClose={() => setSingleDeleteTarget(null)}
+                onConfirm={handleExecuteSingleRemove}
+                title="Xóa KOC khỏi chiến dịch?"
+                message={`Bạn có chắc chắn muốn xóa KOC [${singleDeleteTarget?.name}] khỏi chiến dịch này không?`}
+                confirmText="Xác nhận xóa"
+                cancelText="Hủy"
+                variant="danger"
+                loading={isSingleDeleting}
+            />
+
+            {/* Hộp Thoại Xác Nhận Xóa Hàng Loạt KOC */}
+            <ConfirmDialog
+                isOpen={isBulkDeleteModalOpen}
+                onClose={() => setIsBulkDeleteModalOpen(false)}
+                onConfirm={handleExecuteBulkRemove}
+                title={`Xóa ${selectedIds.length} KOC khỏi chiến dịch?`}
+                message={`Bạn có chắc chắn muốn xóa đồng loạt ${selectedIds.length} KOC đã chọn khỏi chiến dịch này không? Thao tác này sẽ hủy phân công của các KOC này.`}
+                confirmText="Xác nhận xóa tất cả"
+                cancelText="Hủy"
+                variant="danger"
+                loading={isBulkDeleting}
             />
         </div>
     );
