@@ -35,10 +35,10 @@ if [ "$RUN_SEED" = "true" ]; then
 fi
 
 
-#if [ "$RUN_SEED" = "true" ]; then
- #   echo ">>> Đang chạy seeder..."
-  #  php artisan db:seed --force || echo ">>> SEED FAILED"
-#fi
+if [ "$RUN_SEED" = "true" ]; then
+   echo ">>> Đang chạy seeder..."
+  php artisan db:seed --force || echo ">>> SEED FAILED"
+fi
 
 
 echo ">>> Bắt đầu khởi động Supervisord (Nginx + PHP-FPM + Queue + Scheduler)..."
