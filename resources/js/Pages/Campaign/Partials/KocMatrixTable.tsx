@@ -3,6 +3,7 @@ import { router, usePage } from '@inertiajs/react';
 import {
     Users,
     CheckCircle2,
+    AlertTriangle,
     Database,
     Plus,
     Sparkles,
@@ -173,11 +174,11 @@ export default function KocMatrixTable({
     const [copiedToken, setCopiedToken] = useState<string | null>(null);
 
     // Toast notification mini
-    const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
+    const [feedback, setFeedback] = useState<{ message: string; type?: 'success' | 'warning' | 'error' } | null>(null);
 
-    const showFeedback = (msg: string) => {
-        setFeedbackMessage(msg);
-        setTimeout(() => setFeedbackMessage(null), 3000);
+    const showFeedback = (msg: string, type: 'success' | 'warning' | 'error' = 'success') => {
+        setFeedback({ message: msg, type });
+        setTimeout(() => setFeedback(null), 3500);
     };
 
     const formatCurrency = (val: string | number) => {
@@ -368,9 +369,53 @@ export default function KocMatrixTable({
         );
     };
 
+    // Quản lý thông báo KOC thiếu SĐT khi tiếp cận Zalo
+    const [missingPhoneItem, setMissingPhoneItem] = useState<CampaignCreatorPivot | null>(null);
+    const [quickPhoneInput, setQuickPhoneInput] = useState<string>('');
+    const [isSavingPhone, setIsSavingPhone] = useState<boolean>(false);
+
     // Mở Zalo thông minh theo ngữ cảnh
     const handleOpenZalo = (item: CampaignCreatorPivot) => {
+        const phone = item.creator?.phone?.trim();
+        if (!phone) {
+            setMissingPhoneItem(item);
+            setQuickPhoneInput('');
+            showFeedback(`KOC [${item.creator?.name || 'này'}] chưa có số điện thoại để tiếp cận Zalo!`, 'warning');
+            return;
+        }
         setQuickZaloPivotId(item.id);
+    };
+
+    const handleSavePhoneAndOpenZalo = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!missingPhoneItem) return;
+        const phoneToSave = quickPhoneInput.trim();
+        if (!phoneToSave) {
+            alert('Vui lòng nhập số điện thoại hợp lệ!');
+            return;
+        }
+
+        setIsSavingPhone(true);
+        router.patch(
+            route('campaigns.creators.quick-update', [campaign.id, missingPhoneItem.id]),
+            { phone: phoneToSave },
+            {
+                preserveScroll: true,
+                preserveState: true,
+                onSuccess: () => {
+                    setIsSavingPhone(false);
+                    const savedItemId = missingPhoneItem.id;
+                    const savedCreatorName = missingPhoneItem.creator?.name || 'KOC';
+                    setMissingPhoneItem(null);
+                    showFeedback(`Đã cập nhật SĐT cho KOC [${savedCreatorName}]!`);
+                    setQuickZaloPivotId(savedItemId);
+                },
+                onError: (err: any) => {
+                    setIsSavingPhone(false);
+                    alert(err?.phone || err?.error || 'Không thể lưu số điện thoại.');
+                },
+            }
+        );
     };
 
     // Chuyển trạng thái nhanh 1 dòng
@@ -1034,10 +1079,22 @@ export default function KocMatrixTable({
     return (
         <div className="space-y-4 relative">
             {/* Toast Mini Feedback */}
-            {feedbackMessage && (
-                <div className="fixed top-20 right-6 z-50 flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white shadow-xl animate-in fade-in slide-from-top-4">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                    <span>{feedbackMessage}</span>
+            {feedback && (
+                <div
+                    className={`fixed top-20 right-6 z-50 flex items-center gap-2.5 rounded-xl px-4 py-2.5 text-xs font-semibold shadow-xl animate-in fade-in slide-from-top-4 ${
+                        feedback.type === 'warning'
+                            ? 'bg-amber-600 text-white'
+                            : feedback.type === 'error'
+                            ? 'bg-rose-600 text-white'
+                            : 'bg-slate-900 text-white'
+                    }`}
+                >
+                    {feedback.type === 'warning' || feedback.type === 'error' ? (
+                        <AlertTriangle className="h-4 w-4 text-amber-200 shrink-0" />
+                    ) : (
+                        <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+                    )}
+                    <span>{feedback.message}</span>
                 </div>
             )}
 
@@ -1384,6 +1441,13 @@ export default function KocMatrixTable({
                 quickZaloPivotId={quickZaloPivotId}
                 onCloseQuickZalo={() => setQuickZaloPivotId(null)}
                 onQuickZaloSuccess={showFeedback}
+
+                missingPhoneItem={missingPhoneItem}
+                onCloseMissingPhoneModal={() => setMissingPhoneItem(null)}
+                quickPhoneInput={quickPhoneInput}
+                onQuickPhoneInputChange={setQuickPhoneInput}
+                onSavePhoneAndOpenZalo={handleSavePhoneAndOpenZalo}
+                isSavingPhone={isSavingPhone}
 
                 formatCurrency={formatCurrency}
                 formatDate={formatDate}

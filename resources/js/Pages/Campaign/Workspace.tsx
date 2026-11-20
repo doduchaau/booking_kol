@@ -1093,7 +1093,16 @@ export default function Workspace({
                                                     <Button
                                                         size="sm"
                                                         variant="primary"
-                                                        onClick={() => setQuickZaloModalId(item.id)}
+                                                        onClick={() => {
+                                                            if (!item.creator?.phone?.trim()) {
+                                                                const kocName = item.creator?.name ? `[${item.creator.name}]` : 'này';
+                                                                const warnMsg = `KOC ${kocName} chưa có số điện thoại! Vui lòng cập nhật số điện thoại trước khi tiếp cận Zalo.`;
+                                                                alert(warnMsg);
+                                                                showToast(warnMsg);
+                                                                return;
+                                                            }
+                                                            setQuickZaloModalId(item.id);
+                                                        }}
                                                         iconLeft={<MessageCircle className="h-3.5 w-3.5" />}
                                                     >
                                                         Nhắc Zalo

@@ -221,6 +221,7 @@ class PipelineController extends Controller
             'collaboration_type' => ['nullable', 'string', 'in:video,livestream,both'],
             'booking_platforms' => ['nullable', 'array'],
             'booking_platforms.*' => ['string', 'in:tiktok,facebook,shopee,youtube,instagram,zalo'],
+            'phone' => ['nullable', 'string', 'max:20'],
         ]);
 
         $campaignCreator = CampaignCreator::where('campaign_id', $campaignId)->findOrFail($pivotId);
@@ -244,6 +245,7 @@ class PipelineController extends Controller
                 'status',
                 'collaboration_type',
                 'booking_platforms',
+                'phone',
             ]));
 
             if ($request->wantsJson()) {

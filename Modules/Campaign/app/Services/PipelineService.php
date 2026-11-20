@@ -315,6 +315,14 @@ class PipelineService
             $campaignCreator->update($fillableData);
         }
 
+        // Cập nhật số điện thoại của KOC nếu có truyền
+        if (array_key_exists('phone', $data)) {
+            $cleanPhone = !empty($data['phone']) ? trim($data['phone']) : null;
+            if ($campaignCreator->creator) {
+                $campaignCreator->creator->update(['phone' => $cleanPhone]);
+            }
+        }
+
         // Nếu có cập nhật trạng thái
         if (!empty($data['status'])) {
             $newStatus = $data['status'] instanceof PipelineStatusEnum

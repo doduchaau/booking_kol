@@ -152,6 +152,17 @@ class CampaignMatrixEndpointsTest extends TestCase
             ]);
         $confirmResponse->assertOk();
         $this->assertEquals(PipelineStatusEnum::AGREED, $cc->fresh()->status);
+
+        // Cập nhật số điện thoại cho KOC qua quick-update
+        $phoneResponse = $this->actingAs($this->user)
+            ->patchJson(route('campaigns.creators.quick-update', [
+                'id' => $this->campaign->id,
+                'pivotId' => $cc->id,
+            ]), [
+                'phone' => '0912345999',
+            ]);
+        $phoneResponse->assertOk();
+        $this->assertEquals('0912345999', $creator->fresh()->phone);
     }
 
     public function test_remove_creator_from_campaign(): void

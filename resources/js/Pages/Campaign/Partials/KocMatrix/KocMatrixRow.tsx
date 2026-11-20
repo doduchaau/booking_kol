@@ -553,8 +553,16 @@ export default React.memo(function KocMatrixRow({
                         <button
                             type="button"
                             onClick={() => onOpenZalo(item)}
-                            className="p-1 rounded-lg border border-blue-200 bg-blue-50/70 text-blue-700 hover:bg-blue-100 shadow-2xs transition-colors cursor-pointer"
-                            title="Mở mẫu tin nhắn Zalo 1-chạm thông minh"
+                            className={`p-1 rounded-lg border shadow-2xs transition-colors cursor-pointer ${
+                                Boolean(creator?.phone?.trim())
+                                    ? 'border-blue-200 bg-blue-50/70 text-blue-700 hover:bg-blue-100'
+                                    : 'border-amber-200 bg-amber-50/70 text-amber-700 hover:bg-amber-100'
+                            }`}
+                            title={
+                                Boolean(creator?.phone?.trim())
+                                    ? 'Mở mẫu tin nhắn Zalo 1-chạm thông minh'
+                                    : 'KOC chưa có SĐT. Bấm để xem thông báo'
+                            }
                         >
                             <MessageCircle className="h-3.5 w-3.5" />
                         </button>
@@ -577,10 +585,24 @@ export default React.memo(function KocMatrixRow({
                             <button
                                 type="button"
                                 onClick={() => onOpenZalo(item)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-blue-600 text-white hover:bg-blue-700 shadow-2xs transition-all active:scale-95 cursor-pointer"
+                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold shadow-2xs transition-all active:scale-95 cursor-pointer ${
+                                    Boolean(creator?.phone?.trim())
+                                        ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                        : 'bg-amber-500 text-white hover:bg-amber-600 ring-1 ring-amber-400'
+                                }`}
+                                title={
+                                    Boolean(creator?.phone?.trim())
+                                        ? 'Tiếp cận Zalo 1-chạm'
+                                        : 'KOC chưa có SĐT. Bấm để xem thông báo bổ sung'
+                                }
                             >
                                 <MessageCircle className="h-3 w-3" />
                                 <span>Tiếp cận Zalo</span>
+                                {!creator?.phone?.trim() && (
+                                    <span className="text-[10px] bg-amber-700/60 px-1 rounded font-normal">
+                                        (! SĐT)
+                                    </span>
+                                )}
                             </button>
                         )}
 

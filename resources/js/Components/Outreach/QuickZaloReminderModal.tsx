@@ -146,8 +146,10 @@ export default function QuickZaloReminderModal({
         }
 
         // 2. Mở deep-link Zalo ngay lập tức để tránh popup blocker của trình duyệt
-        if (data.creator.zalo_link) {
+        if (data.creator.zalo_link && data.creator.phone) {
             window.open(data.creator.zalo_link, '_blank');
+        } else if (!data.creator.phone) {
+            alert('KOC này chưa có số điện thoại trong hệ thống! Tin nhắn đã được sao chép vào clipboard để bạn gửi thủ công.');
         }
 
         // 3. Ghi log tương tác vào backend & tự động cập nhật trạng thái KOC tức thì qua Inertia (không cần F5)
@@ -249,9 +251,13 @@ export default function QuickZaloReminderModal({
                                 <div>
                                     <span className="text-slate-500">KOC:</span>{' '}
                                     <strong className="text-slate-900 text-sm">{data.creator.name}</strong>
-                                    {data.creator.phone && (
+                                    {data.creator.phone ? (
                                         <span className="ml-2 font-mono text-slate-600">
                                             ({data.creator.phone})
+                                        </span>
+                                    ) : (
+                                        <span className="ml-2 px-1.5 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                                            Chưa có SĐT
                                         </span>
                                     )}
                                     <div className="text-[11px] text-slate-500 mt-0.5">
@@ -276,6 +282,19 @@ export default function QuickZaloReminderModal({
                                     )}
                                 </div>
                             </div>
+
+                            {/* Cảnh báo nếu KOC chưa có số điện thoại */}
+                            {!data.creator.phone && (
+                                <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 flex items-start gap-2.5">
+                                    <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                                    <div>
+                                        <div className="font-bold">KOC này chưa có số điện thoại Zalo!</div>
+                                        <div className="mt-0.5 text-amber-800 text-[11px] leading-relaxed">
+                                            Hệ thống không thể mở trực tiếp cửa sổ chat Zalo với KOC. Bạn có thể sao chép văn bản bên dưới để gửi qua kênh khác hoặc bổ sung SĐT cho KOC trước.
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Danh sách Mẫu Tin Nhắn gợi ý */}
                             <div>
