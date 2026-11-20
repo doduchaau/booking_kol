@@ -79,6 +79,12 @@ class CampaignRoiExport implements WithMultipleSheets
             $sheets[] = new Sheets\CostReconciliationSheet($reconciliation, $this->campaignName, $this->periodLabel);
         }
 
+        // 7. Sheet Bằng Chứng Trao Đổi & Đối Soát Nhắn Tin KOC (kèm hình ảnh Drawing)
+        if (in_array('chat_evidences', $this->sections)) {
+            $evidenceData = $service->getChatEvidenceDetails($this->campaignId, $this->dateRange);
+            $sheets[] = new Sheets\ChatEvidenceSheet($evidenceData, $this->campaignName, $this->periodLabel);
+        }
+
         // Fallback an toàn: nếu không có sheet nào được kích hoạt, nạp sheet Overview
         if (empty($sheets)) {
             $financial = $service->getFinancialRoiMetrics($this->campaignId, $this->dateRange);

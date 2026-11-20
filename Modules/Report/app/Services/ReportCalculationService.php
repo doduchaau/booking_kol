@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Modules\Campaign\Enums\PipelineStatusEnum;
 use Modules\Campaign\Models\Campaign;
 use Modules\Campaign\Models\CampaignCreator;
+use Modules\Campaign\Models\CampaignCreatorChatEvidence;
 use Modules\Content\Models\ContentPost;
 
 class ReportCalculationService
@@ -1163,6 +1164,77 @@ class ReportCalculationService
                 ];
             })->all();
         });
+    }
+
+    /**
+     * Bảng chi tiết bằng chứng nhắn tin trao đổi KOC phục vụ đối soát
+     */
+    public function getChatEvidenceDetails(?int $campaignId = null, ?array $dateRange = null): array
+    {
+        $query = CampaignCreatorChatEvidence::query()
+            ->join('campaign_creators', 'campaign_creators.id', '=', 'campaign_creator_chat_evidences.campaign_creator_id')
+            ->join('creators', 'creators.id', '=', 'campaign_creators.creator_id')
+            ->join('campaigns', 'campaigns.id', '=', 'campaign_creators.campaign_id')
+            ->leftJoin('users as uploaders', 'uploaders.id', '=', 'campaign_creator_chat_evidences.uploaded_by')
+            ->leftJoin('users as assignees', 'assignees.id', '=', 'campaign_creators.assigned_to')
+            ->whereNull('campaign_creators.deleted_at')
+            ->whereNull('creators.deleted_at')
+            ->whereNull('campaigns.deleted_at')
+            ->select([
+                'campaign_creator_chat_evidences.id',
+                'campaign_creator_chat_evidences.file_path',
+                'campaign_creator_chat_evidences.file_name',
+                'campaign_creator_chat_evidences.file_type',
+                'campaign_creator_chat_evidences.file_size',
+                'campaign_creator_chat_evidences.notes',
+                'campaign_creator_chat_evidences.created_at',
+                'creators.name as creator_name',
+                'creators.phone as creator_phone',
+                'creators.tier as creator_tier',
+                'campaigns.name as campaign_name',
+                'campaign_creators.status as creator_status',
+                'assignees.name as staff_name',
+                'uploaders.name as uploader_name',
+            ]);
+
+        if ($campaignId) {
+            $query->where('campaign_creators.campaign_id', $campaignId);
+        }
+
+        if (!empty($dateRange['start_date'])) {
+            $query->whereDate('campaign_creator_chat_evidences.created_at', '>=', $dateRange['start_date']);
+        }
+        if (!empty($dateRange['end_date'])) {
+            $query->whereDate('campaign_creator_chat_evidences.created_at', '<=', $dateRange['end_date']);
+        }
+
+        $items = $query->orderByDesc('campaign_creator_chat_evidences.created_at')
+            ->orderByDesc('campaign_creator_chat_evidences.id')
+            ->get();
+
+        return $items->map(function ($item, $index) {
+            $isImage = \Illuminate\Support\Str::startsWith($item->file_type ?? '', 'image/')
+                || in_array(strtolower(pathinfo($item->file_name ?? '', PATHINFO_EXTENSION)), ['jpg', 'jpeg', 'png', 'webp', 'gif']);
+
+            return [
+                'index' => $index + 1,
+                'id' => $item->id,
+                'creator_name' => $item->creator_name,
+                'creator_phone' => $item->creator_phone ?: 'Chưa SĐT',
+                'creator_tier' => strtoupper($item->creator_tier ?: 'nano'),
+                'campaign_name' => $item->campaign_name,
+                'staff_name' => $item->staff_name ?: 'Chưa phân công',
+                'uploader_name' => $item->uploader_name ?: 'Hệ thống',
+                'creator_status' => $item->creator_status,
+                'created_at' => $item->created_at ? Carbon::parse($item->created_at)->format('d/m/Y H:i') : '',
+                'notes' => $item->notes ?: '',
+                'file_name' => $item->file_name,
+                'file_path' => $item->file_path,
+                'file_type' => $item->file_type,
+                'file_size' => (int) $item->file_size,
+                'is_image' => $isImage,
+            ];
+        })->all();
     }
 
     /**

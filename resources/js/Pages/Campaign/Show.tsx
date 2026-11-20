@@ -45,6 +45,7 @@ import KocMatrixTable, {
     Creator,
 } from './Partials/KocMatrixTable';
 import { CampaignProduct } from './Partials/KocMatrix/types';
+import ExportReportModal from '@/Pages/Report/Partials/ExportReportModal';
 
 interface CampaignStats {
     total_assigned: number;
@@ -103,6 +104,7 @@ export default function Show({
     const [activeTab, setActiveTab] = useState<'matrix' | 'guidelines'>('matrix');
     const [previewModalImage, setPreviewModalImage] = useState<{ url: string; name: string } | null>(null);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [modalTab, setModalTab] = useState<'specific' | 'all_db' | 'import_file'>('specific');
     const [selectAllInDb, setSelectAllInDb] = useState(false);
     const [modalSearch, setModalSearch] = useState('');
@@ -441,6 +443,16 @@ export default function Show({
                         <Badge variant={getStatusVariant(campaign.status)} size="md">
                             {campaign.status.toUpperCase()}
                         </Badge>
+
+                        {/* Nút Xuất Báo Cáo / Đối Soát Excel */}
+                        <Button
+                            variant="secondary"
+                            iconLeft={<FileSpreadsheet className="h-4 w-4 text-emerald-600" />}
+                            onClick={() => setIsExportModalOpen(true)}
+                            title="Xuất file Excel đối soát và báo cáo chiến dịch (kèm hình ảnh bằng chứng)"
+                        >
+                            Xuất Báo Cáo
+                        </Button>
 
                         {/* Nút Chỉnh Sửa Chiến Dịch */}
                         <Link href={route('campaigns.edit', campaign.id)}>
@@ -1905,6 +1917,14 @@ export default function Show({
                     </div>
                 </div>
             )}
+            {/* Modal Xuất Báo Cáo / Đối Soát Excel */}
+            <ExportReportModal
+                isOpen={isExportModalOpen}
+                onClose={() => setIsExportModalOpen(false)}
+                campaignId={campaign.id}
+                campaignName={campaign.name}
+                periodLabel={`Chiến dịch ${campaign.name}`}
+            />
         </AppLayout>
     );
 }

@@ -109,6 +109,31 @@ export interface SampleLogItem {
     created_at?: string | null;
 }
 
+export interface ChatEvidenceItem {
+    id: number;
+    campaign_creator_id: number;
+    uploaded_by?: number | null;
+    file_path: string;
+    file_name: string;
+    file_type: string;
+    file_size: number;
+    notes?: string | null;
+    file_url?: string | null;
+    is_image?: boolean;
+    formatted_file_size?: string;
+    created_at: string;
+    uploaded_by_user?: {
+        id: number;
+        name: string;
+        email?: string;
+    } | null;
+    uploadedBy?: {
+        id: number;
+        name: string;
+        email?: string;
+    } | null;
+}
+
 export interface CampaignCreatorPivot {
     id: number;
     campaign_id: number;
@@ -153,6 +178,9 @@ export interface CampaignCreatorPivot {
     sample_shipment_history?: SampleLogItem[];
     sample_logs?: SampleLogItem[];
     sampleLogs?: SampleLogItem[];
+    chat_evidences_count?: number;
+    chat_evidences?: ChatEvidenceItem[];
+    chatEvidences?: ChatEvidenceItem[];
 }
 
 export interface Campaign {

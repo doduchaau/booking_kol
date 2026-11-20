@@ -17,6 +17,7 @@ import KocMatrixFilterBar from './KocMatrix/KocMatrixFilterBar';
 import KocMatrixRow from './KocMatrix/KocMatrixRow';
 import KocMatrixBulkActions from './KocMatrix/KocMatrixBulkActions';
 import KocMatrixModals from './KocMatrix/KocMatrixModals';
+import ChatEvidenceModal from './KocMatrix/ChatEvidenceModal';
 
 // Types & Definitions
 import {
@@ -169,6 +170,13 @@ export default function KocMatrixTable({
     const [noteModalItem, setNoteModalItem] = useState<CampaignCreatorPivot | null>(null);
     const [noteModalContent, setNoteModalContent] = useState<string>('');
     const [noteSubmitting, setNoteSubmitting] = useState<boolean>(false);
+
+    // Modal Bằng chứng nhắn tin đối soát KOC (Popup)
+    const [evidenceModalItem, setEvidenceModalItem] = useState<CampaignCreatorPivot | null>(null);
+    const activeEvidenceItem = useMemo(() => {
+        if (!evidenceModalItem) return null;
+        return items.find((i) => i.id === evidenceModalItem.id) || evidenceModalItem;
+    }, [evidenceModalItem, items]);
 
     // Feedback copy link portal
     const [copiedToken, setCopiedToken] = useState<string | null>(null);
@@ -560,6 +568,11 @@ export default function KocMatrixTable({
     const handleOpenNoteModal = (item: CampaignCreatorPivot) => {
         setNoteModalItem(item);
         setNoteModalContent(item.notes || '');
+    };
+
+    // Mở popup modal bằng chứng tin nhắn đối soát
+    const handleOpenEvidenceModal = (item: CampaignCreatorPivot) => {
+        setEvidenceModalItem(item);
     };
 
     // Lưu ghi chú từ popup modal
@@ -1245,6 +1258,7 @@ export default function KocMatrixTable({
                                         onOpenShipmentModal={handleOpenShipmentModal}
                                         onOpenVideoModal={handleOpenVideoModal}
                                         onOpenNoteModal={handleOpenNoteModal}
+                                        onOpenEvidenceModal={handleOpenEvidenceModal}
                                         onOpenZalo={handleOpenZalo}
                                         onRemoveCreator={handleRemoveCreator}
                                         formatCurrency={formatCurrency}
@@ -1451,6 +1465,17 @@ export default function KocMatrixTable({
 
                 formatCurrency={formatCurrency}
                 formatDate={formatDate}
+            />
+
+            {/* Modal Quản Lý Bằng Chứng Nhắn Tin & Đối Soát KOC */}
+            <ChatEvidenceModal
+                isOpen={Boolean(evidenceModalItem)}
+                onClose={() => setEvidenceModalItem(null)}
+                item={activeEvidenceItem}
+                campaignId={campaign.id}
+                campaignName={campaign.name}
+                currentUserId={(usePage().props as any).auth?.user?.id}
+                isAdminOrLeader={['admin', 'leader'].includes((usePage().props as any).auth?.user?.role || '')}
             />
 
             {/* Hộp Thoại Xác Nhận Xóa 1 KOC */}

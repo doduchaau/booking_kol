@@ -1,5 +1,16 @@
 # Lộ Trình Triển Khai 5 Giai Đoạn (Phased Roadmap)
 
+> Đây là lộ trình ban đầu để tham khảo thứ tự triển khai, không phải bảng trạng thái dự án. Đối chiếu routes, migrations, services và tests trước khi nhận task; không làm lại hoặc đổi nghiệp vụ chỉ để khớp roadmap.
+
+## Hiện trạng cấu trúc đã đối chiếu
+
+- Có 7 Laravel modules: `Creator`, `Campaign`, `Content`, `Outreach`, `Portal`, `Report`, `Settings`; Pipeline và nhật ký gửi mẫu thuộc Campaign.
+- Campaign có nhật ký gửi mẫu nhiều đợt với trường tùy chọn hãng/mã vận chuyển; không có tích hợp API hãng vận chuyển.
+- Outreach có chuẩn bị nội dung, log tiếp cận, follow-up, opt-out và group invite; chưa thấy service/job gửi Zalo OA trong code rà soát.
+- Portal dùng `/portal/{token}` và hỗ trợ địa chỉ, xác nhận nhận mẫu, precheck và nộp video.
+- Report có dashboard và export; chưa thấy job gửi báo cáo định kỳ.
+- Khi roadmap và implementation khác nhau, implementation mô tả hành vi hiện tại; không thay hành vi để khớp roadmap.
+
 Để dự án được xây dựng ổn định theo phương pháp "vibe coding" bền vững và chạy được sản phẩm thực tế sớm nhất, toàn bộ quá trình phát triển được chia làm 5 giai đoạn tuần tự.
 
 ---
@@ -30,7 +41,7 @@
 ## Giai Đoạn 2: Quản Lý Mẫu Thử Tinh Gọn, Cổng Creator Portal & Theo Dõi Deadline
 
 > [!CAUTION]
-> **LƯU Ý QUAN TRỌNG**: Nhân viên booking không làm vận đơn và không quản lý hãng vận chuyển. Không tạo module Shipment, không tạo bảng shipments. Chỉ theo dõi trạng thái gửi/nhận mẫu tinh gọn trong `campaign_creators`.
+> Campaign hiện có nhật ký từng đợt gửi mẫu trong `campaign_creator_sample_logs`, gồm trường tùy chọn `carrier_name` và `tracking_code`. Phần này không tạo đơn hoặc tích hợp API hãng vận chuyển. Giữ hành vi hiện tại nếu không có yêu cầu đổi nghiệp vụ.
 
 - **Phạm vi**: Tự động hóa khâu thu thập thông tin nhận hàng qua cổng riêng không cần login, nhân viên xác nhận gửi mẫu tinh gọn, KOC xác nhận nhận mẫu và giám sát hạn chót lên video.
 - **Danh sách Task theo thứ tự lát cắt dọc**:
@@ -43,7 +54,7 @@
   - Creator mở link Portal trên điện thoại điền địa chỉ -> Pipeline trên màn hình admin lập tức cập nhật `address_confirmed`.
   - Creator bấm xác nhận đã nhận hàng (hoặc admin cập nhật) -> Chuyển sang cột `Đã nhận mẫu` và kích hoạt đếm ngược deadline.
 - **Những thứ cố tình KHÔNG làm ở GĐ2**:
-  - **TUYỆT ĐỐI KHÔNG làm Module Shipment / Vận đơn / Hãng vận chuyển (GHN/GHTK)**.
+  - Roadmap không yêu cầu module vận chuyển riêng hoặc tích hợp API hãng vận chuyển.
   - Chưa làm hệ thống nhắn Zalo tự động (vẫn gửi link portal cho Creator bằng Zalo thủ công).
   - Chưa tự động cào số liệu view của video.
 
@@ -82,7 +93,7 @@
   - Nhân viên lướt TikTok thấy Creator hay, bấm nút trên extension là hồ sơ được tạo ngay trong web tool kèm tài khoản TikTok.
   - Bảng số liệu video ghi nhận lịch sử tăng trưởng view theo ngày.
 - **Những thứ cố tình KHÔNG làm ở GĐ4**:
-  - Không chạy headless browser bot trực tiếp trên web server chính để cào lậu dữ liệu; thay vào đó, toàn bộ quy trình tự động hóa 100% phải tuân thủ chuẩn **Automated API & Data Provider Pipeline** (Official API / Data Provider + Redis Queue + Rate Limiting) theo quy định tại [kol-automated-sync.skill.md](../../kol-automated-sync/SKILL.md).
+  - Không mở rộng scraping tự động hoặc bypass nền tảng. Code hiện có chứa `PlaywrightNetworkConnector`; xem đây là luồng legacy cần đánh giá trước khi sửa/xóa. Tác vụ đồng bộ mới phải theo chuẩn an toàn trong [kol-automated-sync.skill.md](../../kol-automated-sync/SKILL.md).
 
 ---
 
@@ -95,7 +106,7 @@
   3. Xây dựng bảng xếp hạng Leaderboard: Top Creator có doanh thu cao nhất, Top Creator có chi phí trên mỗi view (CPV) rẻ nhất.
   4. Báo cáo hiệu suất nhân viên booking (tỷ lệ chốt, số lượng video hoàn thành đúng hạn).
   5. Tính năng xuất toàn bộ dữ liệu chiến dịch ra file Excel (.xlsx) chuẩn mẫu kế toán/đối soát.
-  6. Thiết lập Job `GenerateWeeklyReportJob` gửi email tóm tắt hiệu quả vào sáng thứ Hai.
+  6. Báo cáo email định kỳ là hạng mục roadmap; chưa thấy job này trong implementation rà soát.
 - **Tiêu chí hoàn thành (Definition of Done)**:
   - Biểu đồ hiển thị đúng 100% số liệu thực tế từ database.
   - Xuất file Excel trong < 5 giây với định dạng số tiền VND và ngày tháng chuẩn xác.

@@ -2,6 +2,8 @@
 
 Tài liệu này đặc tả toàn bộ lược đồ cơ sở dữ liệu MySQL cho hệ thống Booking KOL/KOC, bao gồm quan hệ, chỉ mục (indexes), quy tắc ràng buộc, chuẩn hóa dữ liệu và cơ chế phát hiện trùng/gộp hồ sơ.
 
+> **Lưu ý hiện trạng:** các câu lệnh SQL bên dưới là schema tham chiếu ban đầu, không phải bản dump/schema chính xác đang chạy. Dùng migrations hiện có làm nguồn sự thật trước khi thiết kế hoặc chỉnh DB. Dự án hiện có thêm các bảng như `campaign_creator_products`, `campaign_creator_sample_logs`, `campaign_creator_chat_evidences`, `creator_metrics_histories` và các trường Content compliance/health; không suy ra số lượng bảng từ tài liệu này.
+
 ---
 
 ## 1. Nguyên Tắc Thiết Kế Chung
@@ -9,7 +11,7 @@ Tài liệu này đặc tả toàn bộ lược đồ cơ sở dữ liệu MySQL
 1. **Chuẩn hóa số điện thoại**: Mọi số điện thoại Việt Nam đều được chuẩn hóa về định dạng 10 chữ số bắt đầu bằng `0` (ví dụ: `0912345678`) trước khi lưu và tìm kiếm.
 2. **Khóa chính**: Dùng `id` (bigint unsigned auto_increment) hoặc `uuid` cho các bản ghi chia sẻ ra ngoài (ví dụ: token bảo mật portal).
 3. **Soft Deletes**: Áp dụng `deleted_at` cho các thực thể dữ liệu quan trọng (`creators`, `creator_accounts`, `campaigns`, `campaign_creators`).
-4. **Audit Trail**: Bảng `activity_logs` ghi nhận mọi hành vi thay đổi trạng thái, sửa đổi thông tin nhạy cảm.
+4. **Audit Trail**: chỉ mô tả log/audit là hiện hữu nếu tìm được migration/model/ghi nhận tương ứng. Các log gửi mẫu, lịch sử metrics và chat evidence hiện là các bảng nghiệp vụ riêng, không thay thế một audit trail tổng quát.
 5. **Tiền tệ & Số liệu**: Cột tiền dùng `decimal(14,2)` hoặc `bigint` (VND không có số thập phân). Tỷ lệ tương tác dùng `decimal(5,2)` (%).
 
 ---
@@ -244,7 +246,7 @@ CREATE TABLE `opt_outs` (
 ### 2.4. Phân Hệ Nghiệm Thu Video (Content)
 
 > [!NOTE]
-> Bảng `shipments` đã bị loại bỏ hoàn toàn. Quy trình gửi mẫu được theo dõi trực tiếp qua các trường `sample_sent_at`, `sample_received_at` và `status` trong bảng `campaign_creators`.
+> Trong implementation hiện tại, trạng thái tổng quan nằm ở `campaign_creators`; từng đợt gửi mẫu được lưu ở `campaign_creator_sample_logs` với sản phẩm, số lượng và snapshot địa chỉ/điện thoại. Log có thể chứa `carrier_name` và `tracking_code` do người dùng nhập; không đồng nghĩa có tích hợp API vận chuyển. Migrations là nguồn schema chuẩn.
 
 #### Bảng `content_posts`
 ```sql
@@ -346,5 +348,5 @@ Hệ thống kích hoạt cảnh báo trùng lặp khi một hồ sơ mới có 
 Khi Leader/Admin xác nhận gộp `Creator B` vào `Creator A` (Hồ sơ gốc Master):
 1. Cập nhật `Creator B`: đặt `merged_into_creator_id = Creator A.id` và thực hiện `soft delete`.
 2. Chuyển toàn bộ các kênh `creator_accounts` của B sang cho A (nếu tài khoản đã tồn tại ở A thì giữ bản ghi có số follower/tương tác mới nhất).
-3. Chuyển toàn bộ các liên kết `campaign_creators`, `payments`, `shipments` của B sang gắn với A.
-4. Ghi nhận log chi tiết vào bảng `activity_logs` với `event = 'merged'` để có thể kiểm toán hoặc phục hồi khi cần.
+3. Chuyển các quan hệ mà `CreatorDeduplicationService` hiện hỗ trợ sang hồ sơ A; không giả định tồn tại bảng `payments` hoặc `shipments` nếu migration thực tế không có.
+4. Trước khi thay đổi cách merge, kiểm tra các bảng lịch sử và phụ thuộc hiện có để không mất liên kết chiến dịch, metrics hoặc bằng chứng.

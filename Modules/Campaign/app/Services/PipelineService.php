@@ -75,8 +75,7 @@ class PipelineService
             }
 
             // Bắt buộc phải có đường link video nghiệm thu trong bảng content_posts
-            $campaignCreator->loadMissing(['contentPosts']);
-            $hasVideo = $campaignCreator->contentPosts && $campaignCreator->contentPosts->count() > 0;
+            $hasVideo = $campaignCreator->contentPosts()->exists();
             if (!$hasVideo) {
                 throw new Exception("Không thể chuyển sang bước [Đã lên video] vì KOC {$creator->name} chưa có link video nghiệm thu. Vui lòng điền link video.");
             }

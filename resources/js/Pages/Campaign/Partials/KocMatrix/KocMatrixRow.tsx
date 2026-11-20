@@ -17,6 +17,7 @@ import {
     Plus,
     RotateCcw,
     FileText,
+    Paperclip,
 } from 'lucide-react';
 import { CampaignCreatorPivot, STATUS_DEFINITIONS } from './types';
 import PlatformLogo, { getPlatformDisplayName } from '@/Components/Common/PlatformLogo';
@@ -50,6 +51,7 @@ interface Props {
     onOpenShipmentModal: (item: CampaignCreatorPivot) => void;
     onOpenVideoModal: (item: CampaignCreatorPivot) => void;
     onOpenNoteModal: (item: CampaignCreatorPivot) => void;
+    onOpenEvidenceModal?: (item: CampaignCreatorPivot) => void;
     onOpenZalo: (item: CampaignCreatorPivot) => void;
     onRemoveCreator: (id: number, name: string) => void;
     formatCurrency: (val: string | number) => string;
@@ -83,6 +85,7 @@ export default React.memo(function KocMatrixRow({
     onOpenShipmentModal,
     onOpenVideoModal,
     onOpenNoteModal,
+    onOpenEvidenceModal,
     onOpenZalo,
     onRemoveCreator,
     formatCurrency,
@@ -463,31 +466,63 @@ export default React.memo(function KocMatrixRow({
                 </div>
             </td>
 
-            {/* 7. Ghi Chú (Ở BÊN NGOÀI) */}
+            {/* 7. Ghi Chú & Evidence */}
             <td className="px-3 py-3">
-                {item.notes ? (
-                    <button
-                        type="button"
-                        onClick={() => onOpenNoteModal(item)}
-                        className="group flex items-center gap-1.5 max-w-[130px] w-full text-left py-1 px-2 rounded-lg bg-slate-50 hover:bg-primary-50 border border-slate-200 hover:border-primary-300 transition-all cursor-pointer"
-                        title={`Ghi chú: ${item.notes}\n(Bấm để sửa)`}
-                    >
-                        <FileText className="h-3.5 w-3.5 text-primary-600 shrink-0" />
-                        <span className="truncate text-[11px] text-slate-700 font-medium group-hover:text-primary-700">
-                            {item.notes}
-                        </span>
-                    </button>
-                ) : (
-                    <button
-                        type="button"
-                        onClick={() => onOpenNoteModal(item)}
-                        className="inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-primary-600 hover:bg-slate-100 px-2 py-0.5 rounded-md border border-dashed border-slate-300 transition-colors cursor-pointer"
-                        title="Bấm để thêm ghi chú"
-                    >
-                        <Plus className="h-2.5 w-2.5" />
-                        <span>Ghi chú</span>
-                    </button>
-                )}
+                <div className="space-y-1">
+                    {/* Ghi chú */}
+                    {item.notes ? (
+                        <button
+                            type="button"
+                            onClick={() => onOpenNoteModal(item)}
+                            className="group flex items-center gap-1.5 max-w-[130px] w-full text-left py-1 px-2 rounded-lg bg-slate-50 hover:bg-primary-50 border border-slate-200 hover:border-primary-300 transition-all cursor-pointer"
+                            title={`Ghi chú: ${item.notes}\n(Bấm để sửa)`}
+                        >
+                            <FileText className="h-3.5 w-3.5 text-primary-600 shrink-0" />
+                            <span className="truncate text-[11px] text-slate-700 font-medium group-hover:text-primary-700">
+                                {item.notes}
+                            </span>
+                        </button>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={() => onOpenNoteModal(item)}
+                            className="inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-primary-600 hover:bg-slate-100 px-2 py-0.5 rounded-md border border-dashed border-slate-300 transition-colors cursor-pointer"
+                            title="Bấm để thêm ghi chú"
+                        >
+                            <Plus className="h-2.5 w-2.5" />
+                            <span>Ghi chú</span>
+                        </button>
+                    )}
+
+                    {/* Dấu hiệu nhận biết Evidence nhắn tin đối soát */}
+                    {(() => {
+                        const count = item.chat_evidences_count ?? (item.chatEvidences?.length || item.chat_evidences?.length || 0);
+                        if (count > 0) {
+                            return (
+                                <button
+                                    type="button"
+                                    onClick={() => onOpenEvidenceModal?.(item)}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100 transition-all shadow-2xs cursor-pointer"
+                                    title={`Đã lưu ${count} bằng chứng nhắn tin đối soát.\nBấm để xem hoặc tải thêm.`}
+                                >
+                                    <Paperclip className="h-2.5 w-2.5 text-teal-600" />
+                                    <span>{count} evidence</span>
+                                </button>
+                            );
+                        }
+                        return (
+                            <button
+                                type="button"
+                                onClick={() => onOpenEvidenceModal?.(item)}
+                                className="inline-flex items-center gap-1 text-[10px] text-slate-400 hover:text-teal-600 hover:bg-slate-100 px-1.5 py-0.5 rounded transition-colors cursor-pointer"
+                                title="Thêm bằng chứng nhắn tin đối soát"
+                            >
+                                <Paperclip className="h-2.5 w-2.5" />
+                                <span>+ Evidence</span>
+                            </button>
+                        );
+                    })()}
+                </div>
             </td>
 
             {/* 8. Kết Nối & Thao Tác (Ở BÊN NGOÀI TRỰC DIỆN 1-CHẠM) */}

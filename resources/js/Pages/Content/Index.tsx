@@ -23,11 +23,13 @@ import {
     AlertOctagon,
     Activity,
     Edit3,
+    Copy,
 } from 'lucide-react';
 import PageHeader from '@/Components/Common/PageHeader';
 import Button from '@/Components/Common/Button';
 import Badge, { BadgeVariant } from '@/Components/Common/Badge';
 import PlatformBadge from '@/Components/Common/PlatformBadge';
+import PlatformLogo, { getPlatformDisplayName } from '@/Components/Common/PlatformLogo';
 import FilterBar from '@/Components/Table/FilterBar';
 import DataTable, { Column, PaginationMeta } from '@/Components/Table/DataTable';
 import FastReviewComplianceModal, { ReviewPost } from './Partials/FastReviewComplianceModal';
@@ -165,6 +167,44 @@ export default function Index({ posts, filters, campaigns, stats }: Props) {
         gmv_amount: 0,
     });
     const [isSavingManual, setIsSavingManual] = useState(false);
+    const [copiedPostId, setCopiedPostId] = useState<number | null>(null);
+
+    const handleCopyLink = (post: ContentPost) => {
+        if (!post.post_url) return;
+        navigator.clipboard.writeText(post.post_url);
+        setCopiedPostId(post.id);
+        setTimeout(() => setCopiedPostId(null), 2000);
+    };
+
+    const getVideoDisplayTitle = (post: { video_title?: string | null; platform?: string; post_url?: string }): string => {
+        if (post.video_title && post.video_title.trim() && !post.video_title.startsWith('http')) {
+            return post.video_title.trim();
+        }
+        const platName = getPlatformDisplayName(post.platform || '');
+        if (post.post_url) {
+            try {
+                const urlObj = new URL(post.post_url);
+                const pathParts = urlObj.pathname.split('/').filter(Boolean);
+                const lastPart = pathParts[pathParts.length - 1];
+                if (lastPart && /^\d+$/.test(lastPart)) {
+                    return `Video ${platName} #${lastPart.slice(-6)}`;
+                }
+            } catch {
+                // fallback
+            }
+        }
+        return `Video bài đăng ${platName}`;
+    };
+
+    const getShortUrlDomain = (rawUrl?: string): string => {
+        if (!rawUrl) return '';
+        try {
+            const parsed = new URL(rawUrl);
+            return parsed.hostname.replace('www.', '');
+        } catch {
+            return 'video';
+        }
+    };
 
     const handleOpenManualMetric = (post: ContentPost) => {
         setManualMetricPost(post);
@@ -340,13 +380,13 @@ export default function Index({ posts, filters, campaigns, stats }: Props) {
     };
 
     const columns: Column[] = [
-        { key: 'video', label: 'Video / Creator', className: 'w-1/4' },
-        { key: 'campaign', label: 'Chiến dịch' },
-        { key: 'status', label: 'Trạng thái duyệt' },
-        { key: 'compliance', label: 'Tuân thủ & Sức khỏe' },
-        { key: 'metrics', label: 'Chỉ số tương tác' },
-        { key: 'gmv', label: 'GMV ghi nhận' },
-        { key: 'actions', label: 'Thao tác', align: 'right' },
+        { key: 'video', label: 'Video & Creator', className: 'min-w-[270px]' },
+        { key: 'campaign', label: 'Chiến dịch', className: 'min-w-[140px]' },
+        { key: 'status', label: 'Nghiệm thu', className: 'min-w-[110px]' },
+        { key: 'compliance', label: 'Tuân thủ', className: 'min-w-[130px]' },
+        { key: 'metrics', label: 'Hiệu quả video', className: 'min-w-[160px]' },
+        { key: 'gmv', label: 'GMV', className: 'min-w-[110px]', align: 'right' },
+        { key: 'actions', label: 'Thao tác', className: 'min-w-[170px]', align: 'right' },
     ];
 
     const paginationMeta: PaginationMeta = {
@@ -584,82 +624,170 @@ export default function Index({ posts, filters, campaigns, stats }: Props) {
                 emptyDescription="Các video nộp qua Portal Creator hoặc do nhân viên booking nhập sẽ hiển thị tại đây để nghiệm thu."
                 renderRow={(post) => {
                     const isSyncingThis = syncingPostId === post.id;
+                    const isCopiedThis = copiedPostId === post.id;
+                    const displayTitle = getVideoDisplayTitle(post);
+                    const shortDomain = getShortUrlDomain(post.post_url);
+
                     return (
-                        <tr key={post.id} className="hover:bg-slate-50/70 transition-colors">
-                            {/* Video & Creator */}
-                            <td className="px-6 py-4">
-                                <div className="space-y-1">
-                                    <div className="flex items-center gap-2">
-                                        <PlatformBadge platform={post.platform} size="xs" />
-                                        <a
-                                            href={post.post_url}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="text-xs font-bold text-slate-900 hover:text-indigo-600 inline-flex items-center gap-1 group line-clamp-1"
-                                        >
-                                            {post.video_title || post.post_url}
-                                            <ExternalLink className="h-3 w-3 text-slate-400 group-hover:text-indigo-600 shrink-0" />
-                                        </a>
+                        <tr key={post.id} className="group hover:bg-slate-50/80 transition-colors">
+                            {/* 1. Video & Creator */}
+                            <td className="px-4 py-3.5">
+                                <div className="flex items-start gap-3 max-w-[320px]">
+                                    {/* Logo mạng xã hội */}
+                                    <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 border border-slate-200/80 shadow-2xs">
+                                        <PlatformLogo platform={post.platform} size="sm" />
                                     </div>
-                                    <div className="text-xs text-slate-500 flex items-center gap-2">
-                                        <span>Creator: <strong>{post.campaign_creator?.creator?.name || 'Không xác định'}</strong></span>
-                                        {post.posted_at && (
-                                            <>
-                                                <span>•</span>
-                                                <span>Lên ngày: {new Date(post.posted_at).toLocaleDateString('vi-VN')}</span>
-                                            </>
-                                        )}
+
+                                    <div className="min-w-0 flex-1 space-y-1">
+                                        {/* Tên tiêu đề video ngắn gọn (không bao giờ in url dài) */}
+                                        <div className="flex items-center gap-1.5">
+                                            <span
+                                                className="text-xs font-bold text-slate-900 truncate block hover:text-indigo-600 transition-colors"
+                                                title={post.video_title || displayTitle}
+                                            >
+                                                {displayTitle}
+                                            </span>
+                                        </div>
+
+                                        {/* KOC & Ngày lên bài */}
+                                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
+                                            {post.campaign_creator?.creator ? (
+                                                <Link
+                                                    href={route('creators.show', post.campaign_creator.creator.id)}
+                                                    className="font-semibold text-slate-700 hover:text-indigo-600 transition-colors truncate max-w-[130px]"
+                                                    title={post.campaign_creator.creator.name}
+                                                >
+                                                    {post.campaign_creator.creator.name}
+                                                </Link>
+                                            ) : (
+                                                <span className="font-medium text-slate-600">Creator</span>
+                                            )}
+                                            {post.posted_at && (
+                                                <>
+                                                    <span className="text-slate-300">•</span>
+                                                    <span className="text-slate-500 whitespace-nowrap">
+                                                        {new Date(post.posted_at).toLocaleDateString('vi-VN')}
+                                                    </span>
+                                                </>
+                                            )}
+                                        </div>
+
+                                        {/* Dải link tinh gọn & Sao chép nhanh (Loại bỏ triệt để link dài thô thiển) */}
+                                        <div className="flex items-center gap-1.5 pt-0.5">
+                                            {post.post_url ? (
+                                                <>
+                                                    <a
+                                                        href={post.post_url}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-700 bg-indigo-50/90 hover:bg-indigo-100 border border-indigo-200/70 px-2 py-0.5 rounded-md transition-colors shadow-2xs"
+                                                        title={`Mở video trên ${getPlatformDisplayName(post.platform)}`}
+                                                    >
+                                                        <span>Xem video</span>
+                                                        <ExternalLink className="h-2.5 w-2.5 text-indigo-500" />
+                                                    </a>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleCopyLink(post)}
+                                                        className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md border transition-all cursor-pointer ${
+                                                            isCopiedThis
+                                                                ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-semibold'
+                                                                : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50 hover:text-slate-700'
+                                                        }`}
+                                                        title={isCopiedThis ? 'Đã sao chép link!' : `Sao chép link: ${post.post_url}`}
+                                                    >
+                                                        {isCopiedThis ? (
+                                                            <>
+                                                                <Check className="h-2.5 w-2.5 text-emerald-600" />
+                                                                <span>Đã chép!</span>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Copy className="h-2.5 w-2.5 text-slate-400" />
+                                                                <span className="text-slate-400 font-mono text-[9px] truncate max-w-[85px]">
+                                                                    {shortDomain}
+                                                                </span>
+                                                            </>
+                                                        )}
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <span className="text-[10px] text-slate-400 italic">Chưa có link video</span>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </td>
 
-                            {/* Chiến dịch */}
-                            <td className="px-6 py-4 text-xs font-medium text-slate-700">
-                                {post.campaign_creator?.campaign?.name || 'Chiến dịch chung'}
+                            {/* 2. Chiến dịch */}
+                            <td className="px-4 py-3.5">
+                                {post.campaign_creator?.campaign ? (
+                                    <Link
+                                        href={route('campaigns.show', post.campaign_creator.campaign.id)}
+                                        className="text-xs font-semibold text-slate-800 hover:text-indigo-600 transition-colors line-clamp-2"
+                                        title={post.campaign_creator.campaign.name}
+                                    >
+                                        {post.campaign_creator.campaign.name}
+                                    </Link>
+                                ) : (
+                                    <span className="text-xs text-slate-500">Chiến dịch chung</span>
+                                )}
                             </td>
 
-                            {/* Trạng thái duyệt */}
-                            <td className="px-6 py-4">
-                                <Badge variant={getStatusVariant(post.status)}>
+                            {/* 3. Trạng thái nghiệm thu */}
+                            <td className="px-4 py-3.5 whitespace-nowrap">
+                                <Badge variant={getStatusVariant(post.status)} size="sm">
                                     {getStatusLabel(post.status)}
                                 </Badge>
                             </td>
 
-                            {/* Tuân thủ & Sức khỏe */}
-                            <td className="px-6 py-4">
+                            {/* 4. Tuân thủ & Sức khỏe */}
+                            <td className="px-4 py-3.5">
                                 <div className="space-y-1">
-                                    <div className="flex items-center gap-1.5">
-                                        {getComplianceBadge(post)}
-                                    </div>
-                                    <div className="flex items-center gap-1 text-[11px] text-slate-500">
-                                        <span className={`h-1.5 w-1.5 rounded-full ${post.health_status !== 'unavailable' ? 'bg-emerald-500' : 'bg-rose-500 animate-ping'}`} />
-                                        <span>{post.health_status !== 'unavailable' ? 'Khả dụng' : 'Bị xóa / Ẩn'}</span>
+                                    <div>{getComplianceBadge(post)}</div>
+                                    <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
+                                        <span
+                                            className={`h-1.5 w-1.5 rounded-full ${
+                                                post.health_status !== 'unavailable'
+                                                    ? 'bg-emerald-500'
+                                                    : 'bg-rose-500 animate-ping'
+                                            }`}
+                                        />
+                                        <span className={post.health_status === 'unavailable' ? 'font-bold text-rose-600' : ''}>
+                                            {post.health_status !== 'unavailable' ? 'Khả dụng' : 'Bị xóa / Ẩn'}
+                                        </span>
                                     </div>
                                 </div>
                             </td>
 
-                            {/* Chỉ số */}
-                            <td className="px-6 py-4">
-                                <div className="space-y-1">
-                                    <div className="flex items-center gap-3 text-xs">
-                                        <span className="font-bold text-slate-900 inline-flex items-center gap-1">
+                            {/* 5. Hiệu quả video (Views, Likes, Comments, Benchmark) */}
+                            <td className="px-4 py-3.5">
+                                <div className="space-y-1 min-w-[150px]">
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="font-extrabold text-sm text-slate-900 inline-flex items-center gap-1 tracking-tight">
                                             <Eye className="h-3.5 w-3.5 text-blue-500" />
                                             {post.views_count.toLocaleString('vi-VN')}
                                         </span>
-                                        <span className="text-slate-600 inline-flex items-center gap-1">
-                                            <ThumbsUp className="h-3.5 w-3.5 text-rose-500" />
+                                        <span className="text-[10px] font-medium text-slate-400">views</span>
+                                    </div>
+
+                                    <div className="flex items-center gap-2.5 text-[11px] text-slate-500">
+                                        <span className="inline-flex items-center gap-1">
+                                            <ThumbsUp className="h-3 w-3 text-rose-500" />
                                             {post.likes_count.toLocaleString('vi-VN')}
                                         </span>
-                                        <span className="text-slate-600 inline-flex items-center gap-1">
-                                            <MessageCircle className="h-3.5 w-3.5 text-amber-500" />
+                                        <span className="inline-flex items-center gap-1">
+                                            <MessageCircle className="h-3 w-3 text-amber-500" />
                                             {post.comments_count.toLocaleString('vi-VN')}
                                         </span>
                                     </div>
+
                                     {post.benchmark && (
                                         <div className="pt-0.5">
                                             <span
                                                 title={`Lượt xem hiện tại: ${post.views_count.toLocaleString('vi-VN')} / Trung bình kênh: ${post.benchmark.average_channel_views.toLocaleString('vi-VN')}`}
-                                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                                                className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-semibold border ${
                                                     post.benchmark.status === 'viral'
                                                         ? 'bg-purple-50 text-purple-700 border-purple-200'
                                                         : post.benchmark.status === 'exceeded'
@@ -671,91 +799,100 @@ export default function Index({ posts, filters, campaigns, stats }: Props) {
                                                         : 'bg-rose-50 text-rose-700 border-rose-200'
                                                 }`}
                                             >
-                                                <TrendingUp className="h-3 w-3" />
+                                                <TrendingUp className="h-2.5 w-2.5" />
                                                 {post.benchmark.label}
                                             </span>
                                         </div>
                                     )}
+
                                     {post.last_synced_at && (
-                                        <div className="text-[11px] text-slate-400">
-                                            Đồng bộ: {new Date(post.last_synced_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {new Date(post.last_synced_at).toLocaleDateString('vi-VN')}
+                                        <div className="text-[10px] text-slate-400 flex items-center gap-1 pt-0.5">
+                                            <Clock className="h-2.5 w-2.5 text-slate-400" />
+                                            <span>
+                                                {new Date(post.last_synced_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}{' '}
+                                                {new Date(post.last_synced_at).toLocaleDateString('vi-VN')}
+                                            </span>
                                         </div>
                                     )}
                                 </div>
                             </td>
 
-                            {/* GMV */}
-                            <td className="px-6 py-4 text-xs font-bold text-emerald-700">
+                            {/* 6. GMV */}
+                            <td className="px-4 py-3.5 text-right font-bold text-sm text-emerald-700 tabular-nums whitespace-nowrap">
                                 {formatCurrency(post.gmv_amount)}
                             </td>
 
-                            {/* Thao tác */}
-                            <td className="px-6 py-4 text-right">
-                                <div className="flex items-center justify-end gap-1.5">
-                                    <Button
-                                        variant="primary"
-                                        size="sm"
+                            {/* 7. Thao tác Tinh Gọn (Action Toolbar) */}
+                            <td className="px-4 py-3.5 text-right">
+                                <div className="flex flex-col items-end gap-1.5">
+                                    {/* Hàng 1: Nút Nghiệm Thu Chính */}
+                                    <button
+                                        type="button"
                                         onClick={() => setReviewModalPost(post as ReviewPost)}
-                                        iconLeft={<ShieldCheck className="h-3.5 w-3.5" />}
-                                        title="Kiểm tra tuân thủ & nghiệm thu nhanh"
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs transition-all active:scale-95 cursor-pointer"
+                                        title="Kiểm tra tuân thủ & nghiệm thu video"
                                     >
-                                        Nghiệm thu
-                                    </Button>
+                                        <ShieldCheck className="h-3.5 w-3.5" />
+                                        <span>Nghiệm thu</span>
+                                    </button>
 
-                                    {post.status !== 'approved' && (
-                                        <Button
-                                            variant="secondary"
-                                            size="sm"
-                                            onClick={() => handleUpdateStatus(post.id, 'approved')}
-                                            iconLeft={<Check className="h-3.5 w-3.5 text-emerald-600" />}
-                                            title="Duyệt nhanh bài đăng này"
+                                    {/* Hàng 2: Nhóm nút icon tiện ích 1-chạm */}
+                                    <div className="flex items-center gap-1">
+                                        {/* Nút Duyệt nhanh */}
+                                        {post.status !== 'approved' && (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleUpdateStatus(post.id, 'approved')}
+                                                className="p-1 rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 shadow-2xs transition-colors cursor-pointer"
+                                                title="Duyệt nhanh bài đăng này"
+                                            >
+                                                <Check className="h-3.5 w-3.5 text-emerald-600" />
+                                            </button>
+                                        )}
+
+                                        {/* Nút Yêu cầu sửa */}
+                                        {post.status === 'pending_approval' && (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleUpdateStatus(post.id, 'changes_requested')}
+                                                className="p-1 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 shadow-2xs transition-colors cursor-pointer"
+                                                title="Yêu cầu KOC chỉnh sửa video"
+                                            >
+                                                <X className="h-3.5 w-3.5 text-rose-600" />
+                                            </button>
+                                        )}
+
+                                        {/* Nút Đồng bộ API */}
+                                        <button
+                                            type="button"
+                                            disabled={isSyncingThis}
+                                            onClick={() => handleSyncSingle(post.id)}
+                                            className="p-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-indigo-600 shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+                                            title="Đồng bộ chỉ số tự động từ API"
                                         >
-                                            Duyệt
-                                        </Button>
-                                    )}
+                                            <RefreshCw className={`h-3.5 w-3.5 ${isSyncingThis ? 'animate-spin text-indigo-600' : ''}`} />
+                                        </button>
 
-                                    {post.status === 'pending_approval' && (
-                                        <Button
-                                            variant="danger"
-                                            size="sm"
-                                            onClick={() => handleUpdateStatus(post.id, 'changes_requested')}
-                                            iconLeft={<X className="h-3.5 w-3.5" />}
-                                            title="Yêu cầu sửa"
+                                        {/* Nút Đối soát thủ công */}
+                                        <button
+                                            type="button"
+                                            onClick={() => handleOpenManualMetric(post)}
+                                            className="p-1 rounded-lg border border-amber-200 bg-amber-50/80 hover:bg-amber-100 text-amber-700 shadow-2xs transition-colors cursor-pointer"
+                                            title="Nhập chỉ số đối soát thực tế từ TikTok Studio / KOC"
                                         >
-                                            Sửa
-                                        </Button>
-                                    )}
+                                            <Edit3 className="h-3.5 w-3.5 text-amber-600" />
+                                        </button>
 
-                                    <Button
-                                        variant="secondary"
-                                        size="sm"
-                                        loading={isSyncingThis}
-                                        onClick={() => handleSyncSingle(post.id)}
-                                        iconLeft={<RefreshCw className="h-3.5 w-3.5 text-indigo-600" />}
-                                        title="Đồng bộ chỉ số tự động từ API"
-                                    >
-                                        Đồng bộ
-                                    </Button>
-
-                                    <Button
-                                        variant="secondary"
-                                        size="sm"
-                                        onClick={() => handleOpenManualMetric(post)}
-                                        iconLeft={<Edit3 className="h-3.5 w-3.5 text-amber-600" />}
-                                        title="Nhập chỉ số đối soát thực tế từ TikTok Studio / KOC"
-                                    >
-                                        Đối soát
-                                    </Button>
-
-                                    <Button
-                                        variant="secondary"
-                                        size="sm"
-                                        onClick={() => handleOpenChart(post)}
-                                        iconLeft={<BarChart2 className="h-3.5 w-3.5 text-purple-600" />}
-                                        title="Xem biểu đồ tăng trưởng"
-                                    >
-                                        Biểu đồ
-                                    </Button>
+                                        {/* Nút Biểu đồ tăng trưởng */}
+                                        <button
+                                            type="button"
+                                            onClick={() => handleOpenChart(post)}
+                                            className="p-1 rounded-lg border border-purple-200 bg-purple-50/80 hover:bg-purple-100 text-purple-700 shadow-2xs transition-colors cursor-pointer"
+                                            title="Xem biểu đồ lịch sử tăng trưởng"
+                                        >
+                                            <BarChart2 className="h-3.5 w-3.5 text-purple-600" />
+                                        </button>
+                                    </div>
                                 </div>
                             </td>
                         </tr>
@@ -774,7 +911,7 @@ export default function Index({ posts, filters, campaigns, stats }: Props) {
                                     Lịch Sử Tăng Trưởng Chỉ Số Theo Ngày
                                 </h3>
                                 <p className="text-xs text-slate-500 mt-0.5">
-                                    Video: <strong>{chartModalPost.video_title || chartModalPost.post_url}</strong> (Creator: {chartModalPost.campaign_creator?.creator?.name})
+                                    Video: <strong>{getVideoDisplayTitle(chartModalPost)}</strong> (Creator: {chartModalPost.campaign_creator?.creator?.name})
                                 </p>
                             </div>
                             <button
@@ -880,7 +1017,7 @@ export default function Index({ posts, filters, campaigns, stats }: Props) {
                                     Cập Nhật Chỉ Số Đối Soát Thực Tế
                                 </h3>
                                 <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">
-                                    Video: {manualMetricPost.video_title || manualMetricPost.post_url}
+                                    Video: {getVideoDisplayTitle(manualMetricPost)}
                                 </p>
                             </div>
                             <button

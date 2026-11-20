@@ -4,13 +4,13 @@
 > **Hệ Thống Thiết Kế Dùng Chung (Single Source of Truth)**:
 > Mọi quy chuẩn về Bố cục dùng chung (`AppLayout`), Bảng màu Enterprise SaaS, Typography tiếng Việt, Design Tokens và Thư viện Thành phần dùng chung (`Button`, `Badge`, `DataTable`, `FormField`, `Modal`...) được đặc tả chi tiết tại [references/design-system.md](./design-system.md). Tất cả các module phải tuân thủ tuyệt đối tài liệu này, không tự chế layout hoặc màu sắc riêng.
 
-Tài liệu này hướng dẫn chi tiết cách ứng dụng Design System vào từng màn hình nghiệp vụ cụ thể của 9 module trong dự án Booking KOL/KOC.
+Tài liệu này hướng dẫn áp dụng Design System cho màn hình nghiệp vụ hiện có. Đây là tiêu chuẩn thiết kế, không khẳng định mọi trạng thái/component đã được triển khai.
 
 ---
 
 ## 1. Cấu Trúc Khung Màn Hình (Screen Layout Integration)
 
-Mọi trang của các module (`Creator`, `Campaign`, `Pipeline`, `Outreach`, `Shipment`, `Content`, `Report`, `Settings`) đều phải có cấu trúc cây component đồng nhất:
+Mọi trang quản trị của `Creator`, `Campaign` (gồm Pipeline và nhật ký gửi mẫu), `Outreach`, `Content`, `Report`, `Settings` cần theo cấu trúc chung; kiểm tra layout đang dùng trước khi sửa:
 
 ```tsx
 import AppLayout from '@/Layouts/AppLayout';
@@ -50,7 +50,7 @@ export default function ModuleScreenIndex({ ...props }) {
 }
 ```
 
-*Lưu ý riêng cho Cổng Creator Portal (`/p/{token}`)*: Sử dụng `GuestLayout` dạng thẻ đơn giữa màn hình (`max-w-xl mx-auto py-10 px-4`), nhưng bắt buộc áp dụng cùng các token `primary-600`, `FormField`, `Button` và `Badge` để đảm bảo nhận diện thương hiệu.
+*Lưu ý riêng cho Creator Portal (`/portal/{token}`)*: dùng layout tối giản mobile-first và cùng Design Tokens. Route hiện tại dùng `/portal/{token}`.
 
 ---
 
@@ -72,9 +72,9 @@ export default function ModuleScreenIndex({ ...props }) {
 ### 2.2. Module Chiến Dịch (`Modules/Campaign`)
 - **Màn hình Danh sách Chiến dịch**: Dạng lưới thẻ (Card Grid) hoặc Bảng dữ liệu.
   - Mỗi thẻ hiển thị: Tên chiến dịch, Nhãn hàng / Sản phẩm, Ngân sách (VND), Thanh tiến độ Creator (ví dụ: `18/25 Creator đã chốt`), Trạng thái (Đang chạy, Đã kết thúc, Bản nháp).
-- **Thanh chuyển Tab chiến dịch**: Dùng tab ngang chuẩn (`Border-b`) gồm: "Tổng quan", "Pipeline Kéo Thả", "Danh sách Creator", "Giao hàng", "Bài đăng / Video", "Báo cáo ROI".
+- **Thanh chuyển Tab chiến dịch**: giữ các tab đang có trong Campaign UI. Phần gửi mẫu là nhật ký theo từng đợt trong Campaign, không phải module vận chuyển độc lập.
 
-### 2.3. Module Pipeline Kéo Thả (`Modules/Pipeline`)
+### 2.3. Pipeline Trong Campaign (`Modules/Campaign`)
 - Sử dụng `@dnd-kit/core` và `@dnd-kit/sortable`.
 - Chiều cao khung Kanban chiếm trọn màn hình còn lại (`h-[calc(100vh-14rem)]`), cuộn ngang độc lập.
 - Thẻ Creator trên Kanban:
@@ -94,20 +94,18 @@ export default function ModuleScreenIndex({ ...props }) {
   - Nút bấm `Mở Zalo & Copy`: Tự động sao chép văn bản đã cá nhân hóa vào clipboard và kích hoạt deep-link `zalo.me/<sđt>`.
   - Đánh dấu trạng thái "Đã gửi tin" ngay sau khi click mà không cần tải lại trang.
 
-### 2.5. Module Vận Chuyển & Gửi Mẫu (`Modules/Shipment`)
-- Màn hình Gom đơn gửi hàng:
-  - Bảng gom nhóm các Creator đã xác nhận địa chỉ nhận mẫu nhưng chưa xuất kho.
-  - Nút thao tác hàng loạt (Bulk Actions): "Tạo mã vận đơn GHN/GHTK hàng loạt", "In phiếu đóng gói".
-  - Hiển thị mã vận đơn kèm link tra cứu trạng thái thời gian thực.
+### 2.5. Nhật Ký Các Đợt Gửi Mẫu Trong Campaign
+- Ghi từng đợt gửi, snapshot địa chỉ/số điện thoại, sản phẩm/số lượng, người thao tác và ghi chú; `carrier_name`/`tracking_code` là trường tùy chọn trong log hiện tại.
+- UI không tạo vận đơn hoặc gọi API hãng vận chuyển; chỉ lưu thông tin người dùng cung cấp.
 
 ### 2.6. Module Nội Dung & Video (`Modules/Content`)
-- Bảng giám sát video đã xuất bản:
+- Bảng quản lý ContentPost và nghiệm thu video:
   - Cột Link Video: Bấm mở tab mới xem trực tiếp.
   - Các cột số liệu: Lượt xem (Views), Tim (Likes), Bình luận (Comments), Doanh thu gắn kèm (GMV).
-  - Nút 1-chạm: "Duyệt nghiệm thu video" hoặc "Yêu cầu chỉnh sửa".
+  - Trạng thái duyệt gồm `pending_approval`, `approved`, `changes_requested`; phân biệt với trạng thái Pipeline.
 
 ### 2.7. Module Báo Cáo & Thống Kê (`Modules/Report`)
-- Sử dụng thư viện `Recharts` tuân thủ bảng màu token quy định tại [design-system.md](./design-system.md#63-báo-cáo--biểu-đồ-dashboard-recharts):
+- Dùng biểu đồ và export đang có. Chỉ dùng `Recharts` ở trang/component đã xác nhận có sử dụng; không thay công thức báo cáo khi chỉ chỉnh UI:
   - Biểu đồ Phễu (Funnel Chart): Đo lường tỷ lệ rớt từ lúc Tiếp cận -> Chốt mẫu -> Nhận hàng -> Lên video.
   - Biểu đồ Đường/Vùng (Area Chart): Tăng trưởng lượt xem video và doanh thu theo ngày.
   - Bảng xếp hạng TOP 10 Creator mang lại GMV cao nhất kèm tỷ lệ hoàn vốn (ROI).

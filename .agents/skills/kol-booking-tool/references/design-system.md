@@ -1,6 +1,6 @@
 # Quy Chuẩn Hệ Thống Thiết Kế Giao Diện Dùng Chung (Design System)
 
-> **Mục tiêu cốt lõi**: Đảm bảo toàn bộ 9 module của hệ thống Booking KOL/KOC (`Creator`, `Campaign`, `Pipeline`, `Outreach`, `Shipment`, `Content`, `Report`, `Portal`, `Settings`) sử dụng cùng một kiến trúc giao diện, cùng một bảng màu Enterprise SaaS hiện đại, cùng hệ thống Typography và chia sẻ 100% các thành phần dùng chung (Shared Components). Tuyệt đối không để xảy ra tình trạng phân mảnh layout hoặc mỗi module tự chế phong cách riêng.
+> **Mục tiêu cốt lõi**: Giữ giao diện thống nhất cho 7 Laravel module hiện có (`Creator`, `Campaign`, `Outreach`, `Content`, `Report`, `Portal`, `Settings`). Pipeline và nhật ký gửi mẫu thuộc Campaign; không có module Shipment độc lập. Kiểm tra implementation trong `resources/js` trước khi thêm hoặc áp đặt component mới.
 
 ---
 
@@ -8,7 +8,7 @@
 
 Mọi trang chức năng trong hệ thống quản trị nội bộ **BẮT BUỘC** phải kế thừa từ một layout duy nhất: `AppLayout` (hoặc `AuthenticatedLayout` đã được chuẩn hóa).
 
-### 1.1. Bố Cục Tiêu Chuẩn Cho 8 Module Quản Trị
+### 1.1. Bố Cục Tiêu Chuẩn Cho Các Trang Quản Trị
 ```
 +-------------------------------------------------------------------------------------+
 | [Sidebar - Cố định bên trái] | [Topbar / Header - Sticky trên cùng]                 |
@@ -32,7 +32,7 @@ Mọi trang chức năng trong hệ thống quản trị nội bộ **BẮT BU�
 - **PageHeader**: Khối tiêu đề trang tiêu chuẩn, tách biệt rõ ràng giữa Tiêu đề (H1) + Mô tả ngữ cảnh và các Nút hành động chính (Primary Call-to-Action buttons) ở góc phải.
 - **Main Content**: Nền êm dịu `bg-slate-50`, đệm cách lề chuẩn (`px-4 sm:px-6 lg:px-8 py-6`), thanh cuộn mượt mà.
 
-### 1.2. Ngoại Lệ Duy Nhất: Cổng KOL / KOC Portal (`/p/{token}`)
+### 1.2. Ngoại Lệ Duy Nhất: Creator Portal (`/portal/{token}`)
 - Màn hình dành cho Creator điền địa chỉ hoặc xác nhận nhận hàng/video qua thiết bị di động.
 - **Bố cục tối giản (Minimalist Layout)**: Không có Sidebar và Header quản trị phức tạp.
 - **Bắt buộc tuân thủ Design System**: Dù bố cục dạng Container đơn cột (Mobile-first max-w-lg), Portal **bắt buộc** phải sử dụng cùng Design Tokens: Font chữ tiếng Việt, bảng màu Brand Primary, FormField, Button, Alert và Card shadow như phần còn lại của ứng dụng.

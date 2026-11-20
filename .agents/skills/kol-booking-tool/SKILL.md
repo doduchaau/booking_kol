@@ -7,14 +7,17 @@ description: >-
 # Hướng Dẫn Phát Triển Hệ Thống Web Tool Booking KOL / KOC
 
 > [!CAUTION]
-> **QUY TẮC BẤT BIẾN - LOẠI BỎ HOÀN TOÀN VẬN ĐƠN (SHIPMENT / HÃNG VẬN CHUYỂN):**
-> 1. Nhân viên Booking **TUYỆT ĐỐI KHÔNG LÀM VẬN ĐƠN / VẬN CHUYỂN**. Việc giao nhận thực tế do bộ phận kho & đối tác vận chuyển bên ngoài tự xử lý.
-> 2. **CẤM** tạo, đề xuất hay code module `Shipment`, bảng `shipments`, API GHN/GHTK/ViettelPost, mã tracking vận đơn, hay tính phí ship.
-> 3. Hệ thống chỉ quản lý quy trình gửi mẫu tinh gọn qua 3 trạng thái trong Pipeline:
+> **QUY TẮC PHẠM VI GỬI MẪU:**
+> 1. Không có module vận chuyển độc lập và không có tích hợp API hãng vận chuyển trong phạm vi hiện tại.
+> 2. Campaign có chức năng ghi nhận từng đợt gửi mẫu trong `campaign_creator_sample_logs`, gồm sản phẩm/số lượng, thời điểm, địa chỉ snapshot, ghi chú và các trường tùy chọn `carrier_name`/`tracking_code`. Đây là nhật ký nội bộ; không tự tạo vận đơn, tra cứu tracking hay tính phí vận chuyển.
+> 3. Quy trình Pipeline liên quan đến gửi mẫu hiện gồm:
 >    - `address_confirmed`: KOC đã điền địa chỉ nhận hàng (qua Portal hoặc nhân viên lưu).
 >    - `sample_sent`: Nhân viên xác nhận đã chuyển mẫu (`sample_sent_at`).
 >    - `sample_received`: Đã nhận mẫu (`sample_received_at`), bắt đầu đếm ngược hạn nộp video.
-> 4. **Trợ lý (Agent) tuyệt đối không được hỏi lại người dùng về vấn đề vận đơn, module Shipment hay tích hợp giao hàng.**
+> 4. Giữ nguyên chức năng nhật ký gửi mẫu hiện hữu. Mọi thay đổi về phạm vi giao nhận hoặc tích hợp ngoài hệ thống cần được người dùng yêu cầu rõ ràng.
+
+> [!IMPORTANT]
+> **Nguồn sự thật khi phát triển:** migrations, routes, enums, services, controllers và tests hiện có là mô tả chuẩn cho hành vi đang chạy. Các tài liệu trong `references/` có thể chứa mục tiêu/lộ trình cũ; không được dùng chúng để tự đổi nghiệp vụ. Khi phát hiện lệch, cập nhật tài liệu hoặc báo rõ điểm cần xác nhận trước khi đổi hành vi.
 
 Skill này đóng vai trò là "kim chỉ nam" hướng dẫn phát triển (vibe coding) từng bước một ứng dụng Web chuyên dụng thay thế Excel và chat thủ công cho đội ngũ booking KOL/KOC nội bộ của doanh nghiệp.
 
@@ -25,7 +28,7 @@ Skill này đóng vai trò là "kim chỉ nam" hướng dẫn phát triển (vib
 - **Backend**: Laravel 11 kết hợp kiến trúc mô-đun `nwidart/laravel-modules`.
 - **Frontend**: React (TypeScript/JSX) + Inertia.js (SPA không cần viết REST API rời rạc).
 - **Styling & Design System**: Tailwind CSS với tokens mở rộng, hỗ trợ tiếng Việt mượt mà.
-- **Database & Cache**: MySQL 8.0, Redis (quản lý Queue và Job xử lý nền).
+- **Database & Cache**: ứng dụng hỗ trợ cấu hình MySQL/SQLite; queue và cache lấy theo cấu hình môi trường. Redis là lựa chọn kiến trúc phù hợp khi triển khai tải cao, không giả định đang bật nếu chưa kiểm tra `.env`/config.
 - **Thư viện chuyên dụng**:
   - Kéo thả Kanban: `@dnd-kit/core`, `@dnd-kit/sortable`.
   - Biểu đồ Dashboard: `Recharts`.
@@ -41,11 +44,11 @@ Skill này đóng vai trò là "kim chỉ nam" hướng dẫn phát triển (vib
 Khi thực hiện từng tác vụ cụ thể, chỉ đọc tài liệu tương ứng, **không đọc hết toàn bộ cùng lúc**:
 
 - [Thuật ngữ nghiệp vụ (domain.md)](./references/domain.md): Phân hạng KOL/KOC (nano/micro/macro), rate card, air/lên video, affiliate, GMV, bom hàng, seeding.
-- [Thiết kế Database chi tiết (database.md)](./references/database.md): Lược đồ 15 bảng, chỉ mục (indexing), quy tắc chuẩn hóa SĐT, cơ chế phát hiện trùng và gộp hồ sơ.
-- [Đặc tả 8 Module độc lập (modules.md)](./references/modules.md): Màn hình, quy tắc nghiệp vụ, quyền hạn, route, job, event và tiêu chí nghiệm thu cho từng module: `Creator`, `Campaign`, `Pipeline`, `Outreach`, `Content`, `Report`, `Portal`, `Settings` (Không có module Shipment).
+- [Database (database.md)](./references/database.md): quy tắc dữ liệu và lược đồ tham chiếu; schema đang chạy được xác định bởi migrations.
+- [Module (modules.md)](./references/modules.md): hiện có 7 Laravel modules `Creator`, `Campaign`, `Content`, `Outreach`, `Portal`, `Report`, `Settings`; Pipeline là chức năng thuộc Campaign, không phải module độc lập.
 - [Quy chuẩn hệ thống thiết kế dùng chung (design-system.md)](./references/design-system.md): Bố cục khung `AppLayout`, hệ màu Enterprise SaaS B2B, typography tiếng Việt, Tailwind tokens và bộ Shared Components dùng chung.
 - [Hướng dẫn thực thi giao diện nghiệp vụ (ui-guidelines.md)](./references/ui-guidelines.md): Ứng dụng Design System vào từng màn hình module: Kanban dnd-kit, bảng dữ liệu, form Inertia, biểu đồ Recharts, xử lý 5 trạng thái và ngôn ngữ tiếng Việt.
-- [Quy tắc tích hợp & An toàn (integrations.md)](./references/integrations.md): Nguyên tắc an toàn kết nối, 2 chế độ Zalo (OA chính thức vs bán tự động deep-link `zalo.me`), tuân thủ Nghị định 13/2023 bảo vệ dữ liệu cá nhân.
+- [Quy tắc tích hợp & An toàn (integrations.md)](./references/integrations.md): Outreach deep-link/log hiện có, OA/ZNS là hướng tương lai chưa xác nhận trong code, an toàn kết nối và bảo vệ dữ liệu cá nhân.
 - [Đồng bộ tự động & Thu thập dữ liệu (kol-automated-sync.skill.md)](../kol-automated-sync/SKILL.md): Pipeline tự động hóa 100% thu thập, đồng bộ chỉ số đa nền tảng qua Data Provider, Rate Limiting, Auto-Refresh Scheduler và KolDataAdapter.
 - [Lộ trình 5 giai đoạn (phases.md)](./references/phases.md): GĐ1 (Nền tảng & Kanban) -> GĐ2 (Portal & Gửi Mẫu Tinh Gọn) -> GĐ3 (Zalo Outreach) -> GĐ4 (Collector & Metrics) -> GĐ5 (Báo cáo & ROI).
 - [File dữ liệu mẫu (assets/import-creators-template.csv)](./assets/import-creators-template.csv): File CSV chuẩn mẫu để import Creator.
@@ -72,11 +75,11 @@ flowchart LR
 3. **Phát triển theo lát cắt dọc nhỏ (Vertical Slice)**:
    - Một lượt làm việc chỉ giải quyết một lát cắt hoàn chỉnh chạy được ngay: `Migration -> Model & Quan hệ -> Service/Action -> Form Request & Policy -> Controller/Inertia -> Component React`.
    - **Tuyệt đối không** viết dở dang hoặc để mã giả/placeholder (như `// ...phần còn lại tương tự`). Code phải đầy đủ 100%.
-4. **Kiểm tra tác động chéo & Viết Test**:
+4. **Kiểm tra tác động chéo & Test**:
    - Khi chỉnh sửa layout hoặc shared component, phải kiểm tra xem có ảnh hưởng tiêu cực đến các module đã xây dựng trước đó hay không.
-   - Luôn viết test (Pest/PHPUnit) cho logic lõi: gộp trùng hồ sơ, chuyển trạng thái Pipeline ràng buộc, tính deadline lên video, tính số liệu báo cáo ROI/Funnel và phân quyền.
+   - Khi thay đổi logic, bổ sung/cập nhật test phù hợp với quy ước repository; chạy kiểm tra liên quan khi người dùng yêu cầu xác minh hoặc khi quy trình bàn giao yêu cầu. Ưu tiên các test lõi: gộp trùng, chuyển trạng thái, deadline, báo cáo và phân quyền.
 5. **Kiểm tra bản build & Bàn giao**:
-   - Chạy lệnh `npm run build` để kiểm tra TypeScript và CSS không bị lỗi trước khi bàn giao.
+   - Chọn lệnh kiểm tra đúng phần bị ảnh hưởng; không mặc định build/test toàn bộ nếu không cần hoặc chưa được yêu cầu.
    - Kiểm tra hiển thị responsive (ưu tiên laptop 13"-16", mobile hỗ trợ xem dữ liệu và thao tác nhanh).
    - Nội dung bàn giao: Danh sách file tạo/sửa (kèm link), lệnh terminal cần chạy, hướng dẫn kiểm tra thủ công, rủi ro/lưu ý và 1 bước tiếp theo đề xuất.
 6. **Xử lý yêu cầu mơ hồ**:
@@ -90,9 +93,9 @@ flowchart LR
 Để tránh hiện tượng "mỗi trang một phong cách", mọi giao diện phải tuân thủ nghiêm ngặt 5 nguyên tắc sau:
 
 1. **Kiến trúc Layout duy nhất (Unified Layout)**:
-   - Tất cả các module quản trị (`Creator`, `Campaign`, `Pipeline`, `Outreach`, `Content`, `Report`, `Settings`) đều phải sử dụng chung layout `AppLayout` gồm: `Sidebar` (menu phân nhóm cố định bên trái), `Topbar` (header sticky trên cùng có breadcrumb), `PageHeader` (tiêu đề trang H1 + mô tả + nút CTA) và Vùng nội dung chính.
+   - Các trang quản trị nên tái sử dụng `AppLayout` và component hiện có; Pipeline và gửi mẫu là chức năng trong Campaign. Kiểm tra implementation cụ thể trước khi kết luận trang nào đang dùng layout nào.
    - Tuyệt đối không tự tạo Blade layout riêng (`master.blade.php`) hay layout React riêng cho từng module.
-   - Cổng KOL Portal (`/p/{token}`) dùng layout tối giản dạng đơn cột cho di động, nhưng bắt buộc dùng chung Design Tokens và Shared Components.
+   - Creator Portal (`/portal/{token}`) dùng layout tối giản dạng đơn cột cho di động, nhưng bắt buộc dùng chung Design Tokens và Shared Components.
 2. **Hệ màu Enterprise SaaS B2B**:
    - Màu chủ đạo (Primary): `Indigo-600` (`#4f46e5`) - Hover `Indigo-700` (`#4338ca`) - Muted `Indigo-50` (`#eef2ff`).
    - Bề mặt: App Background `bg-slate-50`, Card/Table/Modal Surface `bg-white`, Border `border-slate-200`.
@@ -124,7 +127,7 @@ Khi người dùng yêu cầu:
 
 ### 6.1. Backend Laravel
 - **Enums**: Dùng PHP 8.1+ Enum cho các trạng thái (ví dụ: `PipelineStatusEnum`, `CreatorTierEnum`, `PlatformEnum`).
-- **Form Request**: Không validate trong Controller, tạo Form Request riêng với thông báo lỗi tiếng Việt thân thiện.
+- **Validation**: Dùng Form Request cho luồng mới có validation phức tạp; repository hiện cũng có validation trực tiếp trong Controller. Khi sửa luồng cũ, giữ nguyên hành vi và chỉ tách validation khi có lợi ích rõ ràng, kèm kiểm tra tương ứng.
 - **Service/Action Pattern**: Mọi nghiệp vụ phức tạp đặt trong `Modules/<ModuleName>/Services/` hoặc `Actions/`.
 - **Chuẩn hóa dữ liệu**: Múi giờ hệ thống `Asia/Ho_Chi_Minh`. Tiền tệ hiển thị dạng `1.500.000 đ`. SĐT bắt buộc chuẩn hóa 10 số.
 

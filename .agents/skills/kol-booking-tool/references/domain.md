@@ -33,7 +33,7 @@ Hệ thống phân tầng dựa trên số lượng người theo dõi trên kê
 - **Campaign (Chiến dịch)**: Một đợt truyền thông hoặc thúc đẩy doanh số của nhãn hàng, có ngân sách, danh sách sản phẩm, mục tiêu số lượng video và thời hạn hoàn thành.
 - **Pipeline (Quy trình phễu)**: Tiến trình hợp tác với Creator qua từng giai đoạn cụ thể:
   `Mới tìm kiếm -> Đã liên hệ -> Chốt hợp tác -> Đã chốt địa chỉ -> Đã gửi mẫu -> Đã nhận mẫu -> Đã lên video -> Hoàn tất`.
-- **Sample Shipment (Gửi mẫu)**: Quá trình xuất kho và chuyển phát sản phẩm trải nghiệm cho Creator làm video review.
+- **Gửi mẫu**: Quy trình Campaign ghi nhận xác nhận đã gửi/đã nhận và nhật ký từng đợt gửi (`campaign_creator_sample_logs`). Nhật ký hiện có thể lưu carrier/tracking code do người dùng nhập; việc giao nhận và tra cứu thực tế không tự động hóa qua API trong hệ thống.
 - **Air / Lên Video (Go-Live)**: Thời điểm Creator đăng tải video chính thức lên nền tảng mạng xã hội theo thỏa thuận.
 - **Pre-approval (Duyệt trước)**: Quy trình Creator gửi bản video nháp (draft video) cho Brand duyệt nội dung, thông điệp sản phẩm và hashtag trước khi bấm đăng công khai.
 - **Seeding**: Hoạt động gửi sản phẩm dùng thử miễn phí hoặc đẩy các bình luận tương tác ban đầu nhằm tạo hiệu ứng lan tỏa.
@@ -47,5 +47,4 @@ Hệ thống phân tầng dựa trên số lượng người theo dõi trên kê
 - **Affiliate (Tiếp thị liên kết)**: Hình thức Creator gắn link mua hàng (TikTok Shop, Shopee, Lazada). Nhãn hàng trả hoa hồng dựa trên số đơn hàng thành công.
 - **GMV (Gross Merchandise Value)**: Tổng giá trị hàng hóa bán ra thông qua link affiliate, mã giảm giá độc quyền hoặc phiên livestream của Creator.
 - **ER (Engagement Rate)**: Tỷ lệ tương tác trung bình `(Likes + Comments + Shares) / Followers * 100%`.
-- **Cost Per Video (CPV)**: Chi phí bỏ ra trên mỗi video được lên thành công (bao gồm phí booking + giá trị mẫu sản phẩm + chi phí vận chuyển).
-- **ROI (Return on Investment)**: Tỷ suất sinh lời `(Lợi nhuận gộp từ GMV - Tổng chi phí) / Tổng chi phí * 100%`.
+- **Cost Per Video / ROI**: Chỉ số được trình bày trong báo cáo; thành phần chi phí, điều kiện tính và công thức phải lấy từ `ReportCalculationService` hiện hành và test tương ứng. Không suy ra chi phí vận chuyển được tính vào nếu service không thể hiện.

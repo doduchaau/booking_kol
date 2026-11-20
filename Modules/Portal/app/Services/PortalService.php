@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Notifications\KocAddressConfirmedNotification;
 use App\Notifications\KocVideoSubmittedNotification;
 use Exception;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Modules\Campaign\Enums\PipelineStatusEnum;
 use Modules\Campaign\Models\CampaignCreator;
@@ -54,21 +55,29 @@ class PortalService
             ? CreatorNormalizationService::normalizePhone($data['phone'])
             : $creator->phone;
 
-        $creator->update([
-            'phone' => $phone,
-            'shipping_address' => $data['shipping_address'],
-            'city_province' => $data['city_province'] ?? $creator->city_province,
-            'district' => $data['district'] ?? $creator->district,
-            'ward' => $data['ward'] ?? $creator->ward,
-        ]);
-
-        // Cập nhật trạng thái Pipeline sang "address_confirmed" nếu chưa sang các bước sau
         $currentStatus = $campaignCreator->status;
-        if (in_array($currentStatus, [PipelineStatusEnum::NEW, PipelineStatusEnum::CONTACTED, PipelineStatusEnum::AGREED])) {
-            $campaignCreator->update([
-                'status' => PipelineStatusEnum::ADDRESS_CONFIRMED,
-                'address_confirmed_at' => now(),
+        $shouldNotify = in_array($currentStatus, [PipelineStatusEnum::NEW, PipelineStatusEnum::CONTACTED, PipelineStatusEnum::AGREED]);
+
+        // Giữ việc cập nhật hồ sơ và Pipeline cùng thành công hoặc cùng rollback.
+        DB::transaction(function () use ($creator, $phone, $data, $campaignCreator, $shouldNotify): void {
+            $creator->update([
+                'phone' => $phone,
+                'shipping_address' => $data['shipping_address'],
+                'city_province' => $data['city_province'] ?? $creator->city_province,
+                'district' => $data['district'] ?? $creator->district,
+                'ward' => $data['ward'] ?? $creator->ward,
             ]);
+
+            // Cập nhật trạng thái Pipeline sang "address_confirmed" nếu chưa sang các bước sau
+            if ($shouldNotify) {
+                $campaignCreator->update([
+                    'status' => PipelineStatusEnum::ADDRESS_CONFIRMED,
+                    'address_confirmed_at' => now(),
+                ]);
+            }
+        });
+
+        if ($shouldNotify) {
 
             // Gửi thông báo cho Staff phụ trách hoặc Quản lý
             try {
@@ -103,19 +112,21 @@ class PortalService
             throw new Exception('Sản phẩm mẫu chưa được gửi đi. Vui lòng liên hệ nhân viên phụ trách.');
         }
 
-        $campaignCreator->update([
-            'status' => PipelineStatusEnum::SAMPLE_RECEIVED,
-            'sample_received_at' => now(),
-        ]);
-
-        // Đánh dấu tất cả sản phẩm mẫu của KOC này sang trạng thái "received"
-        $campaignCreator->loadMissing('creatorProducts');
-        foreach ($campaignCreator->creatorProducts as $cp) {
-            $cp->update([
-                'sample_status' => \Modules\Campaign\Enums\SampleStatusEnum::RECEIVED,
-                'received_at' => now(),
+        DB::transaction(function () use ($campaignCreator): void {
+            $campaignCreator->update([
+                'status' => PipelineStatusEnum::SAMPLE_RECEIVED,
+                'sample_received_at' => now(),
             ]);
-        }
+
+            // Đánh dấu tất cả sản phẩm mẫu của KOC này sang trạng thái "received"
+            $campaignCreator->loadMissing('creatorProducts');
+            foreach ($campaignCreator->creatorProducts as $cp) {
+                $cp->update([
+                    'sample_status' => \Modules\Campaign\Enums\SampleStatusEnum::RECEIVED,
+                    'received_at' => now(),
+                ]);
+            }
+        });
 
         if (class_exists(\App\Services\SystemCacheService::class)) {
             \App\Services\SystemCacheService::flushDashboardCache();
@@ -141,15 +152,24 @@ class PortalService
             throw new Exception('Chưa thể nộp link video khi chưa gửi mẫu sản phẩm.');
         }
 
-        // Tạo bản ghi bài đăng trong content_posts
-        $post = ContentPost::create([
-            'campaign_creator_id' => $campaignCreator->id,
-            'platform' => $data['platform'] ?? 'tiktok',
-            'post_url' => $data['post_url'],
-            'video_title' => $data['video_title'] ?? null,
-            'posted_at' => now(),
-            'status' => 'pending_approval',
-        ]);
+        // Tạo bài đăng và cập nhật Pipeline nguyên tử; không đổi trạng thái nghiệp vụ hiện tại.
+        $post = DB::transaction(function () use ($campaignCreator, $data): ContentPost {
+            $post = ContentPost::create([
+                'campaign_creator_id' => $campaignCreator->id,
+                'platform' => $data['platform'] ?? 'tiktok',
+                'post_url' => $data['post_url'],
+                'video_title' => $data['video_title'] ?? null,
+                'posted_at' => now(),
+                'status' => 'pending_approval',
+            ]);
+
+            $campaignCreator->update([
+                'status' => PipelineStatusEnum::POSTED,
+                'posted_at' => now(),
+            ]);
+
+            return $post;
+        });
 
         // Tự động kiểm tra và chấm điểm tuân thủ ngay khi nộp
         try {
@@ -159,12 +179,6 @@ class PortalService
         } catch (\Throwable $e) {
             Log::warning('Lỗi tự động kiểm tra tuân thủ khi KOC nộp video: ' . $e->getMessage());
         }
-
-        // Chuyển trạng thái Pipeline sang "posted"
-        $campaignCreator->update([
-            'status' => PipelineStatusEnum::POSTED,
-            'posted_at' => now(),
-        ]);
 
         // Gửi thông báo nộp video cho Staff phụ trách hoặc Quản lý
         try {

@@ -2,6 +2,8 @@
 
 Tài liệu này quy định các chuẩn mực kỹ thuật và nguyên tắc an toàn bắt buộc khi kết nối hệ thống với các nền tảng mạng xã hội, dịch vụ bên thứ ba và bảo vệ dữ liệu cá nhân.
 
+> **Hiện trạng đối chiếu:** code có import file, Chrome Extension, DataProviderConnector và một luồng `PlaywrightNetworkConnector` cũ trong `app/Jobs/SyncKolProfileJob`. Luồng Playwright là hiện trạng cần quản lý, không phải chuẩn khuyến nghị để mở rộng. Không xóa/ngắt luồng đang dùng trước khi xác minh nơi gọi và cấu hình production.
+
 ---
 
 ## 1. Nguyên Tắc An Toàn & Tuân Thủ Điều Khoản Nền Tảng
@@ -63,17 +65,16 @@ classDiagram
 
 Hệ thống hỗ trợ 2 chế độ vận hành Zalo đáp ứng đúng chính sách:
 
-### Chế độ A: Zalo OA & ZNS (Zalo Notification Service) Chính Thức
-- Dành cho doanh nghiệp có Zalo Official Account đã xác thực.
-- Sử dụng API chính thức của Zalo Cloud để gửi thông báo theo các mẫu (template) đã được Zalo duyệt trước (ví dụ: Thông báo gửi mẫu, Xác nhận địa chỉ, Nhắc hạn video).
-- Có webhook tiếp nhận trạng thái tin nhắn (`sent`, `delivered`, `read`).
+### Chế độ A: Zalo OA & ZNS (chưa xác nhận có trong implementation hiện tại)
+- Đây là hướng tích hợp có thể xem xét cho tương lai, không mô tả như tính năng đang hoạt động.
+- Trước khi triển khai, kiểm tra provider, secret, consent, webhook, retry, rate limit và quyền truy cập.
 
 ### Chế độ B: Bán Tự Động (Semi-Automated Deep Link) Cho Zalo Cá Nhân
 - Dành cho nhân viên booking dùng Zalo cá nhân chăm sóc Creator mà không bị rủi ro khóa nick:
   1. Hệ thống cá nhân hóa nội dung tin nhắn dựa trên mẫu: thay thế tên Creator, tên sản phẩm, link Portal riêng.
   2. Hệ thống sinh nút bấm: `Mở Zalo nhắn tin` trỏ tới deep-link `https://zalo.me/<số_điện_thoại_đã_chuẩn_hóa>`.
-  3. Khi nhân viên click, trình duyệt tự mở ứng dụng Zalo chat với Creator kèm nút `Copy nội dung đã soạn`.
-  4. Sau khi gửi tin xong trên Zalo, nhân viên bấm nút `Đã gửi tin` trên web tool để hệ thống ghi log và chuyển trạng thái Pipeline.
+  3. Hệ thống mở deep-link để nhân viên tiếp tục thao tác trên Zalo; gửi thực tế do nhân viên thực hiện.
+  4. Nhân viên ghi nhận kết quả qua chức năng Outreach; service kiểm tra opt-out trước khi ghi log và có thể cập nhật Pipeline theo quy tắc hiện hành.
 
 ### Mời Vào Nhóm Zalo (Group Invites):
 - Không dùng bot tự kéo người vào nhóm.
@@ -90,7 +91,7 @@ Dữ liệu SĐT và địa chỉ nhà riêng của Creator là dữ liệu cá 
    - Các vai trò không trực tiếp phụ trách giao hàng (ví dụ: Content Reviewer, Khách ngoài) chỉ thấy SĐT dạng `091****789` và địa chỉ hiển thị cấp Tỉnh/Thành phố.
    - Chỉ nhân viên được phân công (`assigned_to`) hoặc `Admin / Leader` mới có quyền xem đầy đủ hoặc bấm nút hiện chi tiết.
 2. **Nhật Ký Truy Cập Dữ Liệu (Audit Logging)**:
-   - Mọi hành vi bấm "Hiện số điện thoại đầy đủ" hoặc "Xuất file Excel thông tin Creator" đều phải được ghi lại trong `activity_logs` kèm `user_id`, thời điểm và địa chỉ IP.
+   - Trước khi khẳng định truy cập/export đã được audit, kiểm tra migration, middleware/controller và test hiện hành. Không giả định bảng `activity_logs` đã tồn tại.
 3. **Tuân Thủ Quyền Từ Chối (Opt-Out)**:
    - Khi Creator yêu cầu không nhận tin nhắn mời hợp tác, nhân viên phải đánh dấu vào bảng `opt_outs`.
-   - Hệ thống chặn toàn bộ thao tác gửi tin hoặc tạo chiến dịch mới hướng tới số điện thoại này.
+   - Service Outreach hiện kiểm tra số điện thoại/email thuộc opt-out trước khi ghi nhận gửi tin. Giữ nguyên phạm vi chặn hiện tại; không tự suy rộng sang chặn tạo campaign nếu chưa có quy tắc/code tương ứng.

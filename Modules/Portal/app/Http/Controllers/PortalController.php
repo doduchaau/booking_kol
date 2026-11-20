@@ -21,9 +21,6 @@ class PortalController extends Controller
         try {
             $campaignCreator = $portalService->getValidCampaignCreator($token);
 
-            // Nạp thông tin bài đăng nếu đã nộp
-            $campaignCreator->load(['campaign.products', 'creatorProducts.campaignProduct']);
-
             return Inertia::render('Portal/Index', [
                 'token' => $token,
                 'campaign' => [

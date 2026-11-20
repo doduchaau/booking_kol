@@ -4,6 +4,10 @@ description: >-
   Quy chuẩn và cơ chế tự động hóa 100% thu thập, đồng bộ và làm mới dữ liệu KOL/KOC đa nền tảng (TikTok, YouTube, Facebook, Instagram, Shopee) qua Automated API & Data Provider Pipeline, Queue Worker, Rate Limiting, Auto-Refresh Scheduler và KolDataAdapter.
 ---
 
+> **Hiện trạng repository:** tài liệu này mô tả tiêu chuẩn an toàn và kiến trúc đích; không phải cam kết toàn bộ đã bật trong mọi môi trường. Config queue mặc định hiện là `database` (có thể override bằng `.env`), rate limiter `social-data-provider` được khai báo 60 lần/phút, scheduler hiện quét `kol:auto-refresh` vào thứ Hai 03:00 với giới hạn 150 và đưa job lên `kol-refresh`. `SyncCreatorMetricsJob` khởi tạo queue `kol-sync`; kiểm tra dispatch override và cấu hình worker thực tế trước khi thay đổi.
+>
+> Repository đồng thời có luồng legacy `App\Jobs\SyncKolProfileJob` dùng `PlaywrightNetworkConnector`. Không mở rộng bypass/cào lậu; trước khi sửa/xóa phải xác minh nơi gọi, worker và dữ liệu phụ thuộc. Tác vụ mới dùng Connector/Data Provider an toàn.
+
 # Quy Chuẩn Tự Động Hóa Đồng Bộ Dữ Liệu KOL/KOC Đa Nền Tảng (Automated API & Data Provider Pipeline)
 
 Tài liệu này là quy chuẩn kỹ thuật bắt buộc cho toàn bộ tiến trình tự động hóa 100% việc thu thập, chuẩn hóa, phân tích chỉ số và định kỳ làm mới dữ liệu KOL/KOC trên các nền tảng (TikTok, YouTube, Facebook, Instagram, Shopee) trong hệ thống Booking KOL.
@@ -26,10 +30,10 @@ Tài liệu này là quy chuẩn kỹ thuật bắt buộc cho toàn bộ tiến
 - **Adapter Pattern:** Tách rời đặc thù định dạng JSON của từng Provider khỏi mô hình thực thể nội bộ của hệ thống thông qua `SocialDataConnectorInterface` và `KolDataAdapter`.
 
 ### 1.3. Hàng Rào Bảo Vệ Hạ Tầng Hệ Thống (System Safety Guardrails)
-- **Rate Limiting nghiêm ngặt:** Khống chế tần suất gửi request cho từng cổng dữ liệu (Token Bucket / Leaky Bucket qua Redis) để ngăn chặn mã lỗi HTTP `429 Too Many Requests` và bảo vệ chi phí API.
+- **Rate Limiting nghiêm ngặt:** Khống chế tần suất gửi request theo provider bằng cache/limiter store đã cấu hình; không giả định limiter đang dùng Redis nếu môi trường chưa bật Redis.
 - **Exponential Backoff & Smart Retries:** Khi gặp lỗi tạm thời (Timeout, HTTP 500, 502, 503, 504, 429), tiến trình tự động retry 3 lần với khoảng chờ cấp số nhân kèm độ trễ ngẫu nhiên (`jitter`): 2s, 8s, 32s.
-- **Deduplication & Caching 24 giờ:** Dữ liệu profile và video được cache trong Redis với thời hạn 24h theo khóa `kol_raw_cache:{platform}:{normalized_handle}`. Nếu có yêu cầu đồng bộ cùng một Creator trong vòng 24h, hệ thống tái sử dụng cache để tránh gọi trùng lặp tốn hạn ngạch.
-- **Phân luồng Hàng Đợi (Queue Isolation):** Các Job đồng bộ mạng xã hội chạy trên queue riêng (`kol-sync` và `kol-refresh`), không tranh chấp tài nguyên với các queue cốt lõi như gửi Email, thông báo Zalo hoặc xuất kho hàng mẫu.
+- **Deduplication & Caching 24 giờ:** Job hiện dùng cache store đã cấu hình với thời hạn 24h và khóa `kol_raw_cache:{platform}:{handle}`; force refresh bỏ qua cache.
+- **Phân luồng Hàng Đợi (Queue Isolation):** Các Job đồng bộ dùng queue riêng theo cách dispatch hiện có (`kol-sync`/`kol-refresh`). Xác minh backend và worker subscription thực tế trước khi khẳng định đã cô lập hoàn toàn.
 
 ---
 
@@ -40,8 +44,8 @@ Mọi yêu cầu thu thập dữ liệu đi qua đường ống (pipeline) 6 bư
 ```mermaid
 flowchart TD
     A["1. Input Layer<br/>(Batch URLs / CSV / Webhook)"] --> B["2. UrlNormalizer<br/>(Platform & Handle Detection)"]
-    B --> C["3. Deduplication & Cache Check<br/>(Redis 24h Cache)"]
-    C -->|Chưa có Cache| D["4. Queue Job (Redis)<br/>SyncCreatorMetricsJob"]
+    B --> C["3. Deduplication & Cache Check<br/>(Configured Cache, 24h)"]
+    C -->|Chưa có Cache| D["4. Queue Job<br/>SyncCreatorMetricsJob"]
     C -->|Đã có Cache| G["6. KolDataAdapter<br/>(Metric Calc & Contact Regex)"]
     D --> E["5. DataProviderConnector<br/>(Official API / Data Provider)"]
     E --> G
@@ -55,7 +59,7 @@ flowchart TD
 | **1** | `Input Layer` | Tiếp nhận danh sách URL từ Web UI (textarea), file Excel/CSV danh sách kênh, hoặc Webhook từ bên thứ ba. Sinh mã theo dõi `batch_id`. |
 | **2** | `UrlNormalizer` | Bóc tách URL, loại bỏ các tham số rác (`fbclid`, `utm_*`, `is_from_webapp`), xác định nền tảng (`PlatformEnum`) và chuẩn hóa `@handle` duy nhất. |
 | **3** | `Cache Layer` | Kiểm tra xem handle này đã được đồng bộ trong 24h qua chưa. Nếu có, bỏ qua bước gọi Provider bên ngoài. |
-| **4** | `Queue Job` | Đẩy `SyncCreatorMetricsJob` vào Redis Queue với cấu hình Rate Limiter và Retry Strategy. |
+| **4** | `Queue Job` | Đẩy `SyncCreatorMetricsJob` vào queue đã cấu hình với Rate Limiter và Retry Strategy. |
 | **5** | `DataProviderConnector` | Gọi RESTful API hoặc chờ Webhook từ nhà cung cấp dữ liệu mạng xã hội đã chọn. |
 | **6** | `KolDataAdapter` | Lọc bài ghim (pinned/top), lấy 15 bài gần nhất, tính toán chỉ số tương tác (Views, Likes, ER%), trích xuất SĐT/Email từ Bio qua Regex. |
 | **7** | `KolImportService` | Thực hiện `DB::transaction()` upsert hồ sơ Creator, Creator Account, Rate Card và lưu snapshot lịch sử chỉ số (`creator_metrics_history`). |
@@ -114,15 +118,17 @@ KOL/KOC thường ghi thông tin liên hệ ngay trong Bio profile (ví dụ: *"
 
 ## 4. Cơ Chế Tự Động Làm Mới Định Kỳ (Auto-Refresh Scheduler)
 
+> Luồng bên dưới mô tả mẫu vận hành; lịch và thông số đang chạy được ghi tại phần “Hiện trạng repository” đầu tài liệu. Không giả định command chạy ban đêm hằng ngày hoặc chia batch 100 nếu code/config môi trường không xác nhận.
+
 Để hồ sơ Creator luôn phản ánh số liệu mới nhất mà không gây quá tải hệ thống, tiến trình quét làm mới được lập lịch tự động:
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Cron as Laravel Scheduler (02:00 AM)
+    participant Cron as Laravel Scheduler (Monday 03:00 AM)
     participant Command as kol:auto-refresh
     participant DB as MySQL Database
-    participant Queue as Redis Queue (kol-refresh)
+    participant Queue as Configured Queue (kol-refresh)
     participant Worker as Background Workers
 
     Cron->>Command: Kích hoạt định kỳ hàng đêm
@@ -135,16 +141,18 @@ sequenceDiagram
     Worker->>DB: Cập nhật chỉ số mới & set last_synced_at = NOW()
 ```
 
-### Quy Tắc Vận Hành Scheduler:
-1. **Khung giờ chạy:** Chỉ chạy vào khung giờ thấp điểm (**02:00 AM - 05:00 AM** giờ Việt Nam).
+### Quy Tắc Vận Hành Scheduler (mục tiêu thiết kế):
+1. **Khung giờ hiện tại:** scheduler trong `routes/console.php` chạy thứ Hai lúc **03:00** giờ hệ thống; xác nhận timezone môi trường khi vận hành.
 2. **Tiêu chí lọc:**
    - Điều kiện 1: `last_synced_at IS NULL` HOẶC `last_synced_at <= NOW() - INTERVAL 7 DAY`.
    - Độ ưu tiên: Các Creator đang thuộc chiến dịch có trạng thái `active` hoặc `in_progress` được xếp vào hàng ưu tiên cao (`high-priority`).
-3. **Phân phối tải (Staggered Dispatching):** Khi đẩy hàng trăm Job vào Queue, mỗi Job được gán thời gian trễ cách nhau 500ms đến 1.500ms để tránh việc hàng loạt worker đồng thời gọi nhà cung cấp dữ liệu cùng một giây.
+3. **Phân phối tải (Staggered Dispatching):** command hiện dispatch tối đa theo `--limit` (scheduler truyền 150), delay cộng dồn 500ms–1500ms giữa các job.
 
 ---
 
 ## 5. Hướng Dẫn Cấu Trúc Mã Nguồn & Code Mẫu Chuẩn
+
+> Các đoạn code dưới đây là ví dụ kiến trúc, không phải bản sao của implementation hiện hành. Trước khi sửa, đọc các class thực tế trong `Modules/Creator/app/Jobs`, `Connectors` và `Console/Commands`; giữ tương thích dữ liệu, queue, cache và trạng thái đang dùng.
 
 Hệ thống triển khai các lớp chuyên biệt trong Module `Creator`:
 

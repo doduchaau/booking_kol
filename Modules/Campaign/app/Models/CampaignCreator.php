@@ -53,6 +53,7 @@ class CampaignCreator extends Model
     protected $appends = [
         'platform_deliverables',
         'sample_shipment_history',
+        'chat_evidences_count',
     ];
 
     protected $casts = [
@@ -126,6 +127,24 @@ class CampaignCreator extends Model
         return $this->hasMany(CampaignCreatorSampleLog::class, 'campaign_creator_id')
             ->orderBy('shipped_at', 'desc')
             ->orderBy('id', 'desc');
+    }
+
+    /**
+     * Danh sách bằng chứng / bằng chứng tin nhắn đối soát với KOC
+     */
+    public function chatEvidences(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(CampaignCreatorChatEvidence::class, 'campaign_creator_id')
+            ->latest('id');
+    }
+
+    public function getChatEvidencesCountAttribute(): int
+    {
+        if ($this->relationLoaded('chatEvidences')) {
+            return $this->chatEvidences->count();
+        }
+
+        return (int) ($this->attributes['chat_evidences_count'] ?? $this->chatEvidences()->count());
     }
 
     /**

@@ -148,6 +148,7 @@ class CampaignController extends Controller
                       'creator.accounts:id,creator_id,platform,handle,followers_count,engagement_rate,average_views,url',
                       'creatorProducts.campaignProduct',
                       'sampleLogs.sentBy:id,name',
+                      'chatEvidences.uploadedBy:id,name',
                       'assignee:id,name,email',
                       'contentPosts:id,campaign_creator_id,platform,post_url,video_title,posted_at,status,views_count,likes_count,comments_count,gmv_amount',
                   ]);

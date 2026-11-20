@@ -13,6 +13,7 @@ import {
     Receipt,
     CheckCircle2,
     Info,
+    MessageSquare,
 } from 'lucide-react';
 import Button from '@/Components/Common/Button';
 import Badge from '@/Components/Common/Badge';
@@ -94,10 +95,18 @@ export default function ExportReportModal({
             defaultChecked: true,
             badge: 'Kế toán',
         },
+        {
+            id: 'chat_evidences',
+            label: 'Bằng Chứng & Evidence Nhắn Tin KOC (Kèm Hình Ảnh)',
+            description: 'Bảng đối soát kèm hình ảnh chụp màn hình trao đổi, tin nhắn làm việc được chèn trực tiếp vào ô Excel.',
+            icon: <MessageSquare className="h-5 w-5 text-teal-600" />,
+            defaultChecked: false,
+            badge: 'Đối soát',
+        },
     ];
 
     const [selectedSections, setSelectedSections] = useState<string[]>(
-        availableSections.map((s) => s.id)
+        availableSections.filter((s) => s.defaultChecked).map((s) => s.id)
     );
     const [isExporting, setIsExporting] = useState<boolean>(false);
 

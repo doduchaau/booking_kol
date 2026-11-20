@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use Modules\Campaign\Http\Controllers\CampaignController;
+use Modules\Campaign\Http\Controllers\CampaignCreatorChatEvidenceController;
 use Modules\Campaign\Http\Controllers\PipelineController;
 use Modules\Campaign\Http\Controllers\WorkspaceController;
 
@@ -34,6 +35,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/campaigns/{id}/creators/{pivotId}/videos', [CampaignController::class, 'addVideo'])->name('campaigns.creators.videos.store');
     Route::post('/campaigns/{id}/creators/{pivotId}/portal/extend', [CampaignController::class, 'extendPortalToken'])->name('campaigns.creators.portal.extend');
     Route::post('/campaigns/{id}/creators/{pivotId}/portal/regenerate', [CampaignController::class, 'regeneratePortalToken'])->name('campaigns.creators.portal.regenerate');
+    Route::get('/campaigns/{campaign}/creators/{creator}/chat-evidences', [CampaignCreatorChatEvidenceController::class, 'index'])->name('campaigns.creators.chat-evidences.index');
+    Route::post('/campaigns/{campaign}/creators/{creator}/chat-evidences', [CampaignCreatorChatEvidenceController::class, 'store'])->name('campaigns.creators.chat-evidences.store');
+    Route::delete('/campaigns/{campaign}/creators/{creator}/chat-evidences/{evidence}', [CampaignCreatorChatEvidenceController::class, 'destroy'])->name('campaigns.creators.chat-evidences.destroy');
 
     // Bảng Kanban Pipeline
     Route::get('/pipeline', [PipelineController::class, 'general'])->name('pipeline.general');
