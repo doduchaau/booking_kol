@@ -252,7 +252,10 @@ class CampaignCreatorImportService
             &$skippedCount
         ) {
             $now = now();
-            $expiresAt = $now->copy()->addDays(14);
+            $expireDays = class_exists(\Modules\Settings\Models\Setting::class)
+                ? (int) \Modules\Settings\Models\Setting::get('portal_token_expire_days', 30)
+                : 30;
+            $expiresAt = $expireDays > 0 ? $now->copy()->addDays($expireDays) : null;
 
             // 1. XỬ LÝ NHÓM KOC MỚI HOÀN TOÀN
             foreach ($newKocs as $item) {

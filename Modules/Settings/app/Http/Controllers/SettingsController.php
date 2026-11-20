@@ -44,6 +44,12 @@ class SettingsController extends Controller
             'social_data_provider_api_host' => Setting::get('social_data_provider_api_host', config('services.social_data_provider.api_host', 'tiktok-api23.p.rapidapi.com')),
             'youtube_api_key' => Setting::get('youtube_api_key', config('services.youtube.api_key', '')),
             'facebook_client_token' => Setting::get('facebook_client_token', config('services.facebook.client_token', '')),
+            'portal_token_expire_days' => (int) Setting::get('portal_token_expire_days', 30),
+            'portal_token_extend_days' => (int) Setting::get('portal_token_extend_days', 14),
+            'portal_support_contact' => Setting::get('portal_support_contact', ''),
+            'portal_expired_custom_message' => Setting::get('portal_expired_custom_message', ''),
+            'portal_allow_edit_address_after_confirm' => (bool) Setting::get('portal_allow_edit_address_after_confirm', true),
+            'portal_allow_multiple_videos' => (bool) Setting::get('portal_allow_multiple_videos', true),
         ];
 
         // Lấy danh sách nhân sự kèm vai trò
@@ -90,6 +96,35 @@ class SettingsController extends Controller
         }
 
         return back()->with('success', 'Đã lưu cấu hình thời hạn nộp video, điểm uy tín và ghi chú xuất mẫu thành công.');
+    }
+
+    /**
+     * Cập nhật Cấu hình Cổng Portal dành cho KOC
+     */
+    public function updatePortal(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'portal_token_expire_days' => ['required', 'integer', 'min:0', 'max:365'],
+            'portal_token_extend_days' => ['required', 'integer', 'min:1', 'max:90'],
+            'portal_support_contact' => ['nullable', 'string', 'max:200'],
+            'portal_expired_custom_message' => ['nullable', 'string', 'max:500'],
+            'portal_allow_edit_address_after_confirm' => ['nullable', 'boolean'],
+            'portal_allow_multiple_videos' => ['nullable', 'boolean'],
+        ], [
+            'portal_token_expire_days.required' => 'Vui lòng nhập số ngày hết hạn của link Portal.',
+            'portal_token_expire_days.integer' => 'Số ngày hết hạn phải là số nguyên (0 đến 365).',
+            'portal_token_extend_days.required' => 'Vui lòng nhập số ngày gia hạn mỗi lần.',
+            'portal_token_extend_days.min' => 'Số ngày gia hạn tối thiểu là 1 ngày.',
+        ]);
+
+        Setting::set('portal_token_expire_days', (int) $validated['portal_token_expire_days'], 'portal');
+        Setting::set('portal_token_extend_days', (int) $validated['portal_token_extend_days'], 'portal');
+        Setting::set('portal_support_contact', $validated['portal_support_contact'] ?? '', 'portal');
+        Setting::set('portal_expired_custom_message', $validated['portal_expired_custom_message'] ?? '', 'portal');
+        Setting::set('portal_allow_edit_address_after_confirm', $request->boolean('portal_allow_edit_address_after_confirm', true), 'portal');
+        Setting::set('portal_allow_multiple_videos', $request->boolean('portal_allow_multiple_videos', true), 'portal');
+
+        return back()->with('success', 'Đã lưu cấu hình Cổng Portal dành cho KOC thành công.');
     }
 
     /**

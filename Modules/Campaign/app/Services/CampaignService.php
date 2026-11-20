@@ -61,7 +61,7 @@ class CampaignService
         ?int $assignedTo = null,
         float $bookingFee = 0.0,
         bool $selectAllInDb = false,
-        string $collaborationType = 'video',
+        ?string $collaborationType = null,
         array $productIds = [],
         array $productQuantities = [],
         ?array $bookingPlatforms = null
@@ -114,10 +114,13 @@ class CampaignService
                 ->toArray();
 
             $now = now();
-            $expiresAt = $now->copy()->addDays(14);
+            $expireDays = class_exists(\Modules\Settings\Models\Setting::class)
+                ? (int) \Modules\Settings\Models\Setting::get('portal_token_expire_days', 30)
+                : 30;
+            $expiresAt = $expireDays > 0 ? $now->copy()->addDays($expireDays) : null;
             $effectivePlatforms = !empty($bookingPlatforms)
-                ? array_values(array_unique($bookingPlatforms))
-                : (!empty($campaign->target_platforms) ? $campaign->target_platforms : ['tiktok']);
+                ? array_values(array_unique(array_filter($bookingPlatforms)))
+                : null;
 
             foreach ($creatorIds as $creatorId) {
                 if (isset($existingSet[$creatorId])) {
@@ -130,7 +133,7 @@ class CampaignService
                     'creator_id' => $creatorId,
                     'assigned_to' => $assignedTo,
                     'status' => PipelineStatusEnum::NEW->value,
-                    'collaboration_type' => $collaborationType ?? 'video',
+                    'collaboration_type' => !empty($collaborationType) ? $collaborationType : null,
                     'booking_platforms' => $effectivePlatforms,
                     'total_samples_assigned' => $totalAssignedSamples,
                     'total_samples_sent' => 0,
@@ -183,12 +186,9 @@ class CampaignService
     public function updateCreatorPlatforms(CampaignCreator $campaignCreator, array $platforms): CampaignCreator
     {
         $cleanPlatforms = array_values(array_unique(array_filter($platforms)));
-        if (empty($cleanPlatforms)) {
-            $cleanPlatforms = ['tiktok'];
-        }
 
         $campaignCreator->update([
-            'booking_platforms' => $cleanPlatforms,
+            'booking_platforms' => !empty($cleanPlatforms) ? $cleanPlatforms : null,
         ]);
 
         if (class_exists(\App\Services\SystemCacheService::class)) {

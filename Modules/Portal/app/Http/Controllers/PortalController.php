@@ -119,10 +119,26 @@ class PortalController extends Controller
                         'sample_status_label' => $cp->sample_status?->label() ?? 'Dự kiến',
                     ])->values()->all(),
                 ],
+                'portal_settings' => [
+                    'support_contact' => class_exists(\Modules\Settings\Models\Setting::class)
+                        ? \Modules\Settings\Models\Setting::get('portal_support_contact', '')
+                        : '',
+                    'allow_edit_address' => class_exists(\Modules\Settings\Models\Setting::class)
+                        ? (bool) \Modules\Settings\Models\Setting::get('portal_allow_edit_address_after_confirm', true)
+                        : true,
+                    'allow_multiple_videos' => class_exists(\Modules\Settings\Models\Setting::class)
+                        ? (bool) \Modules\Settings\Models\Setting::get('portal_allow_multiple_videos', true)
+                        : true,
+                ],
             ]);
         } catch (Exception $e) {
+            $supportContact = class_exists(\Modules\Settings\Models\Setting::class)
+                ? \Modules\Settings\Models\Setting::get('portal_support_contact', '')
+                : '';
+
             return Inertia::render('Portal/Expired', [
                 'errorMessage' => $e->getMessage(),
+                'supportContact' => $supportContact,
             ]);
         }
     }

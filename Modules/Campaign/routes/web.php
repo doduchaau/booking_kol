@@ -29,7 +29,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/campaigns/{id}/creators/bulk-remove', [CampaignController::class, 'bulkRemoveCreators'])->name('campaigns.creators.bulk-remove');
     Route::patch('/campaigns/{id}/creators/{pivotId}/quick-update', [PipelineController::class, 'quickUpdate'])->name('campaigns.creators.quick-update');
     Route::post('/campaigns/{id}/creators/{pivotId}/shipments', [CampaignController::class, 'addShipment'])->name('campaigns.creators.shipments.store');
+    Route::put('/campaigns/{id}/creators/{pivotId}/shipments/{logId}', [CampaignController::class, 'updateShipmentLog'])->name('campaigns.creators.shipments.update');
+    Route::delete('/campaigns/{id}/creators/{pivotId}/shipments/{logId}', [CampaignController::class, 'destroyShipmentLog'])->name('campaigns.creators.shipments.destroy');
     Route::post('/campaigns/{id}/creators/{pivotId}/videos', [CampaignController::class, 'addVideo'])->name('campaigns.creators.videos.store');
+    Route::post('/campaigns/{id}/creators/{pivotId}/portal/extend', [CampaignController::class, 'extendPortalToken'])->name('campaigns.creators.portal.extend');
+    Route::post('/campaigns/{id}/creators/{pivotId}/portal/regenerate', [CampaignController::class, 'regeneratePortalToken'])->name('campaigns.creators.portal.regenerate');
 
     // Bảng Kanban Pipeline
     Route::get('/pipeline', [PipelineController::class, 'general'])->name('pipeline.general');

@@ -93,6 +93,7 @@ class WorkspaceController extends Controller
                 'campaign:id,name,product_name,video_deadline_days,status,hashtags,discount_code',
                 'campaign.products',
                 'creatorProducts.campaignProduct',
+                'sampleLogs.sentBy:id,name',
                 'assignee:id,name,email',
                 'contentPosts:id,campaign_creator_id,platform,post_url,video_title,status,views_count,likes_count,comments_count,gmv_amount,posted_at',
             ]);

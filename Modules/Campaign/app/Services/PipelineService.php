@@ -303,12 +303,12 @@ class PipelineService
         }
 
         if (array_key_exists('collaboration_type', $data)) {
-            $fillableData['collaboration_type'] = $data['collaboration_type'];
+            $fillableData['collaboration_type'] = !empty($data['collaboration_type']) ? $data['collaboration_type'] : null;
         }
 
         if (array_key_exists('booking_platforms', $data) && is_array($data['booking_platforms'])) {
             $cleanPlatforms = array_values(array_unique(array_filter($data['booking_platforms'])));
-            $fillableData['booking_platforms'] = !empty($cleanPlatforms) ? $cleanPlatforms : ['tiktok'];
+            $fillableData['booking_platforms'] = !empty($cleanPlatforms) ? $cleanPlatforms : null;
         }
 
         if (!empty($fillableData)) {

@@ -218,9 +218,8 @@ export default function Show({
         creator_ids: [] as number[],
         assigned_to: '',
         booking_fee: '0',
-        booking_platforms: (campaign.target_platforms && campaign.target_platforms.length > 0
-            ? campaign.target_platforms
-            : ['tiktok']) as string[],
+        collaboration_type: '',
+        booking_platforms: [] as string[],
     });
 
     const handleOpenAddModal = (mode: 'specific' | 'all_db' | 'import_file' | boolean = 'specific') => {
@@ -246,9 +245,8 @@ export default function Show({
             creator_ids: [],
             assigned_to: '',
             booking_fee: '0',
-            booking_platforms: (campaign.target_platforms && campaign.target_platforms.length > 0
-                ? campaign.target_platforms
-                : ['tiktok']) as string[],
+            collaboration_type: '',
+            booking_platforms: [],
         });
         if (targetTab === 'specific' && (!availableCreators || availableCreators.length === 0)) {
             router.reload({ only: ['availableCreators'] });
@@ -1674,47 +1672,104 @@ export default function Show({
                                     {/* Chọn nền tảng KOC sẽ làm trong chiến dịch này */}
                                     <FormField
                                         label="Nền tảng giao KOC thực hiện"
-                                        hint="Chiến dịch có thể đa nền tảng, chọn các kênh KOC này sẽ làm video"
+                                        hint="Để trống nếu chưa xác định (đàm phán sau), hoặc chọn các kênh KOC sẽ thực hiện"
                                     >
-                                        <div className="flex flex-wrap items-center gap-2 pt-1">
-                                            {(campaign.target_platforms && campaign.target_platforms.length > 0
-                                                ? campaign.target_platforms
-                                                : (['tiktok', 'shopee', 'facebook', 'youtube', 'instagram'] as const)
-                                            ).map((plat) => {
-                                                const isSelected = addForm.data.booking_platforms.includes(plat);
-                                                return (
+                                        <div className="space-y-2 pt-1">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                {(campaign.target_platforms && campaign.target_platforms.length > 0
+                                                    ? campaign.target_platforms
+                                                    : (['tiktok', 'shopee', 'facebook', 'youtube', 'instagram'] as const)
+                                                ).map((plat) => {
+                                                    const isSelected = addForm.data.booking_platforms.includes(plat);
+                                                    return (
+                                                        <button
+                                                            key={plat}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const cur = addForm.data.booking_platforms;
+                                                                const next = isSelected
+                                                                    ? cur.filter((p) => p !== plat)
+                                                                    : [...cur, plat];
+                                                                addForm.setData('booking_platforms', next);
+                                                            }}
+                                                            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all cursor-pointer shadow-2xs select-none ${
+                                                                isSelected
+                                                                    ? 'bg-slate-900 text-white border-slate-900 ring-2 ring-primary-500/30'
+                                                                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                                                            }`}
+                                                        >
+                                                            <PlatformLogo platform={plat} size="xs" />
+                                                            <span>{getPlatformDisplayName(plat)}</span>
+                                                            {isSelected && (
+                                                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 ml-0.5" />
+                                                            )}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            {/* Tiện ích chọn nhanh */}
+                                            <div className="flex items-center justify-between text-[11px] pt-1">
+                                                <div className="flex items-center gap-2">
                                                     <button
-                                                        key={plat}
                                                         type="button"
-                                                        onClick={() => {
-                                                            const cur = addForm.data.booking_platforms;
-                                                            let next: string[];
-                                                            if (isSelected) {
-                                                                if (cur.length <= 1) return; // Giữ ít nhất 1
-                                                                next = cur.filter((p) => p !== plat);
-                                                            } else {
-                                                                next = [...cur, plat];
-                                                            }
-                                                            addForm.setData('booking_platforms', next);
-                                                        }}
-                                                        className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all cursor-pointer shadow-2xs select-none ${
-                                                            isSelected
-                                                                ? 'bg-slate-900 text-white border-slate-900 ring-2 ring-primary-500/30'
-                                                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                                                        onClick={() => addForm.setData('booking_platforms', [])}
+                                                        className={`font-medium transition-colors cursor-pointer ${
+                                                            addForm.data.booking_platforms.length === 0
+                                                                ? 'text-primary-600 font-bold'
+                                                                : 'text-slate-500 hover:text-slate-800'
                                                         }`}
                                                     >
-                                                        <PlatformLogo platform={plat} size="xs" />
-                                                        <span>{getPlatformDisplayName(plat)}</span>
-                                                        {isSelected && (
-                                                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 ml-0.5" />
-                                                        )}
+                                                        ✕ Chưa giao kênh (Để trống)
                                                     </button>
-                                                );
-                                            })}
+                                                    <span className="text-slate-300">•</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            addForm.setData(
+                                                                'booking_platforms',
+                                                                campaign.target_platforms && campaign.target_platforms.length > 0
+                                                                    ? [...campaign.target_platforms]
+                                                                    : ['tiktok', 'shopee', 'facebook', 'youtube', 'instagram']
+                                                            )
+                                                        }
+                                                        className="text-primary-600 hover:text-primary-700 font-medium transition-colors cursor-pointer"
+                                                    >
+                                                        ✓ Chọn tất cả kênh chiến dịch
+                                                    </button>
+                                                </div>
+
+                                                {addForm.data.booking_platforms.length === 0 ? (
+                                                    <span className="text-amber-600 font-medium">
+                                                        (Chưa giao kênh)
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-emerald-600 font-medium">
+                                                        Đã chọn: {addForm.data.booking_platforms.length} kênh
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                     </FormField>
 
-                                    <div className="grid grid-cols-2 gap-3 pt-1">
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                                        <FormField
+                                            label="Hình thức hợp tác"
+                                            hint="Chưa xác định hoặc chọn loại hình"
+                                            error={addForm.errors.collaboration_type}
+                                        >
+                                            <Select
+                                                value={addForm.data.collaboration_type}
+                                                onChange={(e) => addForm.setData('collaboration_type', e.target.value)}
+                                                options={[
+                                                    { value: '', label: '-- Chưa xác định (Thỏa thuận sau) --' },
+                                                    { value: 'video', label: '🎬 Lên Video' },
+                                                    { value: 'livestream', label: '🎙️ Livestream' },
+                                                    { value: 'both', label: '⚡ Cả Video & Live' },
+                                                ]}
+                                            />
+                                        </FormField>
+
                                         <FormField label="Phí booking dự kiến (VND)" error={addForm.errors.booking_fee}>
                                             <TextInput
                                                 type="number"

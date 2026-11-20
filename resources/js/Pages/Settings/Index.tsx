@@ -52,6 +52,12 @@ export interface SettingsData {
     social_data_provider_api_host?: string;
     youtube_api_key?: string;
     facebook_client_token?: string;
+    portal_token_expire_days?: number;
+    portal_token_extend_days?: number;
+    portal_support_contact?: string;
+    portal_expired_custom_message?: string;
+    portal_allow_edit_address_after_confirm?: boolean;
+    portal_allow_multiple_videos?: boolean;
 }
 
 export interface SettingsIndexProps {
@@ -65,7 +71,7 @@ export default function SettingsIndex({
     users,
     availableRoles,
 }: SettingsIndexProps) {
-    const [activeTab, setActiveTab] = useState<'users' | 'general' | 'integrations'>('users');
+    const [activeTab, setActiveTab] = useState<'users' | 'general' | 'portal' | 'integrations'>('users');
     const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
     const [editingUserRole, setEditingUserRole] = useState<UserItem | null>(null);
 
@@ -86,6 +92,16 @@ export default function SettingsIndex({
         default_video_deadline_days: settings.default_video_deadline_days || 7,
         blacklist_penalty_score: settings.blacklist_penalty_score || 30,
         default_sample_shipping_note: settings.default_sample_shipping_note || 'Hàng mẫu tặng KOC quay video review - Không thu tiền COD',
+    });
+
+    // Form: Portal Settings
+    const portalForm = useForm({
+        portal_token_expire_days: settings.portal_token_expire_days ?? 30,
+        portal_token_extend_days: settings.portal_token_extend_days ?? 14,
+        portal_support_contact: settings.portal_support_contact || '',
+        portal_expired_custom_message: settings.portal_expired_custom_message || '',
+        portal_allow_edit_address_after_confirm: settings.portal_allow_edit_address_after_confirm ?? true,
+        portal_allow_multiple_videos: settings.portal_allow_multiple_videos ?? true,
     });
 
     // Form: Integrations
@@ -178,6 +194,14 @@ export default function SettingsIndex({
         });
     };
 
+    const handleSavePortal = (e: React.FormEvent) => {
+        e.preventDefault();
+        // @ts-ignore
+        portalForm.post(route('settings.portal.update'), {
+            preserveScroll: true,
+        });
+    };
+
     const handleSaveIntegrations = (e: React.FormEvent) => {
         e.preventDefault();
         // @ts-ignore
@@ -262,6 +286,18 @@ export default function SettingsIndex({
                     >
                         <Clock className="h-4 w-4" />
                         <span>Thời Hạn & Quy Trình</span>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab('portal')}
+                        className={`pb-3 px-4 text-sm font-semibold flex items-center gap-2 border-b-2 transition-all ${activeTab === 'portal'
+                            ? 'border-primary-600 text-primary-600'
+                            : 'border-transparent text-slate-500 hover:text-slate-800'
+                            }`}
+                    >
+                        <ExternalLink className="h-4 w-4" />
+                        <span>Cổng Portal KOC</span>
                     </button>
 
                     <button
@@ -538,6 +574,224 @@ export default function SettingsIndex({
                                     loading={generalForm.processing}
                                 >
                                     Lưu Cấu Hình Quy Trình
+                                </Button>
+                            </div>
+                        </form>
+                    </div>
+                )}
+
+                {/* TAB 3: CẤU HÌNH CỔNG PORTAL DÀNH CHO KOC */}
+                {activeTab === 'portal' && (
+                    <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm max-w-3xl space-y-6">
+                        <div className="border-b border-slate-100 pb-4">
+                            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                <ExternalLink className="h-5 w-5 text-primary-600" />
+                                <span>Cấu Hình Cổng Portal Dành Cho KOC / KOL</span>
+                            </h2>
+                            <p className="text-xs text-slate-500 mt-1">
+                                Quản lý thời hạn truy cập, cơ chế gia hạn link, hotline hỗ trợ và các quyền tương tác của Creator trên Cổng Portal.
+                            </p>
+                        </div>
+
+                        <form onSubmit={handleSavePortal} className="space-y-6">
+                            {/* Khối 1: Thời hạn mặc định của Link Portal */}
+                            <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-4">
+                                <div className="flex items-center gap-2">
+                                    <Clock className="h-4 w-4 text-primary-600" />
+                                    <h3 className="text-sm font-bold text-slate-900">
+                                        Thời Hạn Hiệu Lực Của Link Portal
+                                    </h3>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                                        Thời hạn mặc định khi tạo / import KOC vào chiến dịch:
+                                    </label>
+                                    
+                                    {/* Presets nút bấm */}
+                                    <div className="flex items-center gap-2 flex-wrap mb-2.5">
+                                        {[
+                                            { days: 7, label: '7 ngày' },
+                                            { days: 14, label: '14 ngày' },
+                                            { days: 30, label: '30 ngày (Khuyến nghị)' },
+                                            { days: 60, label: '60 ngày' },
+                                            { days: 90, label: '90 ngày' },
+                                            { days: 0, label: 'Vô thời hạn (Không hết hạn)' },
+                                        ].map((preset) => {
+                                            const isSelected = portalForm.data.portal_token_expire_days === preset.days;
+                                            return (
+                                                <button
+                                                    key={preset.days}
+                                                    type="button"
+                                                    onClick={() => portalForm.setData('portal_token_expire_days', preset.days)}
+                                                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                                                        isSelected
+                                                            ? 'bg-primary-600 text-white border-primary-600 shadow-xs'
+                                                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                                                    }`}
+                                                >
+                                                    {preset.label}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+
+                                    <div className="flex items-center gap-3">
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max="365"
+                                            value={portalForm.data.portal_token_expire_days}
+                                            onChange={(e) =>
+                                                portalForm.setData(
+                                                    'portal_token_expire_days',
+                                                    parseInt(e.target.value) >= 0 ? parseInt(e.target.value) : 0
+                                                )
+                                            }
+                                            className="w-32 text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500 font-semibold text-slate-800"
+                                        />
+                                        <span className="text-xs text-slate-600">
+                                            {portalForm.data.portal_token_expire_days === 0 ? (
+                                                <strong className="text-emerald-700">Link không bao giờ hết hạn (Vô thời hạn)</strong>
+                                            ) : (
+                                                <>ngày kể từ khi tạo link KOC trong chiến dịch</>
+                                            )}
+                                        </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+                                        * Nhập <strong>0</strong> nếu bạn muốn đường link hoạt động vĩnh viễn suốt vòng đời chiến dịch mà không bị khóa. Nếu nhập &gt; 0, link sẽ tự động đóng sau số ngày đã đặt vì lý do bảo mật.
+                                    </p>
+                                    {portalForm.errors.portal_token_expire_days && (
+                                        <p className="text-xs text-rose-600 mt-1">
+                                            {portalForm.errors.portal_token_expire_days}
+                                        </p>
+                                    )}
+                                </div>
+
+                                <div className="pt-3 border-t border-slate-200">
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                                        Số ngày gia hạn thêm mỗi lần bấm nút trên Ma trận KOC:
+                                    </label>
+                                    <div className="flex items-center gap-3">
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="90"
+                                            value={portalForm.data.portal_token_extend_days}
+                                            onChange={(e) =>
+                                                portalForm.setData(
+                                                    'portal_token_extend_days',
+                                                    parseInt(e.target.value) || 14
+                                                )
+                                            }
+                                            className="w-32 text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500 font-semibold text-slate-800"
+                                        />
+                                        <span className="text-xs text-slate-600">ngày cộng thêm mỗi lần gia hạn</span>
+                                    </div>
+                                    {portalForm.errors.portal_token_extend_days && (
+                                        <p className="text-xs text-rose-600 mt-1">
+                                            {portalForm.errors.portal_token_extend_days}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Khối 2: Thông tin Hỗ trợ & Thông điệp KOC */}
+                            <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-4">
+                                <div className="flex items-center gap-2">
+                                    <MessageSquare className="h-4 w-4 text-primary-600" />
+                                    <h3 className="text-sm font-bold text-slate-900">
+                                        Thông Tin Hỗ Trợ & Thông Điệp KOC
+                                    </h3>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                        Số điện thoại / Zalo Hotline CSKH hiển thị trên Cổng Portal:
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={portalForm.data.portal_support_contact}
+                                        onChange={(e) => portalForm.setData('portal_support_contact', e.target.value)}
+                                        placeholder="Ví dụ: 0987.654.321 (Zalo CSKH Booking KOL)"
+                                        className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500"
+                                    />
+                                    <p className="text-[11px] text-slate-500 mt-1">
+                                        * Sẽ hiển thị ở chân trang Portal và trong thông báo khi đường link bị hết hạn để KOC liên hệ nhận hỗ trợ.
+                                    </p>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                        Thông điệp tùy chỉnh hiển thị khi link Portal hết hạn:
+                                    </label>
+                                    <textarea
+                                        rows={2}
+                                        value={portalForm.data.portal_expired_custom_message}
+                                        onChange={(e) => portalForm.setData('portal_expired_custom_message', e.target.value)}
+                                        placeholder="Ví dụ: Đường dẫn truy cập này đã hết hạn. Vui lòng nhắn tin lại cho nhân viên phụ trách hoặc kết nối Zalo để được cấp lại link mới."
+                                        className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Khối 3: Quyền Hạn KOC Trên Cổng Portal */}
+                            <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-3">
+                                <div className="flex items-center gap-2">
+                                    <Shield className="h-4 w-4 text-primary-600" />
+                                    <h3 className="text-sm font-bold text-slate-900">
+                                        Quyền Hạn Tương Tác Của KOC
+                                    </h3>
+                                </div>
+
+                                <div className="space-y-2.5 pt-1">
+                                    <label className="flex items-start gap-2.5 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={portalForm.data.portal_allow_edit_address_after_confirm}
+                                            onChange={(e) =>
+                                                portalForm.setData('portal_allow_edit_address_after_confirm', e.target.checked)
+                                            }
+                                            className="mt-0.5 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                                        />
+                                        <div>
+                                            <span className="text-xs font-semibold text-slate-800 block">
+                                                Cho phép KOC chỉnh sửa lại địa chỉ nhận hàng sau khi đã bấm xác nhận
+                                            </span>
+                                            <span className="text-[11px] text-slate-500 block">
+                                                Nếu tắt, sau khi KOC bấm xác nhận địa chỉ thì form sẽ khóa và chỉ nhân viên booking mới có thể sửa trong hệ thống.
+                                            </span>
+                                        </div>
+                                    </label>
+
+                                    <label className="flex items-start gap-2.5 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={portalForm.data.portal_allow_multiple_videos}
+                                            onChange={(e) =>
+                                                portalForm.setData('portal_allow_multiple_videos', e.target.checked)
+                                            }
+                                            className="mt-0.5 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                                        />
+                                        <div>
+                                            <span className="text-xs font-semibold text-slate-800 block">
+                                                Cho phép KOC nộp thêm link video thứ 2, thứ 3... trong cùng chiến dịch
+                                            </span>
+                                            <span className="text-[11px] text-slate-500 block">
+                                                Phù hợp với các chiến dịch đa nền tảng hoặc yêu cầu lên nhiều video trả bài theo từng tuần/tháng.
+                                            </span>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div className="pt-4 border-t border-slate-100 flex items-center justify-end">
+                                <Button
+                                    type="submit"
+                                    variant="primary"
+                                    loading={portalForm.processing}
+                                >
+                                    Lưu Cấu Hình Cổng Portal
                                 </Button>
                             </div>
                         </form>

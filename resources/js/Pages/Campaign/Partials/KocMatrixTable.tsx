@@ -28,6 +28,7 @@ import {
     CreatorAccount,
     DeadlineInfo,
     ContentPostItem,
+    SampleLogItem,
 } from './KocMatrix/types';
 
 // Re-export types for backward compatibility
@@ -134,6 +135,8 @@ export default function KocMatrixTable({
     const [shipmentModalItem, setShipmentModalItem] = useState<CampaignCreatorPivot | null>(null);
     const [shipmentNotes, setShipmentNotes] = useState<string>('');
     const [shipmentDate, setShipmentDate] = useState<string>('');
+    const [shipmentTrackingCode, setShipmentTrackingCode] = useState<string>('');
+    const [editingLogId, setEditingLogId] = useState<number | null>(null);
     const [shipmentSubmitting, setShipmentSubmitting] = useState<boolean>(false);
     const [copiedAddress, setCopiedAddress] = useState<boolean>(false);
     const [shipmentProducts, setShipmentProducts] = useState<Array<{
@@ -346,6 +349,23 @@ export default function KocMatrixTable({
         setCopiedToken(token);
         showFeedback('Đã sao chép link Portal vào clipboard!');
         setTimeout(() => setCopiedToken(null), 2500);
+    };
+
+    // Gia hạn link portal
+    const handleExtendPortal = (item: CampaignCreatorPivot) => {
+        router.post(
+            route('campaigns.creators.portal.extend', { id: campaign.id, pivotId: item.id }),
+            {},
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    showFeedback(`Đã gia hạn link Portal cho KOC [${item.creator.name}] thành công!`);
+                },
+                onError: (err) => {
+                    alert(err.error || 'Có lỗi xảy ra khi gia hạn link Portal.');
+                },
+            }
+        );
     };
 
     // Mở Zalo thông minh theo ngữ cảnh
@@ -713,7 +733,9 @@ export default function KocMatrixTable({
     // Mở modal xác nhận gửi mẫu
     const handleOpenShipmentModal = (item: CampaignCreatorPivot) => {
         setShipmentModalItem(item);
+        setEditingLogId(null);
         setShipmentNotes('');
+        setShipmentTrackingCode('');
         setShipmentDate(new Date().toISOString().split('T')[0]);
         setCopiedAddress(false);
 
@@ -747,6 +769,80 @@ export default function KocMatrixTable({
             item.creator?.ward?.trim()
         );
         setIsEditingAddress(!hasAllAddressFields);
+    };
+
+    // Bắt đầu chỉnh sửa một đợt gửi mẫu cụ thể
+    const handleStartEditShipmentLog = (log: SampleLogItem) => {
+        setEditingLogId(log.id);
+        setShipmentDate(log.shipped_at || new Date().toISOString().split('T')[0]);
+        setShipmentNotes(log.notes || '');
+        setShipmentTrackingCode(log.tracking_code || '');
+
+        const campaignProds = campaign.products || [];
+        const logItems = log.items || [];
+
+        const mapped = campaignProds.map((cp) => {
+            const found = logItems.find((it) => it.product_id === cp.id);
+            return {
+                product_id: cp.id,
+                name: cp.name || cp.product_name || 'Sản phẩm',
+                sku: cp.sku || cp.product_sku || '',
+                quantity: found ? found.quantity : 1,
+                variant: found?.variant || '',
+                selected: Boolean(found),
+            };
+        });
+        setShipmentProducts(mapped);
+    };
+
+    // Hủy chế độ sửa đợt gửi mẫu, quay lại tạo đợt mới
+    const handleCancelEditShipmentLog = () => {
+        setEditingLogId(null);
+        setShipmentNotes('');
+        setShipmentTrackingCode('');
+        setShipmentDate(new Date().toISOString().split('T')[0]);
+        if (shipmentModalItem) {
+            const existingCreatorProds = shipmentModalItem.creatorProducts || shipmentModalItem.creator_products || [];
+            const campaignProds = campaign.products || [];
+            const mapped = campaignProds.map((cp) => {
+                const existing = existingCreatorProds.find((p) => p.campaign_product_id === cp.id);
+                return {
+                    product_id: cp.id,
+                    name: cp.name || cp.product_name || 'Sản phẩm',
+                    sku: cp.sku || cp.product_sku || '',
+                    quantity: existing ? (existing.quantity_sent || existing.quantity_assigned || 1) : 1,
+                    variant: existing?.sample_variant || '',
+                    selected: existing ? true : campaignProds.length === 1 ? true : false,
+                };
+            });
+            setShipmentProducts(mapped);
+        }
+    };
+
+    // Xóa một đợt gửi mẫu khỏi lịch sử evidence
+    const handleDeleteShipmentLog = (logId: number) => {
+        if (!shipmentModalItem) return;
+        if (!confirm('Bạn có chắc chắn muốn xóa đợt gửi mẫu này khỏi lịch sử evidence?')) return;
+
+        router.delete(
+            route('campaigns.creators.shipments.destroy', {
+                id: campaign.id,
+                pivotId: shipmentModalItem.id,
+                logId: logId,
+            }),
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    if (editingLogId === logId) {
+                        setEditingLogId(null);
+                    }
+                    showFeedback('Đã xóa đợt gửi mẫu khỏi lịch sử thành công!');
+                },
+                onError: (err) => {
+                    alert(err.error || Object.values(err)[0] || 'Không thể xóa đợt gửi mẫu.');
+                },
+            }
+        );
     };
 
     const handleToggleShipmentProduct = (productId: number) => {
@@ -819,18 +915,45 @@ export default function KocMatrixTable({
         }
 
         setShipmentSubmitting(true);
+        const shipmentPayload = {
+            notes: shipmentNotes,
+            shipped_at: shipmentDate || undefined,
+            tracking_code: shipmentTrackingCode.trim() || undefined,
+            shipping_address: quickAddress.trim() || undefined,
+            city_province: quickCity.trim() || undefined,
+            district: quickDistrict.trim() || undefined,
+            ward: quickWard.trim() || undefined,
+            phone: quickPhone.trim() || undefined,
+            products: selectedProductsToSend,
+        };
+
+        if (editingLogId !== null) {
+            router.put(
+                route('campaigns.creators.shipments.update', {
+                    id: campaign.id,
+                    pivotId: shipmentModalItem.id,
+                    logId: editingLogId,
+                }),
+                shipmentPayload,
+                {
+                    preserveScroll: true,
+                    onSuccess: () => {
+                        setEditingLogId(null);
+                        setShipmentSubmitting(false);
+                        showFeedback('Đã cập nhật đợt gửi mẫu thành công!');
+                    },
+                    onError: (err) => {
+                        setShipmentSubmitting(false);
+                        alert(err.error || Object.values(err)[0] || 'Không thể cập nhật đợt gửi mẫu.');
+                    },
+                }
+            );
+            return;
+        }
+
         router.post(
             route('campaigns.creators.shipments.store', { id: campaign.id, pivotId: shipmentModalItem.id }),
-            {
-                notes: shipmentNotes,
-                shipped_at: shipmentDate || undefined,
-                shipping_address: quickAddress.trim() || undefined,
-                city_province: quickCity.trim() || undefined,
-                district: quickDistrict.trim() || undefined,
-                ward: quickWard.trim() || undefined,
-                phone: quickPhone.trim() || undefined,
-                products: selectedProductsToSend,
-            },
+            shipmentPayload,
             {
                 preserveScroll: true,
                 onSuccess: () => {
@@ -1059,6 +1182,7 @@ export default function KocMatrixTable({
                                         }}
                                         onReopenDeal={handleReopenDeal}
                                         onCopyPortal={handleCopyPortal}
+                                        onExtendPortal={handleExtendPortal}
                                         copiedToken={copiedToken}
                                         onQuickStatusChange={handleQuickStatusChange}
                                         onOpenShipmentModal={handleOpenShipmentModal}
@@ -1208,6 +1332,8 @@ export default function KocMatrixTable({
                 onShipmentNotesChange={setShipmentNotes}
                 shipmentDate={shipmentDate}
                 onShipmentDateChange={setShipmentDate}
+                shipmentTrackingCode={shipmentTrackingCode}
+                onShipmentTrackingCodeChange={setShipmentTrackingCode}
                 shipmentSubmitting={shipmentSubmitting}
                 copiedAddress={copiedAddress}
                 onCopyWarehouseAddress={handleCopyWarehouseAddress}
@@ -1230,6 +1356,10 @@ export default function KocMatrixTable({
                 onToggleShipmentProduct={handleToggleShipmentProduct}
                 onChangeShipmentProductQty={handleChangeShipmentProductQty}
                 onChangeShipmentProductVariant={handleChangeShipmentProductVariant}
+                editingLogId={editingLogId}
+                onStartEditShipmentLog={handleStartEditShipmentLog}
+                onCancelEditShipmentLog={handleCancelEditShipmentLog}
+                onDeleteShipmentLog={handleDeleteShipmentLog}
 
                 videoModalItem={videoModalItem}
                 onCloseVideoModal={() => setVideoModalItem(null)}

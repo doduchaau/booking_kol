@@ -40,7 +40,7 @@ interface Props {
  * Dùng đúng Logo nhận diện thương hiệu chính xác của từng mạng xã hội.
  */
 export default function CampaignPlatformBadges({
-    platforms = ['tiktok'],
+    platforms,
     deliverables,
     size = 'sm',
     showLabel = true,
@@ -49,7 +49,8 @@ export default function CampaignPlatformBadges({
     onTogglePlatform,
     className = '',
 }: Props) {
-    const safePlatforms = Array.isArray(platforms) && platforms.length > 0 ? platforms : ['tiktok'];
+    const hasPlatforms = Array.isArray(platforms) && platforms.length > 0;
+    const safePlatforms = hasPlatforms ? platforms! : [];
 
     const deliverableMap = React.useMemo(() => {
         const map = new Map<string, PlatformDeliverableItem>();
@@ -60,6 +61,16 @@ export default function CampaignPlatformBadges({
         }
         return map;
     }, [deliverables]);
+
+    if (!hasPlatforms) {
+        return (
+            <div className={`inline-flex items-center gap-1.5 flex-wrap ${className}`}>
+                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-100 text-slate-400 border border-slate-200/60 italic">
+                    Chưa giao kênh
+                </span>
+            </div>
+        );
+    }
 
     return (
         <div className={`inline-flex items-center gap-1.5 flex-wrap ${className}`}>

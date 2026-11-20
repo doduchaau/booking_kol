@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { router } from '@inertiajs/react';
 import Button from '@/Components/Common/Button';
-import { Package, X, MapPin, AlertCircle, Calendar, FileText, CheckCircle2, ShoppingBag, Plus, Minus } from 'lucide-react';
+import { Package, X, MapPin, AlertCircle, Calendar, FileText, CheckCircle2, ShoppingBag, Plus, Minus, History } from 'lucide-react';
 import { WorkspaceKocItem } from '@/Pages/Campaign/Workspace';
 
 interface WorkspaceShipmentModalProps {
@@ -38,6 +38,9 @@ export default function WorkspaceShipmentModal({
 
     // Danh sách sản phẩm được chọn gửi
     const [productSelections, setProductSelections] = useState<ProductSelectionItem[]>([]);
+
+    // @ts-ignore
+    const sampleHistory = item.sample_shipment_history || item.sample_logs || [];
 
     const hasCompleteExistingInfo = Boolean(
         item.creator?.shipping_address?.trim() &&
@@ -205,6 +208,58 @@ export default function WorkspaceShipmentModal({
                         <div className="flex items-center gap-2 rounded-xl bg-rose-50 border border-rose-200 p-3 text-xs text-rose-700 font-medium">
                             <AlertCircle className="h-4 w-4 shrink-0" />
                             <span>{error}</span>
+                        </div>
+                    )}
+
+                    {/* Lịch sử các đợt gửi mẫu (Evidence) */}
+                    {sampleHistory.length > 0 && (
+                        <div className="space-y-2 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                            <div className="flex items-center justify-between text-xs font-bold text-slate-800">
+                                <span className="flex items-center gap-1.5">
+                                    <History className="h-4 w-4 text-amber-600" />
+                                    Lịch sử các đợt gửi mẫu ({sampleHistory.length} đợt)
+                                </span>
+                                <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                    Đã có evidence
+                                </span>
+                            </div>
+                            <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                                {sampleHistory.map((batch: any, bIdx: number) => {
+                                    const bNum = sampleHistory.length - bIdx;
+                                    return (
+                                        <div key={bIdx} className="p-2.5 rounded-lg bg-white border border-slate-200 text-xs space-y-1">
+                                            <div className="flex items-center justify-between text-[11px]">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="font-extrabold px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 text-[10px]">
+                                                        ĐỢT {bNum}
+                                                    </span>
+                                                    <span className="font-semibold text-slate-700">
+                                                        {batch.shipped_at || 'Chưa rõ ngày'}
+                                                    </span>
+                                                </div>
+                                                <span className="font-bold text-slate-800 text-[10px]">
+                                                    {batch.total_items_count || 1} món
+                                                </span>
+                                            </div>
+                                            {batch.items && batch.items.length > 0 && (
+                                                <div className="text-[11px] text-slate-600 space-y-0.5 pt-1">
+                                                    {batch.items.map((it: any, iIdx: number) => (
+                                                        <div key={iIdx} className="flex items-center justify-between">
+                                                            <span>• {it.product_name} {it.variant ? `(${it.variant})` : ''}</span>
+                                                            <span className="font-bold text-slate-800">x{it.quantity}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            {batch.notes && (
+                                                <div className="text-[10px] text-slate-500 italic pt-0.5">
+                                                    Ghi chú: {batch.notes}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
                         </div>
                     )}
 

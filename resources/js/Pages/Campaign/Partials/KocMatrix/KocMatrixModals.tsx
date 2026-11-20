@@ -13,6 +13,9 @@ import {
     Video,
     ExternalLink,
     FileText,
+    History,
+    Trash2,
+    RotateCcw,
 } from 'lucide-react';
 import Button from '@/Components/Common/Button';
 import QuickZaloReminderModal from '@/Components/Outreach/QuickZaloReminderModal';
@@ -58,6 +61,8 @@ interface Props {
     onShipmentNotesChange: (notes: string) => void;
     shipmentDate: string;
     onShipmentDateChange: (date: string) => void;
+    shipmentTrackingCode?: string;
+    onShipmentTrackingCodeChange?: (val: string) => void;
     shipmentSubmitting: boolean;
     copiedAddress: boolean;
     onCopyWarehouseAddress: (item: CampaignCreatorPivot) => void;
@@ -87,6 +92,10 @@ interface Props {
     onToggleShipmentProduct?: (productId: number) => void;
     onChangeShipmentProductQty?: (productId: number, delta: number) => void;
     onChangeShipmentProductVariant?: (productId: number, variant: string) => void;
+    editingLogId?: number | null;
+    onStartEditShipmentLog?: (log: any) => void;
+    onCancelEditShipmentLog?: () => void;
+    onDeleteShipmentLog?: (logId: number) => void;
 
     // Video Modal
     videoModalItem: CampaignCreatorPivot | null;
@@ -153,6 +162,8 @@ export default React.memo(function KocMatrixModals({
     onShipmentNotesChange,
     shipmentDate,
     onShipmentDateChange,
+    shipmentTrackingCode = '',
+    onShipmentTrackingCodeChange = () => {},
     shipmentSubmitting,
     copiedAddress,
     onCopyWarehouseAddress,
@@ -175,6 +186,10 @@ export default React.memo(function KocMatrixModals({
     onToggleShipmentProduct = () => {},
     onChangeShipmentProductQty = () => {},
     onChangeShipmentProductVariant = () => {},
+    editingLogId = null,
+    onStartEditShipmentLog = () => {},
+    onCancelEditShipmentLog = () => {},
+    onDeleteShipmentLog = () => {},
 
     videoModalItem,
     onCloseVideoModal,
@@ -434,26 +449,45 @@ export default React.memo(function KocMatrixModals({
                     shipmentModalItem.creator?.ward?.trim()
                 );
 
+                const sampleHistory = shipmentModalItem.sample_shipment_history || shipmentModalItem.sample_logs || [];
+                const totalSentAllBatches = sampleHistory.reduce((sum: number, h: any) => sum + (h.total_items_count || 0), 0) || (shipmentModalItem.total_samples_sent || 0);
+
                 return (
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
                         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs" onClick={onCloseShipmentModal} />
-                        <div className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl border border-slate-100 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
-                            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                                <div>
-                                    <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                                        <Package className="h-5 w-5 text-amber-500" />
-                                        Xác Nhận Đã Gửi Mẫu Cho KOC
-                                    </h3>
-                                    <p className="text-xs text-slate-500">
-                                        {shipmentModalItem.creator?.name} • {effectivePhone || 'Chưa có SĐT'}
-                                    </p>
+                        <div className="relative w-full max-w-4xl rounded-2xl bg-white p-6 shadow-2xl border border-slate-100 animate-in zoom-in-95 max-h-[92vh] overflow-y-auto">
+                            {/* 1. Header Modal */}
+                            <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
+                                <div className="flex items-center gap-3">
+                                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 shadow-2xs">
+                                        <Package className="h-6 w-6" />
+                                    </div>
+                                    <div>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <h3 className="text-base font-bold text-slate-900">
+                                                Quản Lý Gửi Mẫu & Lịch Sử Evidence
+                                            </h3>
+                                            {sampleHistory.length > 0 && (
+                                                <span className="text-[11px] px-2.5 py-0.5 rounded-full font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                                                    Đã gửi: {sampleHistory.length} đợt ({totalSentAllBatches} món)
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="text-xs text-slate-500 mt-0.5">
+                                            KOC: <strong className="text-slate-800">{shipmentModalItem.creator?.name}</strong> • SĐT: <strong className="text-slate-800">{effectivePhone || 'Chưa có SĐT'}</strong>
+                                        </p>
+                                    </div>
                                 </div>
-                                <button type="button" onClick={onCloseShipmentModal} className="text-slate-400 hover:text-slate-600">
+                                <button
+                                    type="button"
+                                    onClick={onCloseShipmentModal}
+                                    className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                                >
                                     <X className="h-5 w-5" />
                                 </button>
                             </div>
 
-                            {/* Cảnh báo nếu KOC chưa có đầy đủ thông tin địa chỉ/SĐT/xã/thành phố */}
+                            {/* Cảnh báo thiếu thông tin giao hàng */}
                             {!isShippingInfoComplete && (
                                 <div className="mt-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-start gap-2.5">
                                     <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
@@ -466,321 +500,505 @@ export default React.memo(function KocMatrixModals({
                                 </div>
                             )}
 
-                            {/* Hiển thị địa chỉ hiện tại nếu đã có đầy đủ */}
-                            {hasCompleteOriginalInfo && !isEditingAddress && (
-                                <div className="mt-4 p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-                                    <div className="flex items-center justify-between mb-1.5">
-                                        <span className="font-bold text-slate-800 flex items-center gap-1.5">
-                                            <Truck className="h-3.5 w-3.5 text-slate-500" />
-                                            Địa chỉ nhận mẫu của KOC:
-                                        </span>
-                                        <div className="flex items-center gap-1.5">
-                                            <button
-                                                type="button"
-                                                onClick={() => onToggleEditingAddress(true)}
-                                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 shadow-2xs"
-                                                title="Sửa hoặc cập nhật địa chỉ mới"
-                                            >
-                                                <Edit3 className="h-3 w-3 text-slate-500" />
-                                                Sửa
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => onCopyWarehouseAddress(shipmentModalItem)}
-                                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all shadow-2xs ${
-                                                    copiedAddress
-                                                        ? 'bg-emerald-600 text-white'
-                                                        : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-300'
-                                                }`}
-                                                title="Chép họ tên, SĐT và địa chỉ để gửi cho bộ phận kho"
-                                            >
-                                                {copiedAddress ? (
-                                                    <>
-                                                        <Check className="h-3 w-3" />
-                                                        <span>Đã sao chép!</span>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <Copy className="h-3 w-3" />
-                                                        <span>Sao chép gửi kho</span>
-                                                    </>
+                            {/* 2. BỐ CỤC 2 CỘT MỞ RỘNG (Desktop 2 cột cân đối) */}
+                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 mt-4">
+                                {/* CỘT TRÁI (Lg: 5/12): Thông tin nhận hàng & Tiện ích kho */}
+                                <div className="lg:col-span-5 space-y-3.5">
+                                    {/* Khối Địa chỉ hiện tại */}
+                                    {hasCompleteOriginalInfo && !isEditingAddress && (
+                                        <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-2">
+                                            <div className="flex items-center justify-between">
+                                                <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                                                    <Truck className="h-3.5 w-3.5 text-slate-500" />
+                                                    Địa chỉ nhận mẫu của KOC:
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => onToggleEditingAddress(true)}
+                                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 shadow-2xs cursor-pointer"
+                                                    title="Sửa địa chỉ"
+                                                >
+                                                    <Edit3 className="h-3 w-3 text-slate-500" />
+                                                    Sửa
+                                                </button>
+                                            </div>
+
+                                            <p className="text-slate-800 leading-relaxed font-medium bg-white p-2.5 rounded-lg border border-slate-200/80">
+                                                {[
+                                                    shipmentModalItem.creator?.shipping_address,
+                                                    shipmentModalItem.creator?.ward,
+                                                    shipmentModalItem.creator?.district,
+                                                    shipmentModalItem.creator?.city_province,
+                                                ]
+                                                    .filter(Boolean)
+                                                    .join(', ')}
+                                                {shipmentModalItem.creator?.phone && (
+                                                    <span className="block text-slate-500 font-mono text-[11px] mt-1 pt-1 border-t border-slate-100">
+                                                        SĐT: {shipmentModalItem.creator.phone}
+                                                    </span>
                                                 )}
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <p className="text-slate-700 leading-relaxed font-medium">
-                                        {[
-                                            shipmentModalItem.creator?.shipping_address,
-                                            shipmentModalItem.creator?.ward,
-                                            shipmentModalItem.creator?.district,
-                                            shipmentModalItem.creator?.city_province,
-                                        ]
-                                            .filter(Boolean)
-                                            .join(', ')}
-                                    </p>
-                                    {shipmentModalItem.creator?.phone && (
-                                        <div className="text-slate-500 font-mono text-[11px] mt-1">
-                                            SĐT: {shipmentModalItem.creator.phone}
+                                            </p>
+
+                                            {/* Tiện ích Copy gửi kho & Portal */}
+                                            <div className="grid grid-cols-2 gap-2 pt-1">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => onCopyWarehouseAddress(shipmentModalItem)}
+                                                    className={`inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-2xs cursor-pointer ${
+                                                        copiedAddress
+                                                            ? 'bg-emerald-600 text-white'
+                                                            : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-300'
+                                                    }`}
+                                                    title="Chép họ tên, SĐT và địa chỉ để gửi cho bộ phận kho"
+                                                >
+                                                    {copiedAddress ? (
+                                                        <>
+                                                            <Check className="h-3.5 w-3.5" />
+                                                            <span>Đã chép kho!</span>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <Copy className="h-3.5 w-3.5 text-slate-500" />
+                                                            <span>Sao chép gửi kho</span>
+                                                        </>
+                                                    )}
+                                                </button>
+
+                                                {shipmentModalItem.portal_token && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => onCopyPortal(shipmentModalItem.portal_token)}
+                                                        className={`inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-2xs cursor-pointer ${
+                                                            copiedToken === shipmentModalItem.portal_token
+                                                                ? 'bg-emerald-600 text-white'
+                                                                : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-300'
+                                                        }`}
+                                                        title="Sao chép link Portal gửi KOC"
+                                                    >
+                                                        {copiedToken === shipmentModalItem.portal_token ? (
+                                                            <>
+                                                                <Check className="h-3.5 w-3.5" />
+                                                                <span>Đã chép link!</span>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Copy className="h-3.5 w-3.5 text-slate-500" />
+                                                                <span>Link Portal</span>
+                                                            </>
+                                                        )}
+                                                    </button>
+                                                )}
+                                            </div>
                                         </div>
                                     )}
-                                </div>
-                            )}
 
-                            {/* Form Nhập Nhanh / Bổ Sung Địa Chỉ */}
-                            {(!hasCompleteOriginalInfo || isEditingAddress) && (
-                                <div className="mt-4 p-3.5 rounded-xl bg-indigo-50/60 border border-indigo-200/80 text-xs animate-in fade-in duration-200">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <span className="font-bold text-indigo-950 flex items-center gap-1.5">
-                                            <MapPin className="h-4 w-4 text-indigo-600" />
-                                            Thông tin nhận hàng bắt buộc (Lưu vào hồ sơ KOC):
-                                        </span>
-                                        {hasCompleteOriginalInfo && (
-                                            <button
-                                                type="button"
-                                                onClick={() => onToggleEditingAddress(false)}
-                                                className="text-[11px] font-medium text-slate-500 hover:text-slate-700 underline"
-                                            >
-                                                Hủy sửa
-                                            </button>
-                                        )}
-                                    </div>
+                                    {/* Form Sửa / Bổ Sung Địa Chỉ */}
+                                    {(!hasCompleteOriginalInfo || isEditingAddress) && (
+                                        <div className="p-3.5 rounded-xl bg-indigo-50/70 border border-indigo-200 text-xs space-y-2.5 animate-in fade-in duration-200">
+                                            <div className="flex items-center justify-between">
+                                                <span className="font-bold text-indigo-950 flex items-center gap-1.5">
+                                                    <MapPin className="h-4 w-4 text-indigo-600" />
+                                                    Thông tin nhận hàng bắt buộc:
+                                                </span>
+                                                {hasCompleteOriginalInfo && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => onToggleEditingAddress(false)}
+                                                        className="text-[11px] font-medium text-slate-500 hover:text-slate-700 underline cursor-pointer"
+                                                    >
+                                                        Hủy sửa
+                                                    </button>
+                                                )}
+                                            </div>
 
-                                    <div className="space-y-2.5">
-                                        <div>
-                                            <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
-                                                Địa chỉ chi tiết (Số nhà, đường, ngõ, tòa nhà...) <span className="text-rose-500">*</span>
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={quickAddress}
-                                                onChange={(e) => onQuickAddressChange(e.target.value)}
-                                                placeholder="Ví dụ: 123 Đường Nguyễn Trãi"
-                                                className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500 bg-white"
-                                            />
-                                        </div>
-
-                                        <div className="grid grid-cols-3 gap-2">
                                             <div>
                                                 <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
-                                                    Tỉnh / TP <span className="text-rose-500">*</span>
+                                                    Địa chỉ chi tiết (Số nhà, đường...) <span className="text-rose-500">*</span>
                                                 </label>
                                                 <input
                                                     type="text"
-                                                    value={quickCity}
-                                                    onChange={(e) => onQuickCityChange(e.target.value)}
-                                                    placeholder="Hà Nội / TP.HCM"
-                                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500 bg-white"
+                                                    value={quickAddress}
+                                                    onChange={(e) => onQuickAddressChange(e.target.value)}
+                                                    placeholder="Ví dụ: 123 Đường Nguyễn Trãi"
+                                                    className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500 bg-white"
                                                 />
                                             </div>
-                                            <div>
-                                                <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">Quận / Huyện</label>
-                                                <input
-                                                    type="text"
-                                                    value={quickDistrict}
-                                                    onChange={(e) => onQuickDistrictChange(e.target.value)}
-                                                    placeholder="Quận Thanh Xuân"
-                                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500 bg-white"
-                                                />
+
+                                            <div className="grid grid-cols-3 gap-2">
+                                                <div>
+                                                    <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
+                                                        Tỉnh/TP <span className="text-rose-500">*</span>
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={quickCity}
+                                                        onChange={(e) => onQuickCityChange(e.target.value)}
+                                                        placeholder="Hà Nội"
+                                                        className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500 bg-white"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">Quận/Huyện</label>
+                                                    <input
+                                                        type="text"
+                                                        value={quickDistrict}
+                                                        onChange={(e) => onQuickDistrictChange(e.target.value)}
+                                                        placeholder="Thanh Xuân"
+                                                        className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500 bg-white"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
+                                                        Phường/Xã <span className="text-rose-500">*</span>
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={quickWard}
+                                                        onChange={(e) => onQuickWardChange(e.target.value)}
+                                                        placeholder="Khương Trung"
+                                                        className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500 bg-white"
+                                                    />
+                                                </div>
                                             </div>
+
                                             <div>
                                                 <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
-                                                    Phường / Xã <span className="text-rose-500">*</span>
+                                                    Số điện thoại nhận hàng <span className="text-rose-500">*</span>
                                                 </label>
                                                 <input
                                                     type="text"
-                                                    value={quickWard}
-                                                    onChange={(e) => onQuickWardChange(e.target.value)}
-                                                    placeholder="Phường Khương Trung"
-                                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500 bg-white"
+                                                    value={quickPhone}
+                                                    onChange={(e) => onQuickPhoneChange(e.target.value)}
+                                                    placeholder="Ví dụ: 0988123456"
+                                                    className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500 bg-white"
                                                 />
                                             </div>
                                         </div>
+                                    )}
 
-                                        <div>
-                                            <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
-                                                Số điện thoại nhận hàng <span className="text-rose-500">*</span>
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={quickPhone}
-                                                onChange={(e) => onQuickPhoneChange(e.target.value)}
-                                                placeholder="Ví dụ: 0988123456"
-                                                className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500 bg-white"
-                                            />
-                                        </div>
+                                    {/* Lời nhắc quy trình tinh gọn */}
+                                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 leading-relaxed">
+                                        💡 <strong>Quy trình tinh gọn:</strong> Nhân viên chỉ cần bấm sao chép thông tin địa chỉ gửi cho kho và ghi nhận đợt gửi. Kho bên ngoài sẽ chịu trách nhiệm đóng gói và xuất hàng.
                                     </div>
                                 </div>
-                            )}
 
-                            {/* Tiện ích Copy Link Portal */}
-                            {shipmentModalItem.portal_token && (
-                                <div className="mt-2.5 flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-                                    <span className="text-slate-600 text-[11px]">Hoặc gửi link cho KOC tự điền:</span>
-                                    <button
-                                        type="button"
-                                        onClick={() => onCopyPortal(shipmentModalItem.portal_token)}
-                                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all shadow-2xs ${
-                                            copiedToken === shipmentModalItem.portal_token
-                                                ? 'bg-emerald-600 text-white'
-                                                : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-300'
-                                        }`}
-                                    >
-                                        {copiedToken === shipmentModalItem.portal_token ? (
-                                            <>
-                                                <Check className="h-3 w-3" />
-                                                <span>Đã sao chép link Portal!</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Copy className="h-3 w-3" />
-                                                <span>Sao chép link Portal</span>
-                                            </>
-                                        )}
-                                    </button>
-                                </div>
-                            )}
-
-                            {/* Trạng thái gửi mẫu hiện tại */}
-                            {shipmentModalItem.sample_sent_at && (
-                                <div className="mt-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">
-                                    <strong>Trạng thái:</strong> Đã gửi mẫu vào ngày {formatDate(shipmentModalItem.sample_sent_at)}.
-                                    {shipmentModalItem.notes && <span className="block mt-0.5 text-slate-600">Ghi chú: {shipmentModalItem.notes}</span>}
-                                </div>
-                            )}
-
-                            {/* Form xác nhận gửi mẫu tinh giản */}
-                            <form onSubmit={onSubmitShipment} className="mt-4 space-y-3.5 pt-3 border-t border-slate-100">
-                                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 leading-relaxed">
-                                    💡 <strong>Quy trình tinh gọn:</strong> Nhân viên Booking chỉ cần bấm sao chép thông tin địa chỉ gửi cho kho và xác nhận ngày gửi mẫu. Kho bên ngoài sẽ chịu trách nhiệm đóng gói và vận chuyển.
-                                </div>
-
-                                {/* Khối Lựa Chọn Sản Phẩm Mẫu Gửi Cho KOC */}
-                                {shipmentProducts && shipmentProducts.length > 0 && (
-                                    <div className="space-y-2 p-3 rounded-xl border border-amber-200/80 bg-amber-50/40">
+                                {/* CỘT PHẢI (Lg: 7/12): Lịch sử Evidence & Form Thao tác gửi */}
+                                <div className="lg:col-span-7 space-y-4">
+                                    {/* 3. LỊCH SỬ CÁC ĐỢT GỬI MẪU (EVIDENCE TIMELINE) */}
+                                    <div className="space-y-2">
                                         <div className="flex items-center justify-between">
-                                            <label className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
-                                                <Package className="h-4 w-4 text-amber-600" />
-                                                <span>Lựa chọn sản phẩm mẫu gửi cho KOC này</span>
-                                            </label>
-                                            <span className="text-[11px] font-semibold text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded">
-                                                Đã chọn: {shipmentProducts.filter((p) => p.selected).reduce((sum, p) => sum + p.quantity, 0)} món
+                                            <div className="flex items-center gap-1.5 font-bold text-slate-900 text-xs">
+                                                <History className="h-4 w-4 text-amber-600" />
+                                                <span>Lịch sử các đợt gửi mẫu (Evidence)</span>
+                                            </div>
+                                            <span className="text-[11px] font-semibold text-slate-500">
+                                                {sampleHistory.length > 0 ? `${sampleHistory.length} đợt đã ghi nhận` : 'Chưa có đợt gửi nào'}
                                             </span>
                                         </div>
 
-                                        <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
-                                            {shipmentProducts.map((prod) => (
-                                                <div
-                                                    key={prod.product_id}
-                                                    className={`p-2.5 rounded-lg border text-xs transition-colors ${
-                                                        prod.selected
-                                                            ? 'bg-white border-amber-300 shadow-2xs'
-                                                            : 'bg-slate-50/80 border-slate-200 opacity-70'
-                                                    }`}
-                                                >
-                                                    <div className="flex items-center justify-between gap-2">
-                                                        <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={prod.selected}
-                                                                onChange={() => onToggleShipmentProduct(prod.product_id)}
-                                                                className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 h-4 w-4"
-                                                            />
-                                                            <span className="font-bold text-slate-800 truncate block">
-                                                                {prod.name}
-                                                            </span>
-                                                            {prod.sku && (
-                                                                <span className="text-[10px] font-mono text-slate-400">
-                                                                    ({prod.sku})
-                                                                </span>
-                                                            )}
-                                                        </label>
+                                        {sampleHistory.length > 0 ? (
+                                            <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                                                {sampleHistory.map((batch: any, idx: number) => {
+                                                    const batchNum = sampleHistory.length - idx;
+                                                    const batchTotal = batch.total_items_count || (batch.items?.reduce((s: number, i: any) => s + (i.quantity || 1), 0) || 1);
+                                                    const isCurrentlyEditing = editingLogId === batch.id;
 
-                                                        {prod.selected && (
-                                                            <div className="flex items-center gap-1 shrink-0">
-                                                                <span className="text-[11px] text-slate-500">SL:</span>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => onChangeShipmentProductQty(prod.product_id, -1)}
-                                                                    className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center font-bold"
-                                                                >
-                                                                    -
-                                                                </button>
-                                                                <span className="w-6 text-center font-bold text-slate-900">
-                                                                    {prod.quantity}
-                                                                </span>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => onChangeShipmentProductQty(prod.product_id, 1)}
-                                                                    className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center font-bold"
-                                                                >
-                                                                    +
-                                                                </button>
+                                                    return (
+                                                        <div
+                                                            key={batch.id || idx}
+                                                            className={`p-3 rounded-xl border text-xs space-y-2 transition-all ${
+                                                                isCurrentlyEditing
+                                                                    ? 'bg-amber-50/70 border-amber-400 ring-2 ring-amber-400/30 shadow-xs'
+                                                                    : 'bg-slate-50 border-slate-200 hover:border-slate-300'
+                                                            }`}
+                                                        >
+                                                            <div className="flex items-center justify-between text-[11px]">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="font-extrabold px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200 text-[10px]">
+                                                                        ĐỢT {batchNum}
+                                                                    </span>
+                                                                    <span className="font-semibold text-slate-800">
+                                                                        Ngày gửi: {formatDate(batch.shipped_at || '')}
+                                                                    </span>
+                                                                </div>
+
+                                                                {/* Nút Sửa & Xóa Đợt Gửi */}
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className="font-bold text-slate-800 bg-white px-2 py-0.5 rounded border border-slate-200 text-[10px]">
+                                                                        {batchTotal} món
+                                                                    </span>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => onStartEditShipmentLog(batch)}
+                                                                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border transition-colors cursor-pointer ${
+                                                                            isCurrentlyEditing
+                                                                                ? 'bg-amber-600 text-white border-amber-600'
+                                                                                : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+                                                                        }`}
+                                                                        title="Sửa thông tin hoặc sản phẩm của đợt gửi này"
+                                                                    >
+                                                                        <Edit3 className="h-3 w-3" />
+                                                                        <span>Sửa</span>
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => onDeleteShipmentLog(batch.id)}
+                                                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-white hover:bg-rose-50 text-rose-600 hover:text-rose-700 border border-slate-200 hover:border-rose-200 transition-colors cursor-pointer"
+                                                                        title="Xóa đợt gửi này khỏi lịch sử evidence"
+                                                                    >
+                                                                        <Trash2 className="h-3 w-3" />
+                                                                        <span>Xóa</span>
+                                                                    </button>
+                                                                </div>
                                                             </div>
-                                                        )}
-                                                    </div>
 
-                                                    {prod.selected && (
-                                                        <div className="mt-2 pl-6">
-                                                            <input
-                                                                type="text"
-                                                                value={prod.variant || ''}
-                                                                onChange={(e) => onChangeShipmentProductVariant(prod.product_id, e.target.value)}
-                                                                placeholder="Ghi chú phân loại (Màu sắc, Size, Dung tích...)"
-                                                                className="w-full px-2.5 py-1 text-[11px] rounded border border-slate-200 bg-slate-50/60 focus:bg-white focus:ring-1 focus:ring-amber-500"
-                                                            />
+                                                            {/* Danh sách món gửi trong đợt */}
+                                                            {batch.items && batch.items.length > 0 ? (
+                                                                <div className="bg-white p-2 rounded-lg border border-slate-100 divide-y divide-slate-100">
+                                                                    {batch.items.map((it: any, iIdx: number) => (
+                                                                        <div key={iIdx} className="flex items-center justify-between text-[11px] py-1 first:pt-0 last:pb-0">
+                                                                            <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                                                                                <Package className="h-3 w-3 text-slate-400 shrink-0" />
+                                                                                <span className="font-semibold text-slate-800 truncate">{it.product_name}</span>
+                                                                                {it.sku && (
+                                                                                    <span className="text-[10px] text-slate-400 font-mono">({it.sku})</span>
+                                                                                )}
+                                                                                {it.variant && (
+                                                                                    <span className="text-[10px] text-amber-800 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200 truncate">
+                                                                                        {it.variant}
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
+                                                                            <span className="font-bold text-slate-900 shrink-0">
+                                                                                x{it.quantity}
+                                                                            </span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            ) : (
+                                                                <div className="text-[11px] text-slate-600 bg-white p-2 rounded-lg border border-slate-100 italic">
+                                                                    {batch.notes || 'Gửi mẫu sản phẩm'}
+                                                                </div>
+                                                            )}
+
+                                                            {/* Ghi chú & Mã vận đơn đợt gửi */}
+                                                            {(batch.notes || batch.tracking_code || batch.sent_by?.name) && (
+                                                                <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-200/60">
+                                                                    <div className="truncate pr-2">
+                                                                        {batch.notes && (
+                                                                            <span className="truncate" title={batch.notes}>
+                                                                                💬 Ghi chú: <strong className="text-slate-700">{batch.notes}</strong>
+                                                                            </span>
+                                                                        )}
+                                                                        {batch.sent_by?.name && (
+                                                                            <span className="ml-2 text-[10px] text-slate-400">
+                                                                                (Bởi: {batch.sent_by.name})
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    {batch.tracking_code && (
+                                                                        <span className="font-mono text-[10px] text-primary-700 bg-primary-50 px-1.5 py-0.2 rounded shrink-0">
+                                                                            VĐ: {batch.tracking_code}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            )}
                                                         </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        ) : (
+                                            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-500 flex items-center justify-between">
+                                                <span>Chưa có đợt gửi mẫu nào được ghi nhận cho KOC này.</span>
+                                                <span className="text-[10px] bg-white px-2 py-0.5 rounded border border-slate-200 font-medium text-slate-600">
+                                                    Chưa gửi mẫu
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* 4. FORM GỬI MẪU MỚI HOẶC SỬA ĐỢT GỬI */}
+                                    <form onSubmit={onSubmitShipment} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/60 space-y-3">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-1.5 font-bold text-xs text-slate-900">
+                                                <Package className="h-4 w-4 text-primary-600" />
+                                                <span>
+                                                    {editingLogId !== null ? (
+                                                        <span className="text-amber-800">
+                                                            Đang chỉnh sửa Đợt gửi mẫu
+                                                        </span>
+                                                    ) : sampleHistory.length > 0 ? (
+                                                        `Gửi thêm đợt mẫu mới (Đợt ${sampleHistory.length + 1})`
+                                                    ) : (
+                                                        'Ghi nhận đợt gửi mẫu đầu tiên'
                                                     )}
-                                                </div>
-                                            ))}
+                                                </span>
+                                            </div>
+
+                                            {editingLogId !== null && (
+                                                <button
+                                                    type="button"
+                                                    onClick={onCancelEditShipmentLog}
+                                                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 hover:text-slate-900 underline cursor-pointer"
+                                                >
+                                                    <RotateCcw className="h-3 w-3" />
+                                                    Hủy sửa (Tạo đợt mới)
+                                                </button>
+                                            )}
                                         </div>
-                                    </div>
-                                )}
 
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Ngày gửi mẫu</label>
-                                        <input
-                                            type="date"
-                                            value={shipmentDate}
-                                            onChange={(e) => onShipmentDateChange(e.target.value)}
-                                            className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500"
-                                        />
-                                    </div>
+                                        {/* Khối Lựa Chọn Sản Phẩm Mẫu */}
+                                        {shipmentProducts && shipmentProducts.length > 0 && (
+                                            <div className="space-y-2 p-2.5 rounded-lg border border-amber-200 bg-amber-50/40">
+                                                <div className="flex items-center justify-between">
+                                                    <label className="text-[11px] font-bold text-amber-950">
+                                                        Sản phẩm gửi trong đợt này:
+                                                    </label>
+                                                    <span className="text-[10px] font-semibold text-amber-900 bg-amber-100 px-2 py-0.2 rounded">
+                                                        Đã chọn: {shipmentProducts.filter((p) => p.selected).reduce((sum, p) => sum + p.quantity, 0)} món
+                                                    </span>
+                                                </div>
 
-                                    <div>
-                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Ghi chú mẫu / sản phẩm gửi</label>
-                                        <input
-                                            type="text"
-                                            value={shipmentNotes}
-                                            onChange={(e) => onShipmentNotesChange(e.target.value)}
-                                            placeholder="Ví dụ: 1 Hộp kem + Quà tặng kèm"
-                                            className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500"
-                                        />
-                                    </div>
+                                                <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                                                    {shipmentProducts.map((prod) => (
+                                                        <div
+                                                            key={prod.product_id}
+                                                            className={`p-2 rounded-lg border text-xs transition-colors ${
+                                                                prod.selected
+                                                                    ? 'bg-white border-amber-300 shadow-2xs'
+                                                                    : 'bg-slate-50 border-slate-200 opacity-70'
+                                                            }`}
+                                                        >
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={prod.selected}
+                                                                        onChange={() => onToggleShipmentProduct(prod.product_id)}
+                                                                        className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 h-3.5 w-3.5 cursor-pointer"
+                                                                    />
+                                                                    <span className="font-bold text-slate-800 truncate block text-[11px]">
+                                                                        {prod.name}
+                                                                    </span>
+                                                                    {prod.sku && (
+                                                                        <span className="text-[10px] font-mono text-slate-400">
+                                                                            ({prod.sku})
+                                                                        </span>
+                                                                    )}
+                                                                </label>
+
+                                                                {prod.selected && (
+                                                                    <div className="flex items-center gap-1 shrink-0">
+                                                                        <span className="text-[10px] text-slate-500">SL:</span>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => onChangeShipmentProductQty(prod.product_id, -1)}
+                                                                            className="w-5 h-5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-xs cursor-pointer"
+                                                                        >
+                                                                            -
+                                                                        </button>
+                                                                        <span className="w-5 text-center font-bold text-slate-900 text-xs">
+                                                                            {prod.quantity}
+                                                                        </span>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => onChangeShipmentProductQty(prod.product_id, 1)}
+                                                                            className="w-5 h-5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-xs cursor-pointer"
+                                                                        >
+                                                                            +
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+
+                                                            {prod.selected && (
+                                                                <div className="mt-1.5 pl-5">
+                                                                    <input
+                                                                        type="text"
+                                                                        value={prod.variant || ''}
+                                                                        onChange={(e) => onChangeShipmentProductVariant(prod.product_id, e.target.value)}
+                                                                        placeholder="Ghi chú phân loại (Màu sắc, Size, Dung tích...)"
+                                                                        className="w-full px-2 py-0.5 text-[11px] rounded border border-slate-200 bg-slate-50/60 focus:bg-white focus:ring-1 focus:ring-amber-500"
+                                                                    />
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="grid grid-cols-2 gap-2.5">
+                                            <div>
+                                                <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
+                                                    Ngày gửi mẫu <span className="text-rose-500">*</span>
+                                                </label>
+                                                <input
+                                                    type="date"
+                                                    value={shipmentDate}
+                                                    onChange={(e) => onShipmentDateChange(e.target.value)}
+                                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500 bg-white"
+                                                    required
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
+                                                    Mã vận đơn (nếu có)
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={shipmentTrackingCode}
+                                                    onChange={(e) => onShipmentTrackingCodeChange(e.target.value)}
+                                                    placeholder="Ví dụ: SPX12345678"
+                                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500 bg-white font-mono"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
+                                                Ghi chú đợt gửi này
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={shipmentNotes}
+                                                onChange={(e) => onShipmentNotesChange(e.target.value)}
+                                                placeholder="Ví dụ: Gửi bù size L / Quà tặng kèm"
+                                                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500 bg-white"
+                                            />
+                                        </div>
+
+                                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200/60">
+                                            {editingLogId !== null && (
+                                                <Button
+                                                    type="button"
+                                                    variant="secondary"
+                                                    size="sm"
+                                                    onClick={onCancelEditShipmentLog}
+                                                >
+                                                    Hủy
+                                                </Button>
+                                            )}
+                                            <Button
+                                                type="submit"
+                                                variant="primary"
+                                                size="sm"
+                                                disabled={!isShippingInfoComplete || shipmentSubmitting}
+                                                loading={shipmentSubmitting}
+                                                iconLeft={<CheckCircle2 className="h-3.5 w-3.5" />}
+                                                title={!isShippingInfoComplete ? 'Vui lòng điền đủ thông tin nhận hàng trước khi xác nhận' : undefined}
+                                            >
+                                                {editingLogId !== null
+                                                    ? 'Lưu Cập Nhật Đợt Này'
+                                                    : sampleHistory.length > 0
+                                                    ? `Xác Nhận Gửi Mẫu (Đợt ${sampleHistory.length + 1})`
+                                                    : 'Xác Nhận Đã Gửi Mẫu'}
+                                            </Button>
+                                        </div>
+                                    </form>
                                 </div>
-
-                                <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                                    <span className="text-xs text-rose-600 font-medium">
-                                        {!isShippingInfoComplete && '⚠️ Cần đủ địa chỉ, SĐT, Tỉnh/TP, Phường/Xã để gửi mẫu'}
-                                    </span>
-                                    <div className="flex items-center gap-2 ml-auto">
-                                        <Button type="button" variant="secondary" size="sm" onClick={onCloseShipmentModal}>
-                                            Đóng
-                                        </Button>
-                                        <Button
-                                            type="submit"
-                                            variant="primary"
-                                            size="sm"
-                                            disabled={!isShippingInfoComplete || shipmentSubmitting}
-                                            loading={shipmentSubmitting}
-                                            iconLeft={<CheckCircle2 className="h-3.5 w-3.5" />}
-                                            title={!isShippingInfoComplete ? 'Vui lòng điền đủ thông tin nhận hàng trước khi xác nhận' : undefined}
-                                        >
-                                            Xác Nhận Đã Gửi Mẫu
-                                        </Button>
-                                    </div>
-                                </div>
-                            </form>
+                            </div>
                         </div>
                     </div>
                 );

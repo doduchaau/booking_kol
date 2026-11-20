@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Modules\Campaign\Enums\CollaborationTypeEnum;
 use Modules\Campaign\Enums\PipelineStatusEnum;
@@ -51,6 +52,7 @@ class CampaignCreator extends Model
 
     protected $appends = [
         'platform_deliverables',
+        'sample_shipment_history',
     ];
 
     protected $casts = [
@@ -117,6 +119,16 @@ class CampaignCreator extends Model
     }
 
     /**
+     * Danh sách lịch sử các đợt gửi mẫu cho KOC (Evidence history)
+     */
+    public function sampleLogs(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(CampaignCreatorSampleLog::class, 'campaign_creator_id')
+            ->orderBy('shipped_at', 'desc')
+            ->orderBy('id', 'desc');
+    }
+
+    /**
      * Danh sách lời mời nhóm trao đổi chiến dịch
      */
     public function groupInvites(): \Illuminate\Database\Eloquent\Relations\HasMany
@@ -125,17 +137,55 @@ class CampaignCreator extends Model
     }
 
     /**
-     * Sinh token truy cập cổng Portal an toàn ngẫu nhiên 64 ký tự
+     * Sinh token truy cập cổng Portal an toàn ngẫu nhiên 64 ký tự.
+     * Nếu $expireDays = null, sẽ đọc từ cấu hình hệ thống Setting::get('portal_token_expire_days', 30).
+     * Nếu số ngày <= 0, token sẽ không bao giờ hết hạn (portal_token_expires_at = null).
      */
-    public function generatePortalToken(int $expireDays = 14): string
+    public function generatePortalToken(?int $expireDays = null): string
     {
+        if ($expireDays === null) {
+            $expireDays = class_exists(\Modules\Settings\Models\Setting::class)
+                ? (int) \Modules\Settings\Models\Setting::get('portal_token_expire_days', 30)
+                : 30;
+        }
+
         $token = Str::random(64);
+        $expiresAt = $expireDays > 0 ? now()->addDays($expireDays) : null;
+
         $this->update([
             'portal_token' => $token,
-            'portal_token_expires_at' => now()->addDays($expireDays),
+            'portal_token_expires_at' => $expiresAt,
         ]);
 
         return $token;
+    }
+
+    /**
+     * Gia hạn thêm thời gian sử dụng cho đường link Portal hiện tại.
+     * Nếu không truyền $days, sẽ lấy từ cấu hình Setting::get('portal_token_extend_days', 14).
+     */
+    public function extendPortalToken(?int $days = null): void
+    {
+        if ($days === null) {
+            $days = class_exists(\Modules\Settings\Models\Setting::class)
+                ? (int) \Modules\Settings\Models\Setting::get('portal_token_extend_days', 14)
+                : 14;
+        }
+
+        // Nếu token chưa có thì sinh mới
+        if (!$this->portal_token) {
+            $this->generatePortalToken();
+            return;
+        }
+
+        // Tính mốc bắt đầu gia hạn: nếu chưa hết hạn thì cộng nối tiếp, nếu đã quá hạn thì tính từ now()
+        $baseTime = ($this->portal_token_expires_at && $this->portal_token_expires_at->isFuture())
+            ? $this->portal_token_expires_at
+            : now();
+
+        $this->update([
+            'portal_token_expires_at' => $baseTime->copy()->addDays($days),
+        ]);
     }
 
     /**
@@ -160,12 +210,12 @@ class CampaignCreator extends Model
     }
 
     /**
-     * Danh sách nền tảng KOC cam kết làm (Mặc định tiktok nếu chưa thiết lập)
+     * Danh sách nền tảng KOC cam kết làm (null nếu chưa giao kênh)
      */
-    public function getBookingPlatformsAttribute($value): array
+    public function getBookingPlatformsAttribute($value): ?array
     {
         if (is_array($value)) {
-            return !empty($value) ? array_values(array_unique($value)) : ['tiktok'];
+            return !empty($value) ? array_values(array_unique($value)) : null;
         }
 
         if (is_string($value) && !empty($value)) {
@@ -175,7 +225,7 @@ class CampaignCreator extends Model
             }
         }
 
-        return ['tiktok'];
+        return null;
     }
 
     /**
@@ -183,7 +233,7 @@ class CampaignCreator extends Model
      */
     public function getPlatformDeliverablesAttribute(): array
     {
-        $platforms = $this->booking_platforms;
+        $platforms = $this->booking_platforms ?: [];
         $posts = $this->relationLoaded('contentPosts') ? $this->contentPosts : $this->contentPosts()->get();
 
         $deliverables = [];
@@ -224,5 +274,73 @@ class CampaignCreator extends Model
             'is_all_completed' => count($platforms) > 0 && $completedCount >= count($platforms),
             'items' => $deliverables,
         ];
+    }
+
+    /**
+     * Lịch sử các đợt gửi mẫu (Evidence) theo dòng thời gian
+     */
+    public function getSampleShipmentHistoryAttribute(): array
+    {
+        $logs = $this->relationLoaded('sampleLogs') ? $this->sampleLogs : $this->sampleLogs()->with('sentBy:id,name')->get();
+
+        if ($logs->isNotEmpty()) {
+            return $logs->map(function ($log) {
+                return [
+                    'id' => $log->id,
+                    'shipped_at' => $log->shipped_at ? Carbon::parse($log->shipped_at)->format('Y-m-d') : null,
+                    'notes' => $log->notes,
+                    'shipping_address' => $log->shipping_address,
+                    'phone' => $log->phone,
+                    'tracking_code' => $log->tracking_code,
+                    'carrier_name' => $log->carrier_name,
+                    'items' => $log->items ?: [],
+                    'total_items_count' => (int) $log->total_items_count,
+                    'sent_by' => $log->sentBy ? [
+                        'id' => $log->sentBy->id,
+                        'name' => $log->sentBy->name,
+                    ] : null,
+                    'created_at' => $log->created_at ? $log->created_at->toISOString() : null,
+                ];
+            })->values()->toArray();
+        }
+
+        // Tương thích ngược: Nếu KOC cũ đã có sample_sent_at nhưng chưa có bản ghi trong sample_logs
+        if (!empty($this->sample_sent_at)) {
+            $sentDate = Carbon::parse($this->sample_sent_at)->format('Y-m-d');
+            $creatorProducts = $this->relationLoaded('creatorProducts')
+                ? $this->creatorProducts
+                : $this->creatorProducts()->with('campaignProduct')->get();
+
+            $legacyItems = [];
+            foreach ($creatorProducts as $cp) {
+                $qty = (int) ($cp->quantity_sent ?: $cp->quantity_assigned ?: 1);
+                $prod = $cp->campaignProduct;
+                $legacyItems[] = [
+                    'product_id' => $cp->campaign_product_id,
+                    'product_name' => $prod ? $prod->name : 'Sản phẩm mẫu',
+                    'sku' => $prod ? $prod->sku : null,
+                    'quantity' => $qty,
+                    'variant' => $cp->sample_variant,
+                ];
+            }
+
+            return [
+                [
+                    'id' => 0,
+                    'shipped_at' => $sentDate,
+                    'notes' => $this->notes ?: 'Đợt gửi mẫu ban đầu',
+                    'shipping_address' => $this->creator?->shipping_address,
+                    'phone' => $this->creator?->phone,
+                    'tracking_code' => null,
+                    'carrier_name' => null,
+                    'items' => $legacyItems,
+                    'total_items_count' => !empty($legacyItems) ? array_sum(array_column($legacyItems, 'quantity')) : 1,
+                    'sent_by' => null,
+                    'created_at' => Carbon::parse($this->sample_sent_at)->toISOString(),
+                ],
+            ];
+        }
+
+        return [];
     }
 }

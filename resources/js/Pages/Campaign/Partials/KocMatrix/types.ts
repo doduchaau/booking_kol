@@ -86,6 +86,29 @@ export interface CampaignCreatorProductItem {
     campaignProduct?: CampaignProduct;
 }
 
+export interface SampleLogItem {
+    id: number;
+    shipped_at: string | null;
+    notes: string | null;
+    shipping_address?: string | null;
+    phone?: string | null;
+    tracking_code?: string | null;
+    carrier_name?: string | null;
+    items?: Array<{
+        product_id: number;
+        product_name: string;
+        sku?: string | null;
+        quantity: number;
+        variant?: string | null;
+    }>;
+    total_items_count: number;
+    sent_by?: {
+        id: number;
+        name: string;
+    } | null;
+    created_at?: string | null;
+}
+
 export interface CampaignCreatorPivot {
     id: number;
     campaign_id: number;
@@ -127,6 +150,9 @@ export interface CampaignCreatorPivot {
     contentPosts?: ContentPostItem[];
     creator_products?: CampaignCreatorProductItem[];
     creatorProducts?: CampaignCreatorProductItem[];
+    sample_shipment_history?: SampleLogItem[];
+    sample_logs?: SampleLogItem[];
+    sampleLogs?: SampleLogItem[];
 }
 
 export interface Campaign {

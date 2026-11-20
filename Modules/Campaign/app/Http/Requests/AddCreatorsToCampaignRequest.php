@@ -11,6 +11,13 @@ class AddCreatorsToCampaignRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('collaboration_type') && $this->input('collaboration_type') === '') {
+            $this->merge(['collaboration_type' => null]);
+        }
+    }
+
     public function rules(): array
     {
         return [

@@ -30,7 +30,13 @@ class PortalService
         }
 
         if ($campaignCreator->portal_token_expires_at && $campaignCreator->portal_token_expires_at->isPast()) {
-            throw new Exception('Đường link Portal này đã hết hạn truy cập. Vui lòng liên hệ nhân viên phụ trách để nhận link mới.');
+            $customMsg = class_exists(\Modules\Settings\Models\Setting::class)
+                ? \Modules\Settings\Models\Setting::get('portal_expired_custom_message', '')
+                : '';
+            $message = !empty($customMsg)
+                ? $customMsg
+                : 'Đường link Portal này đã hết hạn truy cập. Vui lòng liên hệ nhân viên phụ trách để nhận link mới.';
+            throw new Exception($message);
         }
 
         return $campaignCreator;

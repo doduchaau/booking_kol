@@ -26,6 +26,14 @@ import {
     Layers,
     ChevronDown,
     ChevronUp,
+    Image as ImageIcon,
+    Maximize2,
+    Eye,
+    X,
+    ChevronLeft,
+    ChevronRight,
+    Phone,
+    Info,
 } from 'lucide-react';
 import Button from '@/Components/Common/Button';
 import FormField from '@/Components/Form/FormField';
@@ -148,14 +156,21 @@ interface PipelineInfo {
     creator_products?: CreatorProductItem[];
 }
 
+export interface PortalSettingsInfo {
+    support_contact?: string;
+    allow_edit_address?: boolean;
+    allow_multiple_videos?: boolean;
+}
+
 interface Props {
     token: string;
     campaign: CampaignInfo;
     creator: CreatorInfo;
     pipeline: PipelineInfo;
+    portal_settings?: PortalSettingsInfo;
 }
 
-export default function Index({ token, campaign, creator, pipeline }: Props) {
+export default function Index({ token, campaign, creator, pipeline, portal_settings }: Props) {
     // @ts-ignore
     const { flash } = usePage().props as { flash?: { success?: string; error?: string } };
 
@@ -225,8 +240,73 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
     const [copiedCode, setCopiedCode] = useState(false);
     const [showBrief, setShowBrief] = useState(true);
     const [copiedProductHashtagId, setCopiedProductHashtagId] = useState<number | null>(null);
-    const [expandedProductBriefId, setExpandedProductBriefId] = useState<number | null>(null);
     const [showWarningConfirmModal, setShowWarningConfirmModal] = useState(false);
+
+    // Quản lý mở rộng Brief của từng sản phẩm (mặc định mở sản phẩm đầu tiên hoặc tất cả nếu ít hơn 3)
+    const [expandedProductBriefIds, setExpandedProductBriefIds] = useState<number[]>(() => {
+        const list = (pipeline.creator_products && pipeline.creator_products.length > 0)
+            ? pipeline.creator_products
+            : (campaign.products || []);
+        return list.length <= 2 ? list.map((p) => p.id) : [list[0]?.id].filter(Boolean);
+    });
+
+    const toggleProductBrief = (id: number) => {
+        setExpandedProductBriefIds((prev) =>
+            prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+        );
+    };
+
+    const expandAllProductBriefs = () => {
+        const list = (assignedProducts.length > 0 ? assignedProducts : campaignProducts);
+        setExpandedProductBriefIds(list.map((p) => p.id));
+    };
+
+    const collapseAllProductBriefs = () => {
+        setExpandedProductBriefIds([]);
+    };
+
+    // State Lightbox Modal phóng to ảnh HD cho KOC
+    const [lightbox, setLightbox] = useState<{
+        images: Array<{ url: string; name?: string }>;
+        index: number;
+    } | null>(null);
+
+    const openLightbox = (images: Array<{ url: string; name?: string }>, index: number = 0) => {
+        if (images && images.length > 0) {
+            setLightbox({ images, index: Math.max(0, Math.min(index, images.length - 1)) });
+        }
+    };
+
+    const closeLightbox = () => setLightbox(null);
+    const nextLightbox = () => {
+        if (!lightbox) return;
+        setLightbox({ ...lightbox, index: (lightbox.index + 1) % lightbox.images.length });
+    };
+    const prevLightbox = () => {
+        if (!lightbox) return;
+        setLightbox({ ...lightbox, index: (lightbox.index - 1 + lightbox.images.length) % lightbox.images.length });
+    };
+
+    // Helper nhận biết tệp tin là định dạng hình ảnh
+    const isImageFile = (filenameOrUrl?: string) => {
+        if (!filenameOrUrl) return false;
+        const clean = filenameOrUrl.split('?')[0].toLowerCase();
+        return (
+            clean.endsWith('.png') ||
+            clean.endsWith('.jpg') ||
+            clean.endsWith('.jpeg') ||
+            clean.endsWith('.webp') ||
+            clean.endsWith('.gif')
+        );
+    };
+
+    // Helper định dạng kích thước tệp
+    const formatFileSize = (bytes?: number) => {
+        if (!bytes) return '';
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    };
 
     const handleCopyHashtags = async () => {
         if (!campaign.hashtags) return;
@@ -411,72 +491,152 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
                 </div>
 
                 {/* Khối Danh Sách Sản Phẩm & Mẫu Trải Nghiệm Của Bạn */}
-                {(assignedProducts.length > 0 || campaignProducts.length > 0) && (
-                    <div className="rounded-2xl border border-sky-100 bg-white p-5 shadow-sm space-y-3.5">
-                        <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
-                            <div className="flex items-center gap-2">
-                                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-50 text-sky-600 shrink-0">
-                                    <Layers className="h-4 w-4" />
-                                </div>
-                                <div>
-                                    <h2 className="text-sm font-bold text-slate-900">
-                                        {assignedProducts.length > 0 ? 'Sản Phẩm Mẫu Phân Bổ Cho Bạn' : 'Danh Sách Sản Phẩm Chiến Dịch'}
-                                    </h2>
-                                    <p className="text-[11px] text-slate-500">
-                                        {assignedProducts.length > 0
-                                            ? `Tổng cộng ${pipeline.total_samples_sent || pipeline.total_samples_assigned || assignedProducts.length} sản phẩm mẫu được gửi tới bạn`
-                                            : `${campaignProducts.length} sản phẩm áp dụng trong chiến dịch này`}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
+                {/* Khối Danh Sách Sản Phẩm & Mẫu Trải Nghiệm Của Bạn */}
+                {(assignedProducts.length > 0 || campaignProducts.length > 0) && (() => {
+                    const displayProducts = assignedProducts.length > 0 ? assignedProducts : campaignProducts;
+                    const isAssigned = assignedProducts.length > 0;
+                    const allBriefsExpanded = displayProducts.every((p) => expandedProductBriefIds.includes(p.id));
 
-                        <div className="space-y-3">
-                            {assignedProducts.length > 0 ? (
-                                assignedProducts.map((p) => {
-                                    const isExpanded = expandedProductBriefId === p.id;
-                                    const qty = isSampleSent ? (p.quantity_sent || p.quantity_assigned || 1) : (p.quantity_assigned || 1);
-                                    const hasCustomBrief = Boolean(p.brief_content || p.brief_file_url || p.hashtags);
+                    return (
+                        <div className="rounded-2xl border border-sky-100 bg-white p-5 shadow-sm space-y-4">
+                            {/* Tiêu đề Khối Sản Phẩm */}
+                            <div className="flex items-center justify-between pb-3 border-b border-slate-100 flex-wrap gap-2">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-600 shrink-0 shadow-2xs">
+                                        <Layers className="h-5 w-5" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-sm font-bold text-slate-900">
+                                            {isAssigned ? 'Sản Phẩm Mẫu Phân Bổ Cho Bạn' : 'Danh Sách Sản Phẩm Chiến Dịch'}
+                                        </h2>
+                                        <p className="text-[11px] text-slate-500">
+                                            {isAssigned
+                                                ? `Tổng cộng ${pipeline.total_samples_sent || pipeline.total_samples_assigned || displayProducts.length} sản phẩm mẫu được giao cho bạn`
+                                                : `${displayProducts.length} sản phẩm áp dụng trong chiến dịch này`}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Nút Mở/Thu gọn tất cả khi có nhiều sản phẩm */}
+                                {displayProducts.length > 1 && (
+                                    <button
+                                        type="button"
+                                        onClick={allBriefsExpanded ? collapseAllProductBriefs : expandAllProductBriefs}
+                                        className="text-[11px] font-semibold text-primary-600 hover:text-primary-700 hover:bg-primary-50 px-2.5 py-1 rounded-lg border border-primary-200/60 transition-colors shadow-2xs cursor-pointer"
+                                    >
+                                        {allBriefsExpanded ? 'Thu gọn tất cả brief' : 'Mở xem tất cả brief'}
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Danh sách thẻ sản phẩm */}
+                            <div className="space-y-3.5">
+                                {displayProducts.map((p, pIdx) => {
+                                    const isExpanded = expandedProductBriefIds.includes(p.id);
+                                    // @ts-ignore
+                                    const qty = isAssigned ? (isSampleSent ? (p.quantity_sent || p.quantity_assigned || 1) : (p.quantity_assigned || 1)) : 1;
+                                    // @ts-ignore
+                                    const variant = isAssigned ? p.sample_variant : null;
+                                    const allImages = p.image_urls || [];
+                                    const briefFiles = (p.brief_file_items && p.brief_file_items.length > 0)
+                                        ? p.brief_file_items
+                                        : (p.brief_file_url ? [{ url: p.brief_file_url, name: p.brief_file_name || 'Tệp brief đính kèm', size: 0, type: '' }] : []);
+                                    const imageFiles = briefFiles.filter((f) => isImageFile(f.name || f.url));
+                                    const docFiles = briefFiles.filter((f) => !isImageFile(f.name || f.url));
+                                    
+                                    // Gộp tất cả ảnh (ảnh sản phẩm + ảnh đính kèm trong brief) để KOC xem to và tải về
+                                    const combinedPhotos: Array<{ url: string; name?: string }> = [
+                                        ...allImages.map((img) => ({ url: img.url, name: img.name || p.product_name })),
+                                        ...imageFiles.map((f) => ({ url: f.url, name: f.name || 'Ảnh brief mẫu' })),
+                                    ];
+                                    const totalImagesCount = combinedPhotos.length;
+
+                                    const hasBriefContent = Boolean(
+                                        p.brief_content ||
+                                        p.hashtags ||
+                                        totalImagesCount > 0 ||
+                                        docFiles.length > 0
+                                    );
+
+                                    const coverImage = p.thumbnail_url || (allImages.length > 0 ? allImages[0].url : (imageFiles.length > 0 ? imageFiles[0].url : null));
 
                                     return (
-                                        <div key={p.id} className="rounded-xl border border-slate-200 bg-slate-50/60 p-3.5 space-y-2.5">
+                                        <div
+                                            key={p.id}
+                                            className="rounded-2xl border border-slate-200/90 bg-white p-4 space-y-3 shadow-2xs hover:border-slate-300 transition-colors"
+                                        >
+                                            {/* Header thẻ sản phẩm */}
                                             <div className="flex items-start justify-between gap-3">
-                                                <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                                                    {(p.thumbnail_url || (p.image_urls && p.image_urls[0]?.url)) && (
-                                                        <img
-                                                            src={p.thumbnail_url || p.image_urls![0].url}
-                                                            alt={p.product_name}
-                                                            className="w-12 h-12 rounded-lg object-cover border border-slate-200 shrink-0 shadow-2xs"
-                                                        />
-                                                    )}
-                                                    <div className="min-w-0 flex-1">
-                                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                                            <span className="text-xs font-bold text-slate-900 block">
-                                                                {p.product_name}
-                                                            </span>
-                                                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-primary-100 text-primary-800">
-                                                                SL: {qty} món
-                                                            </span>
-                                                        </div>
-                                                        {p.sample_variant && (
-                                                            <span className="text-[11px] text-slate-500 block mt-0.5">
-                                                                Phân loại: <strong className="text-slate-700">{p.sample_variant}</strong>
-                                                            </span>
+                                                <div className="flex items-start gap-3 min-w-0 flex-1">
+                                                    {/* Ô ảnh đại diện lớn (Click xem to) */}
+                                                    <div
+                                                        onClick={() => coverImage && openLightbox(combinedPhotos.length > 0 ? combinedPhotos : [{ url: coverImage, name: p.product_name }], 0)}
+                                                        className={`w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden border border-slate-200 bg-slate-50 shrink-0 relative group shadow-2xs ${coverImage ? 'cursor-pointer hover:ring-2 hover:ring-primary-500/80 transition-all' : ''}`}
+                                                        title={coverImage ? 'Bấm để phóng to ảnh sắc nét' : ''}
+                                                    >
+                                                        {coverImage ? (
+                                                            <>
+                                                                <img
+                                                                    src={coverImage}
+                                                                    alt={p.product_name}
+                                                                    className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
+                                                                />
+                                                                <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white">
+                                                                    <Maximize2 className="h-4 w-4" />
+                                                                </div>
+                                                            </>
+                                                        ) : (
+                                                            <div className="w-full h-full flex flex-col items-center justify-center text-slate-300">
+                                                                <ImageIcon className="h-6 w-6" />
+                                                            </div>
                                                         )}
-                                                        {p.retail_price ? (
-                                                            <span className="text-[11px] text-slate-500 block">
-                                                                Giá bán: {p.retail_price.toLocaleString('vi-VN')} đ
+                                                    </div>
+
+                                                    {/* Thông tin sản phẩm */}
+                                                    <div className="min-w-0 flex-1 space-y-1">
+                                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                                                                #{pIdx + 1}
                                                             </span>
+                                                            <h3 className="text-xs sm:text-sm font-bold text-slate-900 leading-snug">
+                                                                {p.product_name}
+                                                            </h3>
+                                                        </div>
+
+                                                        {/* Các huy hiệu: Số lượng, Phân loại, Giá */}
+                                                        <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+                                                            {isAssigned && (
+                                                                <span className="inline-flex items-center px-2 py-0.5 rounded-md font-bold bg-primary-100 text-primary-800 border border-primary-200/50">
+                                                                    SL: {qty} món
+                                                                </span>
+                                                            )}
+                                                            {variant && (
+                                                                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200/60 font-medium">
+                                                                    Phân loại: <strong className="ml-1">{variant}</strong>
+                                                                </span>
+                                                            )}
+                                                            {p.product_sku && (
+                                                                <span className="text-slate-400 font-mono text-[10px]">
+                                                                    SKU: {p.product_sku}
+                                                                </span>
+                                                            )}
+                                                        </div>
+
+                                                        {p.retail_price ? (
+                                                            <div className="text-[11px] text-slate-600 font-semibold">
+                                                                Giá niêm yết: <span className="text-rose-600 font-bold">{p.retail_price.toLocaleString('vi-VN')} đ</span>
+                                                            </div>
                                                         ) : null}
                                                     </div>
                                                 </div>
 
+                                                {/* Nút xem liên kết ngoài */}
                                                 {p.product_url && (
                                                     <a
                                                         href={p.product_url}
                                                         target="_blank"
                                                         rel="noreferrer"
-                                                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-600 bg-white border border-slate-200 px-2 py-1 rounded-lg hover:bg-primary-50 transition-colors shrink-0 shadow-2xs"
+                                                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-600 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg hover:bg-primary-50 hover:text-primary-700 transition-colors shrink-0 shadow-2xs"
                                                     >
                                                         <span>Link SP</span>
                                                         <ExternalLink className="h-3 w-3" />
@@ -484,190 +644,186 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
                                                 )}
                                             </div>
 
-                                            {/* Nút Xem Brief Riêng của từng sản phẩm nếu có */}
-                                            {hasCustomBrief && (
-                                                <div className="pt-2 border-t border-slate-200/80">
+                                            {/* Nút Mở rộng / Thu gọn Chi tiết Brief & Thư viện ảnh */}
+                                            {hasBriefContent && (
+                                                <div className="pt-2 border-t border-slate-100">
                                                     <button
                                                         type="button"
-                                                        onClick={() => setExpandedProductBriefId(isExpanded ? null : p.id)}
-                                                        className="flex items-center justify-between w-full text-xs font-semibold text-primary-700 hover:text-primary-800"
+                                                        onClick={() => toggleProductBrief(p.id)}
+                                                        className={`flex items-center justify-between w-full px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                                                            isExpanded
+                                                                ? 'bg-primary-50/90 text-primary-800 border border-primary-200/80 shadow-2xs'
+                                                                : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200/80'
+                                                        }`}
                                                     >
-                                                        <span className="flex items-center gap-1">
-                                                            <FileText className="h-3.5 w-3.5 text-primary-600" />
-                                                            {isExpanded ? 'Đóng Brief riêng của sản phẩm này' : 'Xem Brief riêng cho sản phẩm này'}
+                                                        <span className="flex items-center gap-1.5">
+                                                            <FileText className={`h-4 w-4 ${isExpanded ? 'text-primary-600' : 'text-slate-500'}`} />
+                                                            <span>{isExpanded ? 'Thu gọn Brief & Hình ảnh' : 'Xem Brief kịch bản & Hình ảnh mẫu'}</span>
                                                         </span>
-                                                        {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+
+                                                        <div className="flex items-center gap-1.5">
+                                                            {totalImagesCount > 0 && (
+                                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-200">
+                                                                    <ImageIcon className="h-2.5 w-2.5" />
+                                                                    {totalImagesCount} ảnh
+                                                                </span>
+                                                            )}
+                                                            {docFiles.length > 0 && (
+                                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                                                    <Paperclip className="h-2.5 w-2.5" />
+                                                                    {docFiles.length} file
+                                                                </span>
+                                                            )}
+                                                            {isExpanded ? (
+                                                                <ChevronUp className="h-4 w-4 text-slate-400" />
+                                                            ) : (
+                                                                <ChevronDown className="h-4 w-4 text-slate-400" />
+                                                            )}
+                                                        </div>
                                                     </button>
 
+                                                    {/* Nội dung chi tiết Brief khi mở rộng */}
                                                     {isExpanded && (
-                                                        <div className="mt-2.5 p-3 rounded-lg bg-white border border-primary-100 space-y-2.5 text-xs animate-in fade-in duration-150">
-                                                            {p.brief_content && (
-                                                                <div>
-                                                                    <div className="font-bold text-slate-800 mb-1">
-                                                                        Yêu cầu kịch bản & điểm nổi bật:
+                                                        <div className="mt-3 p-3.5 rounded-xl bg-slate-50/80 border border-slate-200 space-y-3.5 text-xs animate-in fade-in duration-150">
+                                                            {/* 1. Bộ Sưu Tập Ảnh Sản Phẩm & Moodboard (Click xem to HD) */}
+                                                            {combinedPhotos.length > 0 && (
+                                                                <div className="space-y-2">
+                                                                    <div className="flex items-center justify-between">
+                                                                        <span className="font-bold text-slate-900 flex items-center gap-1.5 text-xs">
+                                                                            <ImageIcon className="h-3.5 w-3.5 text-sky-600" />
+                                                                            Hình ảnh sản phẩm & Moodboard ({combinedPhotos.length} ảnh):
+                                                                        </span>
+                                                                        <span className="text-[10px] text-slate-500">
+                                                                            Chạm vào ảnh để xem to & tải về
+                                                                        </span>
                                                                     </div>
-                                                                    <p className="text-slate-700 leading-relaxed whitespace-pre-line text-[11px]">
-                                                                        {p.brief_content}
-                                                                    </p>
+
+                                                                    {/* Lưới hình ảnh Photo Grid */}
+                                                                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+                                                                        {combinedPhotos.map((photo, photoIdx) => (
+                                                                            <div
+                                                                                key={photoIdx}
+                                                                                onClick={() => openLightbox(combinedPhotos, photoIdx)}
+                                                                                className="relative aspect-square rounded-xl overflow-hidden border border-slate-200 bg-white group cursor-pointer hover:ring-2 hover:ring-primary-500 hover:shadow-md transition-all shadow-2xs"
+                                                                                title="Bấm để xem ảnh phóng to full HD"
+                                                                            >
+                                                                                <img
+                                                                                    src={photo.url}
+                                                                                    alt={photo.name || `Ảnh ${photoIdx + 1}`}
+                                                                                    className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
+                                                                                />
+                                                                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white">
+                                                                                    <Eye className="h-4 w-4" />
+                                                                                </div>
+                                                                                <span className="absolute bottom-1 right-1 px-1 py-0.2 rounded bg-black/60 text-white text-[9px] font-semibold">
+                                                                                    #{photoIdx + 1}
+                                                                                </span>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
                                                                 </div>
                                                             )}
 
+                                                            {/* 2. Tài Liệu Brief Kịch Bản & Guideline (Các file văn bản, PDF, DOCX) */}
+                                                            {docFiles.length > 0 && (
+                                                                <div className="space-y-2 pt-1 border-t border-slate-200/60">
+                                                                    <span className="font-bold text-slate-900 flex items-center gap-1.5 text-xs">
+                                                                        <FileText className="h-3.5 w-3.5 text-amber-600" />
+                                                                        Tài liệu Brief & Hướng dẫn đính kèm ({docFiles.length} tệp):
+                                                                    </span>
+
+                                                                    <div className="space-y-1.5">
+                                                                        {docFiles.map((bf, bfIdx) => (
+                                                                            <div
+                                                                                key={bfIdx}
+                                                                                className="flex items-center justify-between gap-2 p-2 rounded-lg bg-white border border-slate-200 hover:border-slate-300 transition-colors shadow-2xs"
+                                                                            >
+                                                                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                                                                    <div className="flex h-7 w-7 items-center justify-center rounded-md bg-amber-50 text-amber-700 shrink-0">
+                                                                                        <FileText className="h-3.5 w-3.5" />
+                                                                                    </div>
+                                                                                    <div className="min-w-0 flex-1">
+                                                                                        <p className="text-xs font-semibold text-slate-800 truncate" title={bf.name}>
+                                                                                            {bf.name}
+                                                                                        </p>
+                                                                                        {bf.size ? (
+                                                                                            <span className="text-[10px] text-slate-400">
+                                                                                                {formatFileSize(bf.size)}
+                                                                                            </span>
+                                                                                        ) : null}
+                                                                                    </div>
+                                                                                </div>
+
+                                                                                <a
+                                                                                    href={bf.url}
+                                                                                    target="_blank"
+                                                                                    rel="noreferrer"
+                                                                                    download
+                                                                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold bg-primary-50 text-primary-700 hover:bg-primary-100 border border-primary-200/80 transition-colors shrink-0 shadow-2xs cursor-pointer"
+                                                                                >
+                                                                                    <Download className="h-3 w-3" />
+                                                                                    <span>Tải về</span>
+                                                                                </a>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+
+                                                            {/* 3. Yêu Cầu Kịch Bản & Điểm Nổi Bật (USP) */}
+                                                            {p.brief_content && (
+                                                                <div className="space-y-1.5 pt-1 border-t border-slate-200/60">
+                                                                    <span className="font-bold text-slate-900 block text-xs">
+                                                                        Yêu cầu kịch bản & Điểm nổi bật:
+                                                                    </span>
+                                                                    <div className="p-3 rounded-lg bg-white border border-slate-200 text-slate-700 leading-relaxed whitespace-pre-line text-[11px]">
+                                                                        {p.brief_content}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+
+                                                            {/* 4. Hashtags Riêng Của Sản Phẩm */}
                                                             {p.hashtags && (
-                                                                <div>
-                                                                    <div className="flex items-center justify-between mb-1">
-                                                                        <span className="font-bold text-slate-800 flex items-center gap-1 text-[11px]">
-                                                                            <Hash className="h-3 w-3 text-primary-600" />
+                                                                <div className="space-y-1.5 pt-1 border-t border-slate-200/60">
+                                                                    <div className="flex items-center justify-between">
+                                                                        <span className="font-bold text-slate-900 flex items-center gap-1 text-xs">
+                                                                            <Hash className="h-3.5 w-3.5 text-primary-600" />
                                                                             Hashtags riêng của sản phẩm:
                                                                         </span>
                                                                         <button
                                                                             type="button"
                                                                             onClick={() => handleCopyProductHashtags(p.id, p.hashtags!)}
-                                                                            className="text-primary-600 hover:text-primary-700 font-semibold flex items-center gap-1 text-[10px]"
+                                                                            className="text-primary-600 hover:text-primary-700 font-semibold flex items-center gap-1 text-[11px] cursor-pointer"
                                                                         >
-                                                                            {copiedProductHashtagId === p.id ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
-                                                                            <span>{copiedProductHashtagId === p.id ? 'Đã sao chép' : 'Sao chép'}</span>
+                                                                            {copiedProductHashtagId === p.id ? (
+                                                                                <>
+                                                                                    <Check className="h-3.5 w-3.5 text-emerald-600" />
+                                                                                    <span className="text-emerald-600 font-bold">Đã sao chép!</span>
+                                                                                </>
+                                                                            ) : (
+                                                                                <>
+                                                                                    <Copy className="h-3.5 w-3.5" />
+                                                                                    <span>Sao chép</span>
+                                                                                </>
+                                                                            )}
                                                                         </button>
                                                                     </div>
-                                                                    <div className="font-mono text-[11px] text-primary-700 bg-slate-50 p-1.5 rounded border border-slate-200">
+                                                                    <div className="font-mono text-[11px] text-primary-800 bg-white p-2.5 rounded-lg border border-slate-200 select-all">
                                                                         {p.hashtags}
                                                                     </div>
                                                                 </div>
                                                             )}
-
-                                                            {/* Danh sách file brief đính kèm */}
-                                                            {((p.brief_file_items && p.brief_file_items.length > 0) || p.brief_file_url) && (
-                                                                <div className="pt-1 space-y-1.5">
-                                                                    <span className="font-bold text-slate-800 flex items-center gap-1 text-[11px]">
-                                                                        <FileText className="h-3 w-3 text-amber-600" />
-                                                                        Tài liệu Brief & Hướng dẫn:
-                                                                    </span>
-                                                                    {(p.brief_file_items && p.brief_file_items.length > 0
-                                                                        ? p.brief_file_items
-                                                                        : [{ url: p.brief_file_url!, name: p.brief_file_name || 'Tệp đính kèm' }]
-                                                                    ).map((bf, bfIdx) => (
-                                                                        <a
-                                                                            key={bfIdx}
-                                                                            href={bf.url}
-                                                                            target="_blank"
-                                                                            rel="noreferrer"
-                                                                            download
-                                                                            className="inline-flex items-center gap-1.5 font-semibold text-primary-700 bg-primary-50 border border-primary-200 px-2.5 py-1.5 rounded-lg hover:bg-primary-100 shadow-2xs text-[11px] transition-colors truncate max-w-full"
-                                                                        >
-                                                                            <Download className="h-3.5 w-3.5 text-primary-600 shrink-0" />
-                                                                            <span className="truncate">{bf.name}</span>
-                                                                        </a>
-                                                                    ))}
-                                                                </div>
-                                                            )}
                                                         </div>
                                                     )}
                                                 </div>
                                             )}
                                         </div>
                                     );
-                                })
-                            ) : (
-                                campaignProducts.map((p) => {
-                                    const isExpanded = expandedProductBriefId === p.id;
-                                    const hasCustomBrief = Boolean(p.brief_content || p.brief_file_url || p.hashtags);
-
-                                    return (
-                                        <div key={p.id} className="rounded-xl border border-slate-200 bg-slate-50/60 p-3.5 space-y-2">
-                                            <div className="flex items-start justify-between gap-3">
-                                                <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                                                    {(p.thumbnail_url || (p.image_urls && p.image_urls[0]?.url)) && (
-                                                        <img
-                                                            src={p.thumbnail_url || p.image_urls![0].url}
-                                                            alt={p.product_name}
-                                                            className="w-12 h-12 rounded-lg object-cover border border-slate-200 shrink-0 shadow-2xs"
-                                                        />
-                                                    )}
-                                                    <div className="min-w-0 flex-1">
-                                                        <span className="text-xs font-bold text-slate-900 block">
-                                                            {p.product_name}
-                                                        </span>
-                                                        {p.retail_price ? (
-                                                            <span className="text-[11px] text-slate-500 block">
-                                                                Giá bán: {p.retail_price.toLocaleString('vi-VN')} đ
-                                                            </span>
-                                                        ) : null}
-                                                    </div>
-                                                </div>
-
-                                                {p.product_url && (
-                                                    <a
-                                                        href={p.product_url}
-                                                        target="_blank"
-                                                        rel="noreferrer"
-                                                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-600 bg-white border border-slate-200 px-2 py-1 rounded-lg hover:bg-primary-50 transition-colors shrink-0 shadow-2xs"
-                                                    >
-                                                        <span>Link SP</span>
-                                                        <ExternalLink className="h-3 w-3" />
-                                                    </a>
-                                                )}
-                                            </div>
-
-                                            {hasCustomBrief && (
-                                                <div className="pt-2 border-t border-slate-200/80">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setExpandedProductBriefId(isExpanded ? null : p.id)}
-                                                        className="flex items-center justify-between w-full text-xs font-semibold text-primary-700 hover:text-primary-800"
-                                                    >
-                                                        <span className="flex items-center gap-1">
-                                                            <FileText className="h-3.5 w-3.5 text-primary-600" />
-                                                            {isExpanded ? 'Đóng Brief sản phẩm' : 'Xem Brief riêng sản phẩm'}
-                                                        </span>
-                                                        {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                                                    </button>
-
-                                                    {isExpanded && (
-                                                        <div className="mt-2.5 p-3 rounded-lg bg-white border border-primary-100 space-y-2 text-xs">
-                                                            {p.brief_content && (
-                                                                <p className="text-slate-700 leading-relaxed whitespace-pre-line text-[11px]">
-                                                                    {p.brief_content}
-                                                                </p>
-                                                            )}
-                                                            {p.hashtags && (
-                                                                <div className="font-mono text-[11px] text-primary-700 bg-slate-50 p-1.5 rounded border border-slate-200">
-                                                                    {p.hashtags}
-                                                                </div>
-                                                            )}
-                                                            {((p.brief_file_items && p.brief_file_items.length > 0) || p.brief_file_url) && (
-                                                                <div className="pt-1 space-y-1.5">
-                                                                    <span className="font-bold text-slate-800 flex items-center gap-1 text-[11px]">
-                                                                        <FileText className="h-3 w-3 text-amber-600" />
-                                                                        Tài liệu Brief & Hướng dẫn:
-                                                                    </span>
-                                                                    {(p.brief_file_items && p.brief_file_items.length > 0
-                                                                        ? p.brief_file_items
-                                                                        : [{ url: p.brief_file_url!, name: p.brief_file_name || 'Tệp đính kèm' }]
-                                                                    ).map((bf, bfIdx) => (
-                                                                        <a
-                                                                            key={bfIdx}
-                                                                            href={bf.url}
-                                                                            target="_blank"
-                                                                            rel="noreferrer"
-                                                                            download
-                                                                            className="inline-flex items-center gap-1.5 font-semibold text-primary-700 bg-primary-50 border border-primary-200 px-2.5 py-1.5 rounded-lg hover:bg-primary-100 shadow-2xs text-[11px] transition-colors truncate max-w-full"
-                                                                        >
-                                                                            <Download className="h-3.5 w-3.5 text-primary-600 shrink-0" />
-                                                                            <span className="truncate">{bf.name}</span>
-                                                                        </a>
-                                                                    ))}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })
-                            )}
+                                })}
+                            </div>
                         </div>
-                    </div>
-                )}
+                    );
+                })()}
 
                 {/* Thanh Chỉ Báo Tiến Trình 3 Bước */}
                 <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -984,69 +1140,85 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
                         </div>
                     )}
 
-                    <form onSubmit={handleAddressSubmit} className="space-y-3.5">
-                        <FormField label="Số điện thoại nhận hàng" required error={addressForm.errors.phone}>
-                            <TextInput
-                                type="tel"
-                                value={addressForm.data.phone}
-                                onChange={(e) => addressForm.setData('phone', e.target.value)}
-                                placeholder="0912345678"
-                                required
-                            />
-                        </FormField>
-
-                        <FormField
-                            label="Địa chỉ chi tiết (Số nhà, ngõ/ngách, tên đường)"
-                            required
-                            error={addressForm.errors.shipping_address}
-                        >
-                            <TextInput
-                                value={addressForm.data.shipping_address}
-                                onChange={(e) => addressForm.setData('shipping_address', e.target.value)}
-                                placeholder="Ví dụ: 45A Đường Lê Lợi"
-                                required
-                            />
-                        </FormField>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                            <FormField label="Tỉnh / Thành phố" required error={addressForm.errors.city_province}>
-                                <TextInput
-                                    value={addressForm.data.city_province}
-                                    onChange={(e) => addressForm.setData('city_province', e.target.value)}
-                                    placeholder="TP. HCM"
-                                    required
-                                />
-                            </FormField>
-
-                            <FormField label="Quận / Huyện" error={addressForm.errors.district}>
-                                <TextInput
-                                    value={addressForm.data.district}
-                                    onChange={(e) => addressForm.setData('district', e.target.value)}
-                                    placeholder="Quận 1"
-                                />
-                            </FormField>
-
-                            <FormField label="Phường / Xã" required error={addressForm.errors.ward}>
-                                <TextInput
-                                    value={addressForm.data.ward}
-                                    onChange={(e) => addressForm.setData('ward', e.target.value)}
-                                    placeholder="Phường Bến Nghé"
-                                    required
-                                />
-                            </FormField>
+                    {isAddressDone && portal_settings?.allow_edit_address === false ? (
+                        <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 text-xs text-slate-700 space-y-2.5">
+                            <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+                                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                                <span>Địa chỉ nhận hàng đã được xác nhận:</span>
+                            </div>
+                            <div className="pl-5 text-slate-600 space-y-1">
+                                <p>SĐT: <strong>{creator.phone}</strong></p>
+                                <p>Địa chỉ: <strong>{creator.shipping_address}, {creator.ward}, {creator.district ? `${creator.district}, ` : ''}{creator.city_province}</strong></p>
+                            </div>
+                            <p className="text-[11px] text-slate-500 pt-2 border-t border-slate-200">
+                                * Thông tin nhận hàng đã được chốt và khóa theo quy định bảo mật của nhãn hàng. Nếu cần thay đổi, vui lòng liên hệ nhân viên phụ trách.
+                            </p>
                         </div>
+                    ) : (
+                        <form onSubmit={handleAddressSubmit} className="space-y-3.5">
+                            <FormField label="Số điện thoại nhận hàng" required error={addressForm.errors.phone}>
+                                <TextInput
+                                    type="tel"
+                                    value={addressForm.data.phone}
+                                    onChange={(e) => addressForm.setData('phone', e.target.value)}
+                                    placeholder="0912345678"
+                                    required
+                                />
+                            </FormField>
 
-                        <Button
-                            type="submit"
-                            variant="primary"
-                            loading={addressForm.processing}
-                            loadingText="Đang lưu địa chỉ..."
-                            iconLeft={<Send className="h-4 w-4" />}
-                            className="w-full"
-                        >
-                            {isAddressDone ? 'Cập Nhật Lại Địa Chỉ' : 'Xác Nhận Địa Chỉ Giao Hàng'}
-                        </Button>
-                    </form>
+                            <FormField
+                                label="Địa chỉ chi tiết (Số nhà, ngõ/ngách, tên đường)"
+                                required
+                                error={addressForm.errors.shipping_address}
+                            >
+                                <TextInput
+                                    value={addressForm.data.shipping_address}
+                                    onChange={(e) => addressForm.setData('shipping_address', e.target.value)}
+                                    placeholder="Ví dụ: 45A Đường Lê Lợi"
+                                    required
+                                />
+                            </FormField>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <FormField label="Tỉnh / Thành phố" required error={addressForm.errors.city_province}>
+                                    <TextInput
+                                        value={addressForm.data.city_province}
+                                        onChange={(e) => addressForm.setData('city_province', e.target.value)}
+                                        placeholder="TP. HCM"
+                                        required
+                                    />
+                                </FormField>
+
+                                <FormField label="Quận / Huyện" error={addressForm.errors.district}>
+                                    <TextInput
+                                        value={addressForm.data.district}
+                                        onChange={(e) => addressForm.setData('district', e.target.value)}
+                                        placeholder="Quận 1"
+                                    />
+                                </FormField>
+
+                                <FormField label="Phường / Xã" required error={addressForm.errors.ward}>
+                                    <TextInput
+                                        value={addressForm.data.ward}
+                                        onChange={(e) => addressForm.setData('ward', e.target.value)}
+                                        placeholder="Phường Bến Nghé"
+                                        required
+                                    />
+                                </FormField>
+                            </div>
+
+                            <Button
+                                type="submit"
+                                variant="primary"
+                                loading={addressForm.processing}
+                                loadingText="Đang lưu địa chỉ..."
+                                iconLeft={<Send className="h-4 w-4" />}
+                                className="w-full"
+                            >
+                                {isAddressDone ? 'Cập Nhật Lại Địa Chỉ' : 'Xác Nhận Địa Chỉ Giao Hàng'}
+                            </Button>
+                        </form>
+                    )}
                 </div>
 
                 {/* Bước 2: Nút 1-Chạm Báo Đã Nhận Hàng */}
@@ -1200,6 +1372,16 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
                             <div>
                                 Vui lòng nhận kiện hàng trải nghiệm và xác nhận ở <strong>Bước 2</strong> trước khi nộp đường link video đã xuất bản.
                             </div>
+                        </div>
+                    ) : isPostedDone && portal_settings?.allow_multiple_videos === false ? (
+                        <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 text-xs text-emerald-900 space-y-1.5">
+                            <div className="font-bold flex items-center gap-1.5 text-emerald-800">
+                                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                                <span>Bạn đã nộp link video nghiệm thu thành công!</span>
+                            </div>
+                            <p className="text-[11px] text-emerald-700 leading-relaxed">
+                                Đội ngũ booking đang tiến hành đánh giá chất lượng và đối soát số liệu. Cảm ơn bạn đã đồng hành cùng chiến dịch!
+                            </p>
                         </div>
                     ) : (
                         <form onSubmit={handleVideoSubmit} className="space-y-3.5">
@@ -1439,11 +1621,108 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
                     )}
                 </ConfirmDialog>
 
-                {/* Footer Chân Trang */}
-                <div className="text-center text-xs text-slate-400 pt-2 pb-6">
-                    KOL Booking System • Cổng bảo mật thông tin KOC
+                {/* Footer Chân Trang & Hotline Hỗ Trợ KOC */}
+                <div className="text-center text-xs text-slate-400 pt-2 pb-6 space-y-2">
+                    {portal_settings?.support_contact && (
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 text-slate-700 text-xs font-medium border border-slate-200">
+                            <Phone className="h-3.5 w-3.5 text-primary-600" />
+                            <span>Hỗ trợ KOC: <strong>{portal_settings.support_contact}</strong></span>
+                        </div>
+                    )}
+                    <div>KOL Booking System • Cổng bảo mật thông tin KOC</div>
                 </div>
             </div>
+
+            {/* Modal Lightbox Xem Ảnh Phóng To Toàn Màn Hình */}
+            {lightbox && (
+                <div
+                    className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-3 select-none animate-in fade-in duration-200"
+                    onClick={closeLightbox}
+                >
+                    {/* Nút Đóng (X) */}
+                    <button
+                        type="button"
+                        onClick={closeLightbox}
+                        className="absolute top-4 right-4 text-white/80 hover:text-white p-2.5 rounded-full bg-white/10 hover:bg-white/20 transition-all cursor-pointer z-50"
+                        title="Đóng (Esc)"
+                    >
+                        <X className="h-6 w-6" />
+                    </button>
+
+                    {/* Nút Tải ảnh gốc về máy */}
+                    <a
+                        href={lightbox.images[lightbox.index]?.url}
+                        download
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="absolute top-4 left-4 inline-flex items-center gap-1.5 text-xs font-semibold text-white/90 bg-white/15 hover:bg-white/25 px-3 py-2 rounded-xl backdrop-blur-xs transition-colors z-50 cursor-pointer"
+                        title="Tải ảnh gốc về điện thoại / máy tính"
+                    >
+                        <Download className="h-4 w-4" />
+                        <span>Tải ảnh gốc</span>
+                    </a>
+
+                    {/* Khung hiển thị ảnh chính */}
+                    <div
+                        className="relative max-w-4xl max-h-[80vh] flex items-center justify-center p-2"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <img
+                            src={lightbox.images[lightbox.index]?.url}
+                            alt={lightbox.images[lightbox.index]?.name || 'Ảnh chi tiết'}
+                            className="max-h-[75vh] max-w-[90vw] object-contain rounded-xl shadow-2xl"
+                        />
+
+                        {/* Nút Lùi ảnh (Previous) */}
+                        {lightbox.images.length > 1 && (
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    prevLightbox();
+                                }}
+                                className="absolute left-2 sm:-left-12 top-1/2 -translate-y-1/2 text-white/80 hover:text-white p-2.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-xs transition-all cursor-pointer"
+                                title="Ảnh trước"
+                            >
+                                <ChevronLeft className="h-6 w-6" />
+                            </button>
+                        )}
+
+                        {/* Nút Tiến ảnh (Next) */}
+                        {lightbox.images.length > 1 && (
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    nextLightbox();
+                                }}
+                                className="absolute right-2 sm:-right-12 top-1/2 -translate-y-1/2 text-white/80 hover:text-white p-2.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-xs transition-all cursor-pointer"
+                                title="Ảnh tiếp theo"
+                            >
+                                <ChevronRight className="h-6 w-6" />
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Tên ảnh & Chỉ số trang thái (1/N) */}
+                    <div
+                        className="mt-3 text-center text-white/90 space-y-1 z-50"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {lightbox.images[lightbox.index]?.name && (
+                            <div className="text-xs font-semibold max-w-md truncate mx-auto px-3">
+                                {lightbox.images[lightbox.index].name}
+                            </div>
+                        )}
+                        {lightbox.images.length > 1 && (
+                            <div className="text-[11px] font-mono text-white/60">
+                                {lightbox.index + 1} / {lightbox.images.length}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

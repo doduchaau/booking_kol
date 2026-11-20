@@ -44,6 +44,7 @@ interface Props {
     onOpenConfirmApprovalModal: (item: CampaignCreatorPivot) => void;
     onReopenDeal: (item: CampaignCreatorPivot) => void;
     onCopyPortal: (token: string | null) => void;
+    onExtendPortal?: (item: CampaignCreatorPivot) => void;
     copiedToken: string | null;
     onQuickStatusChange: (itemOrId: CampaignCreatorPivot | number, newStatus: string) => void;
     onOpenShipmentModal: (item: CampaignCreatorPivot) => void;
@@ -76,6 +77,7 @@ export default React.memo(function KocMatrixRow({
     onOpenConfirmApprovalModal,
     onReopenDeal,
     onCopyPortal,
+    onExtendPortal,
     copiedToken,
     onQuickStatusChange,
     onOpenShipmentModal,
@@ -213,7 +215,7 @@ export default React.memo(function KocMatrixRow({
                                         ? campaignTargetPlatforms
                                         : ['tiktok', 'shopee', 'facebook', 'youtube', 'instagram']
                                     ).map((plat) => {
-                                        const cur = item.booking_platforms || ['tiktok'];
+                                        const cur = item.booking_platforms || [];
                                         const isChecked = cur.includes(plat);
                                         return (
                                             <label
@@ -224,10 +226,9 @@ export default React.memo(function KocMatrixRow({
                                                     type="checkbox"
                                                     checked={isChecked}
                                                     onChange={() => {
-                                                        let next = isChecked
+                                                        const next = isChecked
                                                             ? cur.filter((p) => p !== plat)
                                                             : [...cur, plat];
-                                                        if (next.length === 0) next = [plat];
                                                         onInlinePlatformsChange?.(item.id, next);
                                                     }}
                                                     className="rounded border-slate-300 text-primary-600 focus:ring-primary-500 h-3.5 w-3.5"
@@ -244,16 +245,19 @@ export default React.memo(function KocMatrixRow({
 
                     {/* Hình thức hợp tác */}
                     <select
-                        value={item.collaboration_type || 'video'}
+                        value={item.collaboration_type || ''}
                         onChange={(e) => onInlineCollaborationTypeChange(item.id, e.target.value)}
                         className={`w-full max-w-[110px] py-0.5 pl-2 pr-6 text-[11px] font-semibold rounded-lg border shadow-2xs cursor-pointer focus:ring-2 focus:ring-primary-500 transition-colors ${
                             item.collaboration_type === 'livestream'
                                 ? 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100/70'
                                 : item.collaboration_type === 'both'
                                 ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100/70'
-                                : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100/70'
+                                : item.collaboration_type === 'video'
+                                ? 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100/70'
+                                : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
                         }`}
                     >
+                        <option value="">Chưa chọn</option>
                         <option value="video">🎬 Lên Video</option>
                         <option value="livestream">🎙️ Live</option>
                         <option value="both">⚡ Cả 2</option>
@@ -491,31 +495,59 @@ export default React.memo(function KocMatrixRow({
                 <div className="flex flex-col items-end gap-1.5">
                     {/* Dòng 1: Tiện ích kết nối (Copy Portal, Nhắn Zalo, Xóa KOC) */}
                     <div className="flex items-center gap-1">
-                        {/* Nút Sao Chép Link Portal */}
-                        {item.portal_token ? (
-                            <button
-                                type="button"
-                                onClick={() => onCopyPortal(item.portal_token)}
-                                className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold border transition-all shadow-2xs cursor-pointer ${
-                                    copiedToken === item.portal_token
-                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-300 ring-1 ring-emerald-400'
-                                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                                }`}
-                                title="Sao chép link Portal gửi cho KOC qua tin nhắn"
-                            >
-                                {copiedToken === item.portal_token ? (
-                                    <>
-                                        <Check className="h-3 w-3 text-emerald-600" />
-                                        <span>Đã chép!</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <Copy className="h-3 w-3 text-slate-500" />
-                                        <span>Portal</span>
-                                    </>
-                                )}
-                            </button>
-                        ) : null}
+                        {/* Nút Sao Chép Link Portal & Gia Hạn */}
+                        {item.portal_token ? (() => {
+                            const isExpired = item.portal_token_expires_at
+                                ? new Date(item.portal_token_expires_at) < new Date()
+                                : false;
+
+                            return (
+                                <div className="inline-flex items-center gap-0.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => onCopyPortal(item.portal_token)}
+                                        className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold border transition-all shadow-2xs cursor-pointer ${
+                                            copiedToken === item.portal_token
+                                                ? 'bg-emerald-50 text-emerald-700 border-emerald-300 ring-1 ring-emerald-400'
+                                                : isExpired
+                                                ? 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100'
+                                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                                        }`}
+                                        title={
+                                            isExpired
+                                                ? `Link Portal đã hết hạn (${formatDate(item.portal_token_expires_at!)}). Bấm để sao chép hoặc bấm gia hạn bên cạnh.`
+                                                : item.portal_token_expires_at
+                                                ? `Link Portal còn hạn đến ${formatDate(item.portal_token_expires_at)}. Bấm để sao chép.`
+                                                : 'Link Portal vô thời hạn. Bấm để sao chép.'
+                                        }
+                                    >
+                                        {copiedToken === item.portal_token ? (
+                                            <>
+                                                <Check className="h-3 w-3 text-emerald-600" />
+                                                <span>Đã chép!</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Copy className="h-3 w-3 text-slate-500" />
+                                                <span>{isExpired ? 'Portal (Hết hạn)' : 'Portal'}</span>
+                                            </>
+                                        )}
+                                    </button>
+
+                                    {/* Nút Gia Hạn Link 1-chạm */}
+                                    {onExtendPortal && (
+                                        <button
+                                            type="button"
+                                            onClick={() => onExtendPortal(item)}
+                                            className="p-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 hover:text-primary-600 shadow-2xs transition-colors cursor-pointer"
+                                            title="Gia hạn thêm thời hạn cho link Portal"
+                                        >
+                                            <Clock className="h-3 w-3" />
+                                        </button>
+                                    )}
+                                </div>
+                            );
+                        })() : null}
 
                         {/* Nút Mở Zalo 1-chạm */}
                         <button
