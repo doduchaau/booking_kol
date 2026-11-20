@@ -14,14 +14,19 @@ class StoreCampaignRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         // Chuẩn hóa danh sách sản phẩm và tự động gán product_name từ sản phẩm đầu tiên
-        if (!empty($this->products) && is_array($this->products)) {
-            $normalizedProducts = array_map(function ($p) {
+        $products = $this->input('products');
+        if (is_string($products)) {
+            $products = json_decode($products, true) ?: [];
+        }
+
+        if (!empty($products) && is_array($products)) {
+            $normalizedProducts = $products;
+            foreach ($normalizedProducts as $idx => $p) {
                 if (is_array($p)) {
-                    $p['name'] = $p['name'] ?? $p['product_name'] ?? null;
-                    $p['sku'] = $p['sku'] ?? $p['product_sku'] ?? null;
+                    $normalizedProducts[$idx]['name'] = $p['name'] ?? $p['product_name'] ?? null;
+                    $normalizedProducts[$idx]['sku'] = $p['sku'] ?? $p['product_sku'] ?? null;
                 }
-                return $p;
-            }, $this->products);
+            }
 
             $this->merge([
                 'products' => $normalizedProducts,
@@ -52,6 +57,11 @@ class StoreCampaignRequest extends FormRequest
             'products.*.retail_price' => ['nullable', 'numeric', 'min:0'],
             'products.*.brief_content' => ['nullable', 'string'],
             'products.*.brief_file' => ['nullable', 'file', 'max:20480', 'mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,png,jpg,jpeg,webp,txt,zip'],
+            'products.*.brief_files' => ['nullable', 'array'],
+            'products.*.brief_files.*' => ['nullable', 'file', 'max:20480', 'mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,png,jpg,jpeg,webp,txt,zip'],
+            'products.*.images' => ['nullable', 'array'],
+            'products.*.images.*' => ['nullable', 'file', 'image', 'mimes:png,jpg,jpeg,webp', 'max:10240'],
+            'products.*.thumbnail_url' => ['nullable', 'string', 'max:500'],
             'products.*.hashtags' => ['nullable', 'string', 'max:255'],
             'products.*.sample_requirement' => ['nullable', 'string'],
             'budget' => ['required', 'numeric', 'min:0'],

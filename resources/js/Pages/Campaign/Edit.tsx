@@ -17,9 +17,12 @@ interface CampaignProduct {
     sku?: string | null;
     product_url?: string | null;
     retail_price?: number | string | null;
+    thumbnail_url?: string | null;
+    image_urls?: Array<{ path: string; url: string; name: string }>;
     brief_content?: string | null;
     brief_file_url?: string | null;
     brief_file_name?: string | null;
+    brief_file_items?: Array<{ path: string; url: string; name: string; size?: number | null; type?: string | null }>;
     hashtags?: string | null;
     sample_requirement?: string | null;
 }
@@ -70,6 +73,13 @@ export default function Edit({ campaign, statuses }: Props) {
             product_url: p.product_url || '',
             retail_price: p.retail_price ? p.retail_price.toString() : '',
             brief_content: p.brief_content || '',
+            images: [],
+            preview_images: [],
+            existing_images: p.image_urls || (p.thumbnail_url ? [{ path: p.thumbnail_url, url: p.thumbnail_url, name: 'Ảnh sản phẩm' }] : []),
+            removed_image_paths: [],
+            brief_files: [],
+            existing_brief_files: p.brief_file_items || (p.brief_file_url ? [{ path: p.brief_file_url, url: p.brief_file_url, name: p.brief_file_name || 'Tài liệu brief' }] : []),
+            removed_brief_file_paths: [],
             brief_file: null,
             brief_file_url: p.brief_file_url || null,
             brief_file_name: p.brief_file_name || null,
@@ -84,6 +94,13 @@ export default function Edit({ campaign, statuses }: Props) {
                 product_url: campaign.affiliate_link || '',
                 retail_price: '',
                 brief_content: campaign.content_guidelines || '',
+                images: [],
+                preview_images: [],
+                existing_images: [],
+                removed_image_paths: [],
+                brief_files: [],
+                existing_brief_files: [],
+                removed_brief_file_paths: [],
                 brief_file: null,
                 hashtags: campaign.hashtags || '',
                 sample_requirement: campaign.sample_requirement || '',

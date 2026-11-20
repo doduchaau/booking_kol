@@ -14,14 +14,19 @@ class UpdateCampaignRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         // Chuẩn hóa danh sách sản phẩm và tự động gán product_name từ sản phẩm đầu tiên
-        if (!empty($this->products) && is_array($this->products)) {
-            $normalizedProducts = array_map(function ($p) {
+        $products = $this->input('products');
+        if (is_string($products)) {
+            $products = json_decode($products, true) ?: [];
+        }
+
+        if (!empty($products) && is_array($products)) {
+            $normalizedProducts = $products;
+            foreach ($normalizedProducts as $idx => $p) {
                 if (is_array($p)) {
-                    $p['name'] = $p['name'] ?? $p['product_name'] ?? null;
-                    $p['sku'] = $p['sku'] ?? $p['product_sku'] ?? null;
+                    $normalizedProducts[$idx]['name'] = $p['name'] ?? $p['product_name'] ?? null;
+                    $normalizedProducts[$idx]['sku'] = $p['sku'] ?? $p['product_sku'] ?? null;
                 }
-                return $p;
-            }, $this->products);
+            }
 
             $this->merge([
                 'products' => $normalizedProducts,
@@ -53,6 +58,15 @@ class UpdateCampaignRequest extends FormRequest
             'products.*.brief_content' => ['nullable', 'string'],
             'products.*.brief_file' => ['nullable', 'file', 'max:20480', 'mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,png,jpg,jpeg,webp,txt,zip'],
             'products.*.remove_brief_file' => ['nullable', 'boolean'],
+            'products.*.brief_files' => ['nullable', 'array'],
+            'products.*.brief_files.*' => ['nullable', 'file', 'max:20480', 'mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,png,jpg,jpeg,webp,txt,zip'],
+            'products.*.removed_brief_file_paths' => ['nullable', 'array'],
+            'products.*.removed_brief_file_paths.*' => ['string'],
+            'products.*.images' => ['nullable', 'array'],
+            'products.*.images.*' => ['nullable', 'file', 'image', 'mimes:png,jpg,jpeg,webp', 'max:10240'],
+            'products.*.removed_image_paths' => ['nullable', 'array'],
+            'products.*.removed_image_paths.*' => ['string'],
+            'products.*.thumbnail_url' => ['nullable', 'string', 'max:500'],
             'products.*.hashtags' => ['nullable', 'string', 'max:255'],
             'products.*.sample_requirement' => ['nullable', 'string'],
             'budget' => ['required', 'numeric', 'min:0'],

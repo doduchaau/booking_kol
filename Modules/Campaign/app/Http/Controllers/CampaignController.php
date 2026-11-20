@@ -112,45 +112,7 @@ class CampaignController extends Controller
         $campaign = Campaign::create($validated);
 
         // Lưu danh sách sản phẩm & brief riêng cho từng sản phẩm
-        $productsInput = $request->input('products', []);
-        if (is_string($productsInput)) {
-            $productsInput = json_decode($productsInput, true) ?: [];
-        }
-
-        if (!empty($productsInput) && is_array($productsInput)) {
-            foreach ($productsInput as $idx => $p) {
-                if (empty($p['name'])) continue;
-
-                $briefFilePath = null;
-                if ($request->hasFile("products.{$idx}.brief_file")) {
-                    $briefFilePath = $request->file("products.{$idx}.brief_file")->store('campaigns/product_briefs', 'public');
-                }
-
-                $campaign->products()->create([
-                    'name' => trim($p['name']),
-                    'sku' => !empty($p['sku']) ? trim($p['sku']) : null,
-                    'product_url' => !empty($p['product_url']) ? trim($p['product_url']) : null,
-                    'retail_price' => (float) ($p['retail_price'] ?? 0),
-                    'brief_content' => $p['brief_content'] ?? null,
-                    'brief_file' => $briefFilePath,
-                    'hashtags' => !empty($p['hashtags']) ? trim($p['hashtags']) : null,
-                    'sample_requirement' => $p['sample_requirement'] ?? null,
-                    'sort_order' => $idx,
-                ]);
-            }
-        } elseif (!empty($campaign->product_name)) {
-            $campaign->products()->create([
-                'name' => $campaign->product_name,
-                'sku' => $campaign->product_sku,
-                'product_url' => $campaign->affiliate_link,
-                'brief_content' => $campaign->content_guidelines,
-                'brief_file' => $campaign->content_guidelines_file,
-                'hashtags' => $campaign->hashtags,
-                'sample_requirement' => $campaign->sample_requirement,
-                'retail_price' => 0.00,
-                'sort_order' => 0,
-            ]);
-        }
+        $this->syncCampaignProducts($campaign, $request);
 
         if ($assignAllCreators) {
             $result = $this->campaignService->addCreatorsToCampaign(
@@ -331,65 +293,191 @@ class CampaignController extends Controller
 
         $campaign->update($data);
 
-        // Xử lý danh sách sản phẩm & brief riêng từng sản phẩm
+        // Xử lý danh sách sản phẩm, ảnh & brief riêng từng sản phẩm
+        $this->syncCampaignProducts($campaign, $request);
+
+        return redirect()->route('campaigns.show', $campaign->id)
+            ->with('success', "Đã cập nhật chiến dịch [{$campaign->name}] thành công.");
+    }
+
+    /**
+     * Đồng bộ danh sách sản phẩm, hình ảnh và tài liệu brief cho chiến dịch
+     */
+    protected function syncCampaignProducts(Campaign $campaign, Request $request): void
+    {
         $productsInput = $request->input('products', []);
         if (is_string($productsInput)) {
             $productsInput = json_decode($productsInput, true) ?: [];
         }
 
-        if (is_array($productsInput) && count($productsInput) > 0) {
-            $keptProductIds = [];
-            foreach ($productsInput as $idx => $p) {
-                if (empty($p['name'])) continue;
+        if (empty($productsInput) || !is_array($productsInput)) {
+            if (!empty($campaign->product_name) && $campaign->products()->count() === 0) {
+                $campaign->products()->create([
+                    'name' => $campaign->product_name,
+                    'sku' => $campaign->product_sku,
+                    'product_url' => $campaign->affiliate_link,
+                    'brief_content' => $campaign->content_guidelines,
+                    'brief_file' => $campaign->content_guidelines_file,
+                    'hashtags' => $campaign->hashtags,
+                    'sample_requirement' => $campaign->sample_requirement,
+                    'retail_price' => 0.00,
+                    'sort_order' => 0,
+                ]);
+            }
+            return;
+        }
 
-                $prodId = !empty($p['id']) ? (int) $p['id'] : null;
-                $existingProd = $prodId ? $campaign->products()->find($prodId) : null;
+        $keptProductIds = [];
 
-                $briefFilePath = $existingProd?->brief_file;
+        foreach ($productsInput as $idx => $p) {
+            if (empty($p['name'])) {
+                continue;
+            }
 
-                if (!empty($p['remove_brief_file']) && $briefFilePath) {
-                    if (Storage::disk('public')->exists($briefFilePath)) {
-                        Storage::disk('public')->delete($briefFilePath);
+            $prodId = !empty($p['id']) ? (int) $p['id'] : null;
+            $existingProd = $prodId ? $campaign->products()->find($prodId) : null;
+
+            // 1. Xử lý Ảnh sản phẩm (Gallery / Multiple Images)
+            $currentImages = $existingProd?->images ?? [];
+            if (!is_array($currentImages)) {
+                $currentImages = [];
+            }
+
+            // Gỡ bỏ các ảnh cũ theo danh sách removed_image_paths
+            $removedImagePaths = $p['removed_image_paths'] ?? [];
+            if (!empty($removedImagePaths) && is_array($removedImagePaths)) {
+                foreach ($removedImagePaths as $rmPath) {
+                    if (Storage::disk('public')->exists($rmPath)) {
+                        Storage::disk('public')->delete($rmPath);
                     }
-                    $briefFilePath = null;
                 }
+                $currentImages = array_values(array_filter($currentImages, function ($img) use ($removedImagePaths) {
+                    $imgPath = is_array($img) ? ($img['path'] ?? null) : $img;
+                    return !in_array($imgPath, $removedImagePaths);
+                }));
+            }
 
-                if ($request->hasFile("products.{$idx}.brief_file")) {
-                    if ($briefFilePath && Storage::disk('public')->exists($briefFilePath)) {
-                        Storage::disk('public')->delete($briefFilePath);
+            // Upload ảnh mới
+            if ($request->hasFile("products.{$idx}.images")) {
+                $uploadedImages = $request->file("products.{$idx}.images");
+                if (!is_array($uploadedImages)) {
+                    $uploadedImages = [$uploadedImages];
+                }
+                foreach ($uploadedImages as $imgFile) {
+                    if ($imgFile && $imgFile->isValid()) {
+                        $storedPath = $imgFile->store('campaigns/products/images', 'public');
+                        $currentImages[] = [
+                            'path' => $storedPath,
+                            'name' => $imgFile->getClientOriginalName(),
+                            'size' => $imgFile->getSize(),
+                        ];
                     }
-                    $briefFilePath = $request->file("products.{$idx}.brief_file")->store('campaigns/product_briefs', 'public');
-                }
-
-                $productData = [
-                    'name' => trim($p['name']),
-                    'sku' => !empty($p['sku']) ? trim($p['sku']) : null,
-                    'product_url' => !empty($p['product_url']) ? trim($p['product_url']) : null,
-                    'retail_price' => (float) ($p['retail_price'] ?? 0),
-                    'brief_content' => $p['brief_content'] ?? null,
-                    'brief_file' => $briefFilePath,
-                    'hashtags' => !empty($p['hashtags']) ? trim($p['hashtags']) : null,
-                    'sample_requirement' => $p['sample_requirement'] ?? null,
-                    'sort_order' => $idx,
-                ];
-
-                if ($existingProd) {
-                    $existingProd->update($productData);
-                    $keptProductIds[] = $existingProd->id;
-                } else {
-                    $newProd = $campaign->products()->create($productData);
-                    $keptProductIds[] = $newProd->id;
                 }
             }
 
-            // Xóa các sản phẩm đã bị remove trong form edit
-            if (!empty($keptProductIds)) {
-                $campaign->products()->whereNotIn('id', $keptProductIds)->delete();
+            // Xác định thumbnail_url
+            $thumbnailUrl = null;
+            if (!empty($currentImages)) {
+                $first = $currentImages[0];
+                $thumbnailUrl = is_array($first) ? ($first['path'] ?? null) : $first;
+            }
+
+            // 2. Xử lý File Brief (Multiple Brief Files & Legacy single file)
+            $currentBriefFiles = $existingProd?->brief_files ?? [];
+            if (!is_array($currentBriefFiles)) {
+                $currentBriefFiles = [];
+            }
+
+            // Gỡ bỏ file brief cũ theo removed_brief_file_paths
+            $removedBriefPaths = $p['removed_brief_file_paths'] ?? [];
+            if (!empty($removedBriefPaths) && is_array($removedBriefPaths)) {
+                foreach ($removedBriefPaths as $rmPath) {
+                    if (Storage::disk('public')->exists($rmPath)) {
+                        Storage::disk('public')->delete($rmPath);
+                    }
+                }
+                $currentBriefFiles = array_values(array_filter($currentBriefFiles, function ($bf) use ($removedBriefPaths) {
+                    $bfPath = is_array($bf) ? ($bf['path'] ?? null) : $bf;
+                    return !in_array($bfPath, $removedBriefPaths);
+                }));
+            }
+
+            // Gỡ bỏ brief_file cũ nếu có flag remove_brief_file
+            $legacyBriefPath = $existingProd?->brief_file;
+            if (!empty($p['remove_brief_file']) && $legacyBriefPath) {
+                if (Storage::disk('public')->exists($legacyBriefPath)) {
+                    Storage::disk('public')->delete($legacyBriefPath);
+                }
+                $legacyBriefPath = null;
+            }
+
+            // Upload nhiều file brief mới
+            if ($request->hasFile("products.{$idx}.brief_files")) {
+                $uploadedBriefs = $request->file("products.{$idx}.brief_files");
+                if (!is_array($uploadedBriefs)) {
+                    $uploadedBriefs = [$uploadedBriefs];
+                }
+                foreach ($uploadedBriefs as $bFile) {
+                    if ($bFile && $bFile->isValid()) {
+                        $storedPath = $bFile->store('campaigns/products/briefs', 'public');
+                        $currentBriefFiles[] = [
+                            'path' => $storedPath,
+                            'name' => $bFile->getClientOriginalName(),
+                            'size' => $bFile->getSize(),
+                            'type' => $bFile->getClientMimeType(),
+                        ];
+                    }
+                }
+            }
+
+            // Upload single file brief cũ (nếu có)
+            if ($request->hasFile("products.{$idx}.brief_file")) {
+                $singleFile = $request->file("products.{$idx}.brief_file");
+                if ($legacyBriefPath && Storage::disk('public')->exists($legacyBriefPath)) {
+                    Storage::disk('public')->delete($legacyBriefPath);
+                }
+                $legacyBriefPath = $singleFile->store('campaigns/product_briefs', 'public');
+                $currentBriefFiles[] = [
+                    'path' => $legacyBriefPath,
+                    'name' => $singleFile->getClientOriginalName(),
+                    'size' => $singleFile->getSize(),
+                    'type' => $singleFile->getClientMimeType(),
+                ];
+            }
+
+            if (empty($legacyBriefPath) && !empty($currentBriefFiles)) {
+                $firstBrief = $currentBriefFiles[0];
+                $legacyBriefPath = is_array($firstBrief) ? ($firstBrief['path'] ?? null) : $firstBrief;
+            }
+
+            $productData = [
+                'name' => trim($p['name']),
+                'sku' => !empty($p['sku']) ? trim($p['sku']) : null,
+                'thumbnail_url' => $thumbnailUrl,
+                'images' => $currentImages,
+                'product_url' => !empty($p['product_url']) ? trim($p['product_url']) : null,
+                'retail_price' => (float) ($p['retail_price'] ?? 0),
+                'brief_content' => $p['brief_content'] ?? null,
+                'brief_file' => $legacyBriefPath,
+                'brief_files' => $currentBriefFiles,
+                'hashtags' => !empty($p['hashtags']) ? trim($p['hashtags']) : null,
+                'sample_requirement' => $p['sample_requirement'] ?? null,
+                'sort_order' => $idx,
+            ];
+
+            if ($existingProd) {
+                $existingProd->update($productData);
+                $keptProductIds[] = $existingProd->id;
+            } else {
+                $newProd = $campaign->products()->create($productData);
+                $keptProductIds[] = $newProd->id;
             }
         }
 
-        return redirect()->route('campaigns.show', $campaign->id)
-            ->with('success', "Đã cập nhật chiến dịch [{$campaign->name}] thành công.");
+        // Xóa các sản phẩm đã bị remove trong form edit
+        if ($campaign->exists && !empty($keptProductIds)) {
+            $campaign->products()->whereNotIn('id', $keptProductIds)->delete();
+        }
     }
 
     /**

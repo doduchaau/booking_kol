@@ -48,10 +48,13 @@ export interface CampaignProductItem {
     product_name: string;
     product_sku?: string | null;
     product_url?: string | null;
+    thumbnail_url?: string | null;
+    image_urls?: Array<{ path: string; url: string; name: string }>;
     retail_price?: number;
     brief_content?: string | null;
     brief_file_url?: string | null;
     brief_file_name?: string | null;
+    brief_file_items?: Array<{ path: string; url: string; name: string; size?: number; type?: string }>;
     hashtags?: string | null;
     sample_requirement?: string | null;
 }
@@ -62,10 +65,13 @@ export interface CreatorProductItem {
     product_name: string;
     product_sku?: string | null;
     product_url?: string | null;
+    thumbnail_url?: string | null;
+    image_urls?: Array<{ path: string; url: string; name: string }>;
     retail_price?: number;
     brief_content?: string | null;
     brief_file_url?: string | null;
     brief_file_name?: string | null;
+    brief_file_items?: Array<{ path: string; url: string; name: string; size?: number; type?: string }>;
     hashtags?: string | null;
     sample_requirement?: string | null;
     sample_variant?: string | null;
@@ -434,26 +440,35 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
 
                                     return (
                                         <div key={p.id} className="rounded-xl border border-slate-200 bg-slate-50/60 p-3.5 space-y-2.5">
-                                            <div className="flex items-start justify-between gap-2">
-                                                <div className="min-w-0 flex-1">
-                                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                                        <span className="text-xs font-bold text-slate-900 block">
-                                                            {p.product_name}
-                                                        </span>
-                                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-primary-100 text-primary-800">
-                                                            SL: {qty} món
-                                                        </span>
-                                                    </div>
-                                                    {p.sample_variant && (
-                                                        <span className="text-[11px] text-slate-500 block mt-0.5">
-                                                            Phân loại: <strong className="text-slate-700">{p.sample_variant}</strong>
-                                                        </span>
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                                                    {(p.thumbnail_url || (p.image_urls && p.image_urls[0]?.url)) && (
+                                                        <img
+                                                            src={p.thumbnail_url || p.image_urls![0].url}
+                                                            alt={p.product_name}
+                                                            className="w-12 h-12 rounded-lg object-cover border border-slate-200 shrink-0 shadow-2xs"
+                                                        />
                                                     )}
-                                                    {p.retail_price ? (
-                                                        <span className="text-[11px] text-slate-500 block">
-                                                            Giá bán: {p.retail_price.toLocaleString('vi-VN')} đ
-                                                        </span>
-                                                    ) : null}
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                                            <span className="text-xs font-bold text-slate-900 block">
+                                                                {p.product_name}
+                                                            </span>
+                                                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-primary-100 text-primary-800">
+                                                                SL: {qty} món
+                                                            </span>
+                                                        </div>
+                                                        {p.sample_variant && (
+                                                            <span className="text-[11px] text-slate-500 block mt-0.5">
+                                                                Phân loại: <strong className="text-slate-700">{p.sample_variant}</strong>
+                                                            </span>
+                                                        )}
+                                                        {p.retail_price ? (
+                                                            <span className="text-[11px] text-slate-500 block">
+                                                                Giá bán: {p.retail_price.toLocaleString('vi-VN')} đ
+                                                            </span>
+                                                        ) : null}
+                                                    </div>
                                                 </div>
 
                                                 {p.product_url && (
@@ -519,18 +534,29 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
                                                                 </div>
                                                             )}
 
-                                                            {p.brief_file_url && (
-                                                                <div className="pt-1">
-                                                                    <a
-                                                                        href={p.brief_file_url}
-                                                                        target="_blank"
-                                                                        rel="noreferrer"
-                                                                        download
-                                                                        className="inline-flex items-center gap-1.5 font-semibold text-primary-700 bg-primary-50 border border-primary-200 px-2.5 py-1.5 rounded-lg hover:bg-primary-100 shadow-2xs text-[11px] transition-colors"
-                                                                    >
-                                                                        <Download className="h-3.5 w-3.5 text-primary-600" />
-                                                                        <span>Tải file Brief: {p.brief_file_name || 'Tệp đính kèm'}</span>
-                                                                    </a>
+                                                            {/* Danh sách file brief đính kèm */}
+                                                            {((p.brief_file_items && p.brief_file_items.length > 0) || p.brief_file_url) && (
+                                                                <div className="pt-1 space-y-1.5">
+                                                                    <span className="font-bold text-slate-800 flex items-center gap-1 text-[11px]">
+                                                                        <FileText className="h-3 w-3 text-amber-600" />
+                                                                        Tài liệu Brief & Hướng dẫn:
+                                                                    </span>
+                                                                    {(p.brief_file_items && p.brief_file_items.length > 0
+                                                                        ? p.brief_file_items
+                                                                        : [{ url: p.brief_file_url!, name: p.brief_file_name || 'Tệp đính kèm' }]
+                                                                    ).map((bf, bfIdx) => (
+                                                                        <a
+                                                                            key={bfIdx}
+                                                                            href={bf.url}
+                                                                            target="_blank"
+                                                                            rel="noreferrer"
+                                                                            download
+                                                                            className="inline-flex items-center gap-1.5 font-semibold text-primary-700 bg-primary-50 border border-primary-200 px-2.5 py-1.5 rounded-lg hover:bg-primary-100 shadow-2xs text-[11px] transition-colors truncate max-w-full"
+                                                                        >
+                                                                            <Download className="h-3.5 w-3.5 text-primary-600 shrink-0" />
+                                                                            <span className="truncate">{bf.name}</span>
+                                                                        </a>
+                                                                    ))}
                                                                 </div>
                                                             )}
                                                         </div>
@@ -547,16 +573,25 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
 
                                     return (
                                         <div key={p.id} className="rounded-xl border border-slate-200 bg-slate-50/60 p-3.5 space-y-2">
-                                            <div className="flex items-start justify-between gap-2">
-                                                <div className="min-w-0 flex-1">
-                                                    <span className="text-xs font-bold text-slate-900 block">
-                                                        {p.product_name}
-                                                    </span>
-                                                    {p.retail_price ? (
-                                                        <span className="text-[11px] text-slate-500 block">
-                                                            Giá bán: {p.retail_price.toLocaleString('vi-VN')} đ
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                                                    {(p.thumbnail_url || (p.image_urls && p.image_urls[0]?.url)) && (
+                                                        <img
+                                                            src={p.thumbnail_url || p.image_urls![0].url}
+                                                            alt={p.product_name}
+                                                            className="w-12 h-12 rounded-lg object-cover border border-slate-200 shrink-0 shadow-2xs"
+                                                        />
+                                                    )}
+                                                    <div className="min-w-0 flex-1">
+                                                        <span className="text-xs font-bold text-slate-900 block">
+                                                            {p.product_name}
                                                         </span>
-                                                    ) : null}
+                                                        {p.retail_price ? (
+                                                            <span className="text-[11px] text-slate-500 block">
+                                                                Giá bán: {p.retail_price.toLocaleString('vi-VN')} đ
+                                                            </span>
+                                                        ) : null}
+                                                    </div>
                                                 </div>
 
                                                 {p.product_url && (
@@ -598,17 +633,29 @@ export default function Index({ token, campaign, creator, pipeline }: Props) {
                                                                     {p.hashtags}
                                                                 </div>
                                                             )}
-                                                            {p.brief_file_url && (
-                                                                <a
-                                                                    href={p.brief_file_url}
-                                                                    target="_blank"
-                                                                    rel="noreferrer"
-                                                                    download
-                                                                    className="inline-flex items-center gap-1.5 font-semibold text-primary-700 bg-primary-50 border border-primary-200 px-2.5 py-1.5 rounded-lg hover:bg-primary-100 text-[11px]"
-                                                                >
-                                                                    <Download className="h-3.5 w-3.5 text-primary-600" />
-                                                                    <span>Tải Brief ({p.brief_file_name || 'Tệp'})</span>
-                                                                </a>
+                                                            {((p.brief_file_items && p.brief_file_items.length > 0) || p.brief_file_url) && (
+                                                                <div className="pt-1 space-y-1.5">
+                                                                    <span className="font-bold text-slate-800 flex items-center gap-1 text-[11px]">
+                                                                        <FileText className="h-3 w-3 text-amber-600" />
+                                                                        Tài liệu Brief & Hướng dẫn:
+                                                                    </span>
+                                                                    {(p.brief_file_items && p.brief_file_items.length > 0
+                                                                        ? p.brief_file_items
+                                                                        : [{ url: p.brief_file_url!, name: p.brief_file_name || 'Tệp đính kèm' }]
+                                                                    ).map((bf, bfIdx) => (
+                                                                        <a
+                                                                            key={bfIdx}
+                                                                            href={bf.url}
+                                                                            target="_blank"
+                                                                            rel="noreferrer"
+                                                                            download
+                                                                            className="inline-flex items-center gap-1.5 font-semibold text-primary-700 bg-primary-50 border border-primary-200 px-2.5 py-1.5 rounded-lg hover:bg-primary-100 shadow-2xs text-[11px] transition-colors truncate max-w-full"
+                                                                        >
+                                                                            <Download className="h-3.5 w-3.5 text-primary-600 shrink-0" />
+                                                                            <span className="truncate">{bf.name}</span>
+                                                                        </a>
+                                                                    ))}
+                                                                </div>
                                                             )}
                                                         </div>
                                                     )}

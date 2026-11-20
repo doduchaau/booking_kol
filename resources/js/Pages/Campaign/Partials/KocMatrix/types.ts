@@ -62,10 +62,12 @@ export interface CampaignProduct {
     product_sku?: string | null;
     product_url?: string | null;
     thumbnail_url?: string | null;
+    image_urls?: Array<{ path: string; url: string; name: string }>;
     retail_price?: number | string;
     brief_content?: string | null;
     brief_file_url?: string | null;
     brief_file_name?: string | null;
+    brief_file_items?: Array<{ path: string; url: string; name: string; size?: number | null; type?: string | null }>;
     hashtags?: string | null;
     sample_requirement?: string | null;
 }

@@ -25,6 +25,11 @@ import {
     ArrowLeft,
     RefreshCw,
     Check,
+    Image as ImageIcon,
+    Eye,
+    ShoppingBag,
+    Tag,
+    ExternalLink,
 } from 'lucide-react';
 import PageHeader from '@/Components/Common/PageHeader';
 import Button from '@/Components/Common/Button';
@@ -96,6 +101,7 @@ export default function Show({
     staffUsers = [],
 }: Props) {
     const [activeTab, setActiveTab] = useState<'matrix' | 'guidelines'>('matrix');
+    const [previewModalImage, setPreviewModalImage] = useState<{ url: string; name: string } | null>(null);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [modalTab, setModalTab] = useState<'specific' | 'all_db' | 'import_file'>('specific');
     const [selectAllInDb, setSelectAllInDb] = useState(false);
@@ -666,6 +672,181 @@ export default function Show({
                         )}
                         </div>
                     </div>
+
+                    {/* DANH SÁCH SẢN PHẨM & TÀI LIỆU BRIEF CHI TIẾT */}
+                    {campaign.products && campaign.products.length > 0 && (
+                        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-2xs space-y-5">
+                            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                                    <ShoppingBag className="h-4 w-4 text-primary-600" />
+                                    Danh Sách Sản Phẩm & Brief Riêng Cho Từng Món ({campaign.products.length} sản phẩm)
+                                </h3>
+                                <Link
+                                    href={route('campaigns.edit', campaign.id)}
+                                    className="text-xs font-semibold text-primary-600 hover:text-primary-700 hover:underline flex items-center gap-1"
+                                >
+                                    <Edit3 className="h-3.5 w-3.5" />
+                                    Chỉnh sửa sản phẩm
+                                </Link>
+                            </div>
+
+                            <div className="space-y-4">
+                                {campaign.products.map((p, idx) => {
+                                    const images = p.image_urls || (p.thumbnail_url ? [{ url: p.thumbnail_url, path: p.thumbnail_url, name: 'Ảnh sản phẩm' }] : []);
+                                    const briefFiles = p.brief_file_items || (p.brief_file_url ? [{ url: p.brief_file_url, path: p.brief_file_url, name: p.brief_file_name || 'Tài liệu brief', size: null, type: null }] : []);
+
+                                    return (
+                                        <div
+                                            key={p.id || idx}
+                                            className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 sm:p-5 space-y-4"
+                                        >
+                                            {/* Header sản phẩm */}
+                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-200/80">
+                                                <div className="flex items-center gap-2.5">
+                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-primary-100 text-primary-800">
+                                                        <ShoppingBag className="h-3.5 w-3.5" />
+                                                        #{idx + 1}
+                                                    </span>
+                                                    <h4 className="text-sm font-bold text-slate-900">
+                                                        {p.name || p.product_name}
+                                                    </h4>
+                                                    {p.sku && (
+                                                        <span className="text-xs font-mono text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
+                                                            SKU: {p.sku}
+                                                        </span>
+                                                    )}
+                                                </div>
+
+                                                <div className="flex items-center gap-3 text-xs">
+                                                    {p.retail_price ? (
+                                                        <span className="font-semibold text-slate-700">
+                                                            Giá bán: <span className="font-bold text-primary-700">{Number(p.retail_price).toLocaleString('vi-VN')} đ</span>
+                                                        </span>
+                                                    ) : null}
+                                                    {p.product_url && (
+                                                        <a
+                                                            href={p.product_url}
+                                                            target="_blank"
+                                                            rel="noreferrer"
+                                                            className="inline-flex items-center gap-1 font-semibold text-primary-600 hover:underline"
+                                                        >
+                                                            <span>Link mua hàng</span>
+                                                            <ExternalLink className="h-3 w-3" />
+                                                        </a>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Nội dung chi tiết SP */}
+                                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                                {/* Cột trái: Ảnh & Kịch bản */}
+                                                <div className="space-y-3">
+                                                    {/* Gallery ảnh */}
+                                                    <div>
+                                                        <p className="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1.5">
+                                                            <ImageIcon className="h-3.5 w-3.5 text-primary-600" />
+                                                            Hình ảnh sản phẩm ({images.length})
+                                                        </p>
+                                                        {images.length > 0 ? (
+                                                            <div className="flex flex-wrap gap-2.5 items-center">
+                                                                {images.map((img, imgIdx) => (
+                                                                    <div
+                                                                        key={imgIdx}
+                                                                        className="group relative w-20 h-20 rounded-xl border border-slate-200 overflow-hidden bg-white shadow-2xs hover:shadow-md transition-all cursor-pointer"
+                                                                        onClick={() => setPreviewModalImage({ url: img.url, name: img.name })}
+                                                                    >
+                                                                        <img
+                                                                            src={img.url}
+                                                                            alt={img.name}
+                                                                            className="w-full h-full object-cover"
+                                                                        />
+                                                                        {imgIdx === 0 && (
+                                                                            <span className="absolute top-1 left-1 px-1.5 py-0.2 rounded text-[9px] font-bold bg-primary-600 text-white shadow-xs">
+                                                                                Bìa
+                                                                            </span>
+                                                                        )}
+                                                                        <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                                            <Eye className="h-4 w-4 text-white" />
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        ) : (
+                                                            <p className="text-xs text-slate-400 italic">Chưa tải lên ảnh sản phẩm.</p>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Kịch bản USP */}
+                                                    {p.brief_content && (
+                                                        <div>
+                                                            <p className="text-xs font-bold text-slate-700 mb-1">
+                                                                Kịch bản / USP nổi bật:
+                                                            </p>
+                                                            <p className="text-xs text-slate-600 bg-white p-2.5 rounded-lg border border-slate-200 whitespace-pre-wrap leading-relaxed">
+                                                                {p.brief_content}
+                                                            </p>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Hashtags & Mẫu */}
+                                                    <div className="flex flex-wrap gap-2 text-xs">
+                                                        {p.hashtags && (
+                                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-white border border-slate-200 text-slate-600 font-mono text-[11px]">
+                                                                <Tag className="h-3 w-3 text-slate-400" />
+                                                                {p.hashtags}
+                                                            </span>
+                                                        )}
+                                                        {p.sample_requirement && (
+                                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-50 border border-amber-200 text-amber-800 text-[11px]">
+                                                                Mẫu: {p.sample_requirement}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                {/* Cột phải: Danh sách file brief đính kèm */}
+                                                <div>
+                                                    <p className="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1.5">
+                                                        <FileText className="h-3.5 w-3.5 text-amber-600" />
+                                                        Tài liệu kịch bản & Brief ({briefFiles.length})
+                                                    </p>
+                                                    {briefFiles.length > 0 ? (
+                                                        <div className="space-y-2">
+                                                            {briefFiles.map((f, fIdx) => (
+                                                                <div
+                                                                    key={fIdx}
+                                                                    className="flex items-center justify-between p-2.5 rounded-lg border border-slate-200 bg-white text-xs hover:border-primary-200 transition-colors shadow-2xs"
+                                                                >
+                                                                    <div className="flex items-center gap-2 truncate pr-2">
+                                                                        <FileText className="h-4 w-4 text-primary-600 shrink-0" />
+                                                                        <span className="font-semibold text-slate-800 truncate" title={f.name}>
+                                                                            {f.name}
+                                                                        </span>
+                                                                    </div>
+                                                                    <a
+                                                                        href={f.url}
+                                                                        target="_blank"
+                                                                        rel="noreferrer"
+                                                                        download
+                                                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold text-primary-700 bg-primary-50 hover:bg-primary-100 border border-primary-200 shrink-0 transition-colors"
+                                                                    >
+                                                                        <Download className="h-3 w-3" />
+                                                                        <span>Tải file</span>
+                                                                    </a>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    ) : (
+                                                        <p className="text-xs text-slate-400 italic">Chưa có tài liệu brief đính kèm.</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -1580,6 +1761,38 @@ export default function Show({
                                     </div>
                                 </form>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* LIGHTBOX MODAL XEM TRƯỚC ẢNH PHÓNG TO */}
+            {previewModalImage && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+                    onClick={() => setPreviewModalImage(null)}
+                >
+                    <div
+                        className="relative max-w-4xl max-h-[90vh] bg-white rounded-2xl overflow-hidden shadow-2xl flex flex-col"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 bg-slate-50">
+                            <span className="text-xs font-bold text-slate-800 truncate max-w-md">
+                                {previewModalImage.name}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => setPreviewModalImage(null)}
+                                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+                        <div className="p-2 flex items-center justify-center bg-slate-900/5 overflow-auto max-h-[80vh]">
+                            <img
+                                src={previewModalImage.url}
+                                alt={previewModalImage.name}
+                                className="max-w-full max-h-[75vh] object-contain rounded-lg"
+                            />
                         </div>
                     </div>
                 </div>
