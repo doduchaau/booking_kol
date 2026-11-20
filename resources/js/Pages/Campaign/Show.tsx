@@ -169,11 +169,8 @@ export default function Show({
     const [importResolutions, setImportResolutions] = useState<Record<string, string>>({});
     const [importAssignedTo, setImportAssignedTo] = useState<string>('');
     const [importDefaultBookingFee, setImportDefaultBookingFee] = useState<string>('0');
-    const [importPlatforms, setImportPlatforms] = useState<string[]>(
-        campaign.target_platforms && campaign.target_platforms.length > 0
-            ? campaign.target_platforms
-            : ['tiktok']
-    );
+    const [importPlatforms, setImportPlatforms] = useState<string[]>([]);
+    const [importCollaborationType, setImportCollaborationType] = useState<string>('');
 
     const totalKocsToAssign = useMemo(() => {
         if (!importPreviewData) return 0;
@@ -235,11 +232,8 @@ export default function Show({
         setImportResolutions({});
         setImportAssignedTo('');
         setImportDefaultBookingFee('0');
-        setImportPlatforms(
-            campaign.target_platforms && campaign.target_platforms.length > 0
-                ? campaign.target_platforms
-                : ['tiktok']
-        );
+        setImportPlatforms([]);
+        setImportCollaborationType('');
         addForm.setData({
             select_all_in_db: targetTab === 'all_db',
             creator_ids: [],
@@ -311,6 +305,7 @@ export default function Show({
                 assigned_to: importAssignedTo ? Number(importAssignedTo) : null,
                 default_booking_fee: Number(importDefaultBookingFee) || 0,
                 default_platforms: importPlatforms,
+                default_collaboration_type: importCollaborationType || null,
             });
 
             if (res.data.success) {
@@ -1044,12 +1039,106 @@ export default function Show({
                                             </div>
 
                                             {/* Cài Đặt Mặc Định (Áp dụng khi trong file KOC để trống) */}
-                                            <div className="space-y-3 pt-1 border-t border-slate-100">
-                                                <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                                                    Cài đặt mặc định (nếu dòng trong file để trống)
-                                                </p>
-                                                <div className="grid grid-cols-2 gap-3">
-                                                    <FormField label="Phí booking mặc định (VND)">
+                                            <div className="space-y-3 pt-2 border-t border-slate-100">
+                                                {/* Chọn nền tảng KOC sẽ làm trong chiến dịch này */}
+                                                <FormField
+                                                    label="Nền tảng giao KOC thực hiện"
+                                                    hint="Để trống nếu chưa xác định (đàm phán sau), hoặc chọn các kênh KOC sẽ thực hiện"
+                                                >
+                                                    <div className="space-y-2 pt-1">
+                                                        <div className="flex flex-wrap items-center gap-2">
+                                                            {(campaign.target_platforms && campaign.target_platforms.length > 0
+                                                                ? campaign.target_platforms
+                                                                : (['tiktok', 'shopee', 'facebook', 'youtube', 'instagram'] as const)
+                                                            ).map((plat) => {
+                                                                const isSelected = importPlatforms.includes(plat);
+                                                                return (
+                                                                    <button
+                                                                        key={plat}
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            const next = isSelected
+                                                                                ? importPlatforms.filter((p) => p !== plat)
+                                                                                : [...importPlatforms, plat];
+                                                                            setImportPlatforms(next);
+                                                                        }}
+                                                                        className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all cursor-pointer shadow-2xs select-none ${
+                                                                            isSelected
+                                                                                ? 'bg-slate-900 text-white border-slate-900 ring-2 ring-primary-500/30'
+                                                                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                                                                        }`}
+                                                                    >
+                                                                        <PlatformLogo platform={plat} size="xs" />
+                                                                        <span>{getPlatformDisplayName(plat)}</span>
+                                                                        {isSelected && (
+                                                                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 ml-0.5" />
+                                                                        )}
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+
+                                                        {/* Tiện ích chọn nhanh */}
+                                                        <div className="flex items-center justify-between text-[11px] pt-1">
+                                                            <div className="flex items-center gap-2">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setImportPlatforms([])}
+                                                                    className={`font-medium transition-colors cursor-pointer ${
+                                                                        importPlatforms.length === 0
+                                                                            ? 'text-primary-600 font-bold'
+                                                                            : 'text-slate-500 hover:text-slate-800'
+                                                                    }`}
+                                                                >
+                                                                    ✕ Chưa giao kênh (Để trống)
+                                                                </button>
+                                                                <span className="text-slate-300">•</span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        setImportPlatforms(
+                                                                            campaign.target_platforms && campaign.target_platforms.length > 0
+                                                                                ? [...campaign.target_platforms]
+                                                                                : ['tiktok', 'shopee', 'facebook', 'youtube', 'instagram']
+                                                                        )
+                                                                    }
+                                                                    className="text-primary-600 hover:text-primary-700 font-medium transition-colors cursor-pointer"
+                                                                >
+                                                                    ✓ Chọn tất cả kênh chiến dịch
+                                                                </button>
+                                                            </div>
+
+                                                            {importPlatforms.length === 0 ? (
+                                                                <span className="text-amber-600 font-medium">
+                                                                    (Chưa giao kênh)
+                                                                </span>
+                                                            ) : (
+                                                                <span className="text-emerald-600 font-medium">
+                                                                    Đã chọn: {importPlatforms.length} kênh
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </FormField>
+
+                                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                                                    <FormField
+                                                        label="Hình thức hợp tác"
+                                                        hint="Chưa xác định hoặc chọn loại hình"
+                                                    >
+                                                        <Select
+                                                            value={importCollaborationType}
+                                                            onChange={(e) => setImportCollaborationType(e.target.value)}
+                                                            options={[
+                                                                { value: '', label: '-- Chưa xác định (Thỏa thuận sau) --' },
+                                                                { value: 'video', label: '🎬 Lên Video' },
+                                                                { value: 'livestream', label: '🎙️ Livestream' },
+                                                                { value: 'both', label: '⚡ Cả Video & Live' },
+                                                            ]}
+                                                        />
+                                                    </FormField>
+
+                                                    <FormField label="Phí booking dự kiến (VND)">
                                                         <TextInput
                                                             type="number"
                                                             value={importDefaultBookingFee}
@@ -1067,42 +1156,6 @@ export default function Show({
                                                         />
                                                     </FormField>
                                                 </div>
-
-                                                <FormField
-                                                    label="Nền tảng giao KOC thực hiện mặc định"
-                                                    hint="Nếu KOC trong file không ghi nền tảng, sẽ áp dụng các kênh này"
-                                                >
-                                                    <div className="flex flex-wrap items-center gap-2 pt-1">
-                                                        {(['tiktok', 'shopee', 'facebook', 'youtube', 'instagram'] as const).map((plat) => {
-                                                            const isSelected = importPlatforms.includes(plat);
-                                                            return (
-                                                                <button
-                                                                    key={plat}
-                                                                    type="button"
-                                                                    onClick={() => {
-                                                                        if (isSelected) {
-                                                                            if (importPlatforms.length <= 1) return;
-                                                                            setImportPlatforms(importPlatforms.filter((p) => p !== plat));
-                                                                        } else {
-                                                                            setImportPlatforms([...importPlatforms, plat]);
-                                                                        }
-                                                                    }}
-                                                                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all cursor-pointer shadow-2xs select-none ${
-                                                                        isSelected
-                                                                            ? 'bg-slate-900 text-white border-slate-900 ring-2 ring-indigo-500/30'
-                                                                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                                                                    }`}
-                                                                >
-                                                                    <PlatformLogo platform={plat} size="xs" />
-                                                                    <span>{getPlatformDisplayName(plat)}</span>
-                                                                    {isSelected && (
-                                                                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 ml-0.5" />
-                                                                    )}
-                                                                </button>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </FormField>
                                             </div>
 
                                             <div className="flex justify-end gap-2.5 pt-4 border-t border-slate-100">

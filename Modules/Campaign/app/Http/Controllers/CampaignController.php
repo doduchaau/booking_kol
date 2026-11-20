@@ -1171,6 +1171,8 @@ class CampaignController extends Controller
             'assigned_to' => ['nullable', 'exists:users,id'],
             'default_booking_fee' => ['nullable', 'numeric', 'min:0'],
             'default_platforms' => ['nullable', 'array'],
+            'default_platforms.*' => ['string', 'in:tiktok,facebook,shopee,youtube,instagram,zalo'],
+            'default_collaboration_type' => ['nullable', 'string', 'in:video,livestream,both'],
         ]);
 
         try {
@@ -1180,7 +1182,8 @@ class CampaignController extends Controller
                 resolutions: $validated['resolutions'] ?? [],
                 assignedTo: !empty($validated['assigned_to']) ? (int) $validated['assigned_to'] : null,
                 defaultBookingFee: (float) ($validated['default_booking_fee'] ?? 0),
-                defaultPlatforms: !empty($validated['default_platforms']) ? $validated['default_platforms'] : ($campaign->target_platforms ?: ['tiktok']),
+                defaultPlatforms: !empty($validated['default_platforms']) ? $validated['default_platforms'] : null,
+                defaultCollaborationType: !empty($validated['default_collaboration_type']) ? $validated['default_collaboration_type'] : null,
                 user: $request->user()
             );
 

@@ -201,6 +201,92 @@ class CampaignImportCreatorsTest extends TestCase
         $this->assertEquals(3, CampaignCreator::where('campaign_id', $this->campaign->id)->count());
     }
 
+    public function test_can_confirm_import_with_custom_platforms_and_collaboration_type(): void
+    {
+        $file = $this->createMockExcelFile([
+            [
+                'Lê Hoàng Long', '0933444555', 'long@gmail.com',
+                '', '', '', null,
+                '', '', '', null,
+                '', '', '', null,
+                'tech', 'micro', 0, 'Đà Nẵng', ''
+            ]
+        ]);
+
+        $previewResponse = $this->actingAs($this->user)
+            ->post(route('campaigns.creators.import-preview', $this->campaign->id), [
+                'file' => $file,
+            ], ['Accept' => 'application/json']);
+
+        $previewResponse->assertOk();
+        $token = $previewResponse->json('data.token');
+        $this->assertNotEmpty($token);
+
+        // 1. Xác nhận import với custom platforms và collaboration type
+        $confirmResponse = $this->actingAs($this->user)
+            ->postJson(route('campaigns.creators.import-confirm', $this->campaign->id), [
+                'token' => $token,
+                'default_platforms' => ['shopee', 'facebook'],
+                'default_collaboration_type' => 'livestream',
+                'default_booking_fee' => 1200000,
+            ]);
+
+        $confirmResponse->assertOk();
+        $confirmResponse->assertJson(['success' => true]);
+
+        $creator = Creator::where('phone', '0933444555')->first();
+        $this->assertNotNull($creator);
+
+        $cc = CampaignCreator::where('campaign_id', $this->campaign->id)
+            ->where('creator_id', $creator->id)
+            ->first();
+
+        $this->assertNotNull($cc);
+        $this->assertEquals('livestream', $cc->collaboration_type?->value ?? $cc->collaboration_type);
+        $this->assertEquals(['shopee', 'facebook'], $cc->booking_platforms);
+        $this->assertEquals(1200000, (float) $cc->booking_fee);
+    }
+
+    public function test_can_confirm_import_with_empty_platforms_and_empty_collaboration_type(): void
+    {
+        $file = $this->createMockExcelFile([
+            [
+                'Vũ Minh Tuấn', '0977888999', 'tuan@gmail.com',
+                '', '', '', null,
+                '', '', '', null,
+                '', '', '', null,
+                'food', 'nano', 0, 'Hà Nội', ''
+            ]
+        ]);
+
+        $previewResponse = $this->actingAs($this->user)
+            ->post(route('campaigns.creators.import-preview', $this->campaign->id), [
+                'file' => $file,
+            ], ['Accept' => 'application/json']);
+
+        $token = $previewResponse->json('data.token');
+
+        // Xác nhận với để trống kênh và để trống hình thức
+        $confirmResponse = $this->actingAs($this->user)
+            ->postJson(route('campaigns.creators.import-confirm', $this->campaign->id), [
+                'token' => $token,
+                'default_platforms' => [],
+                'default_collaboration_type' => null,
+                'default_booking_fee' => 0,
+            ]);
+
+        $confirmResponse->assertOk();
+
+        $creator = Creator::where('phone', '0977888999')->first();
+        $cc = CampaignCreator::where('campaign_id', $this->campaign->id)
+            ->where('creator_id', $creator->id)
+            ->first();
+
+        $this->assertNotNull($cc);
+        $this->assertNull($cc->collaboration_type);
+        $this->assertNull($cc->booking_platforms);
+    }
+
     protected function createMockExcelFile(array $rows): UploadedFile
     {
         $spreadsheet = new Spreadsheet();

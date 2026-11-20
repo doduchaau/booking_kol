@@ -219,7 +219,8 @@ class CampaignCreatorImportService
         array $resolutions = [],
         ?int $assignedTo = null,
         float $defaultBookingFee = 0.0,
-        array $defaultPlatforms = ['tiktok'],
+        ?array $defaultPlatforms = null,
+        ?string $defaultCollaborationType = null,
         ?User $user = null
     ): array {
         $cached = Cache::get("campaign_import_preview_{$token}");
@@ -245,6 +246,7 @@ class CampaignCreatorImportService
             $assignedTo,
             $defaultBookingFee,
             $defaultPlatforms,
+            $defaultCollaborationType,
             $user,
             &$createdCrmCount,
             &$updatedCrmCount,
@@ -301,7 +303,7 @@ class CampaignCreatorImportService
 
                 $effectivePlatforms = !empty($bookingPlatforms)
                     ? array_values(array_unique($bookingPlatforms))
-                    : $defaultPlatforms;
+                    : (!empty($defaultPlatforms) ? array_values(array_unique($defaultPlatforms)) : null);
 
                 $effectiveFee = $item['fee'] > 0 ? $item['fee'] : $defaultBookingFee;
 
@@ -311,7 +313,7 @@ class CampaignCreatorImportService
                     'creator_id' => $creator->id,
                     'assigned_to' => $assignedTo,
                     'status' => PipelineStatusEnum::NEW->value,
-                    'collaboration_type' => 'video',
+                    'collaboration_type' => !empty($defaultCollaborationType) ? $defaultCollaborationType : null,
                     'booking_platforms' => $effectivePlatforms,
                     'booking_fee' => $effectiveFee,
                     'portal_token' => Str::random(64),
@@ -393,7 +395,7 @@ class CampaignCreatorImportService
                 $collectedPlatforms = array_filter(array_column($imp['accounts'], 'platform'));
                 $effectivePlatforms = !empty($collectedPlatforms)
                     ? array_values(array_unique($collectedPlatforms))
-                    : $defaultPlatforms;
+                    : (!empty($defaultPlatforms) ? array_values(array_unique($defaultPlatforms)) : null);
 
                 $effectiveFee = $imp['fee'] > 0 ? $imp['fee'] : $defaultBookingFee;
 
@@ -402,7 +404,7 @@ class CampaignCreatorImportService
                     'creator_id' => $creator->id,
                     'assigned_to' => $assignedTo,
                     'status' => PipelineStatusEnum::NEW->value,
-                    'collaboration_type' => 'video',
+                    'collaboration_type' => !empty($defaultCollaborationType) ? $defaultCollaborationType : null,
                     'booking_platforms' => $effectivePlatforms,
                     'booking_fee' => $effectiveFee,
                     'portal_token' => Str::random(64),
