@@ -61,8 +61,10 @@ class SettingsController extends Controller
                     'id' => $u->id,
                     'name' => $u->name,
                     'email' => $u->email,
+                    'phone' => $u->phone,
+                    'is_active' => (bool) ($u->is_active ?? true),
                     'roles' => $u->roles->pluck('name')->toArray(),
-                    'created_at' => $u->created_at?->format('d/m/Y'),
+                    'created_at' => $u->created_at?->format('d/m/Y') ?? 'Mặc định',
                 ];
             });
 
@@ -397,5 +399,76 @@ class SettingsController extends Controller
         $user->syncRoles([$validated['role']]);
 
         return back()->with('success', "Đã cập nhật vai trò của [{$user->name}] thành [{$validated['role']}].");
+    }
+
+    /**
+     * Cập nhật thông tin nhân sự (Admin)
+     */
+    public function updateUser(Request $request, int $id): RedirectResponse
+    {
+        $user = User::findOrFail($id);
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:150'],
+            'email' => [
+                'required',
+                'string',
+                'email',
+                'max:150',
+                Rule::unique('users', 'email')->ignore($user->id),
+            ],
+            'phone' => ['nullable', 'string', 'regex:/^(0|\+84)[3|5|7|8|9][0-9]{8}$/'],
+            'is_active' => ['required', 'boolean'],
+        ], [
+            'name.required' => 'Vui lòng nhập họ và tên nhân sự.',
+            'name.max' => 'Họ và tên không quá 150 ký tự.',
+            'email.required' => 'Vui lòng nhập email đăng nhập.',
+            'email.email' => 'Địa chỉ email không đúng định dạng.',
+            'email.unique' => 'Email này đã được sử dụng bởi nhân sự khác.',
+            'phone.regex' => 'Số điện thoại không đúng định dạng số di động Việt Nam (10 chữ số).',
+            'is_active.required' => 'Vui lòng chọn trạng thái tài khoản.',
+        ]);
+
+        // Kiểm tra an toàn: Nếu định vô hiệu hóa tài khoản Admin
+        if ($user->hasRole('Admin') && !$validated['is_active']) {
+            if ($user->id === auth()->id()) {
+                return back()->withErrors(['is_active' => 'Bạn không thể tự khóa tài khoản Quản trị viên của chính mình.']);
+            }
+
+            $activeAdminCount = User::role('Admin')->where('is_active', true)->count();
+            if ($activeAdminCount <= 1) {
+                return back()->withErrors(['is_active' => 'Không thể khóa tài khoản Quản trị viên (Admin) duy nhất đang hoạt động trong hệ thống.']);
+            }
+        }
+
+        $user->update([
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'phone' => $validated['phone'] ?? null,
+            'is_active' => $validated['is_active'],
+        ]);
+
+        return back()->with('success', "Đã cập nhật thông tin nhân sự [{$user->name}] thành công.");
+    }
+
+    /**
+     * Đặt lại mật khẩu cho nhân sự (Admin Reset Password)
+     */
+    public function resetUserPassword(Request $request, int $id): RedirectResponse
+    {
+        $user = User::findOrFail($id);
+
+        $validated = $request->validate([
+            'password' => ['required', Password::defaults(), 'confirmed'],
+        ], [
+            'password.required' => 'Vui lòng nhập mật khẩu mới.',
+            'password.confirmed' => 'Mật khẩu xác nhận không khớp.',
+        ]);
+
+        $user->update([
+            'password' => Hash::make($validated['password']),
+        ]);
+
+        return back()->with('success', "Đã đặt lại mật khẩu mới cho nhân sự [{$user->name}] thành công.");
     }
 }

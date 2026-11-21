@@ -10,5 +10,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/settings/integrations', [SettingsController::class, 'updateIntegrations'])->name('settings.integrations.update');
     Route::post('/settings/integrations/test', [SettingsController::class, 'testConnection'])->name('settings.integrations.test');
     Route::post('/settings/users', [SettingsController::class, 'createUser'])->name('settings.users.store');
+    Route::put('/settings/users/{id}', [SettingsController::class, 'updateUser'])->name('settings.users.update');
     Route::put('/settings/users/{id}/role', [SettingsController::class, 'updateUserRole'])->name('settings.users.role.update');
+    Route::put('/settings/users/{id}/password', [SettingsController::class, 'resetUserPassword'])->name('settings.users.password.reset');
 });

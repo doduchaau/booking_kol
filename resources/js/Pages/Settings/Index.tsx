@@ -24,6 +24,10 @@ import {
     ExternalLink,
     Share2,
     Radio,
+    Phone,
+    KeyRound,
+    Copy,
+    Edit2,
 } from 'lucide-react';
 import PageHeader from '@/Components/Common/PageHeader';
 import Button from '@/Components/Common/Button';
@@ -34,6 +38,8 @@ export interface UserItem {
     id: number;
     name: string;
     email: string;
+    phone?: string;
+    is_active?: boolean;
     roles: string[];
     created_at?: string;
 }
@@ -74,6 +80,10 @@ export default function SettingsIndex({
     const [activeTab, setActiveTab] = useState<'users' | 'general' | 'portal' | 'integrations'>('users');
     const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
     const [editingUserRole, setEditingUserRole] = useState<UserItem | null>(null);
+    const [editingUser, setEditingUser] = useState<UserItem | null>(null);
+    const [resettingUserPassword, setResettingUserPassword] = useState<UserItem | null>(null);
+    const [generatedPassword, setGeneratedPassword] = useState<string>('');
+    const [copiedPassword, setCopiedPassword] = useState<boolean>(false);
 
     // Visibility toggles for sensitive fields
     const [showZaloSecret, setShowZaloSecret] = useState(false);
@@ -240,6 +250,84 @@ export default function SettingsIndex({
         roleForm.setData('role', user.roles[0] || 'Staff');
     };
 
+    // Form: Edit User Information
+    const editUserForm = useForm({
+        name: '',
+        email: '',
+        phone: '',
+        is_active: true,
+    });
+
+    const openEditUserModal = (user: UserItem) => {
+        setEditingUser(user);
+        editUserForm.setData({
+            name: user.name,
+            email: user.email,
+            phone: user.phone || '',
+            is_active: user.is_active ?? true,
+        });
+        editUserForm.clearErrors();
+    };
+
+    const handleUpdateUser = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editingUser) return;
+        // @ts-ignore
+        editUserForm.put(route('settings.users.update', editingUser.id), {
+            preserveScroll: true,
+            onSuccess: () => {
+                setEditingUser(null);
+            },
+        });
+    };
+
+    // Form: Reset Password for User
+    const resetPasswordForm = useForm({
+        password: '',
+        password_confirmation: '',
+    });
+
+    const openResetPasswordModal = (user: UserItem) => {
+        setResettingUserPassword(user);
+        resetPasswordForm.reset();
+        resetPasswordForm.clearErrors();
+        setGeneratedPassword('');
+        setCopiedPassword(false);
+    };
+
+    const generateRandomPassword = () => {
+        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*';
+        let randomStr = '';
+        for (let i = 0; i < 8; i++) {
+            randomStr += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        const newPass = `KOL@${randomStr}`;
+        setGeneratedPassword(newPass);
+        resetPasswordForm.setData({
+            password: newPass,
+            password_confirmation: newPass,
+        });
+    };
+
+    const copyToClipboard = () => {
+        if (!generatedPassword) return;
+        navigator.clipboard.writeText(generatedPassword);
+        setCopiedPassword(true);
+        setTimeout(() => setCopiedPassword(false), 3000);
+    };
+
+    const handleResetPassword = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!resettingUserPassword) return;
+        // @ts-ignore
+        resetPasswordForm.put(route('settings.users.password.reset', resettingUserPassword.id), {
+            preserveScroll: true,
+            onSuccess: () => {
+                setResettingUserPassword(null);
+            },
+        });
+    };
+
     return (
         <AppLayout title="Cài Đặt Hệ Thống & Phân Quyền">
             <Head title="Cài Đặt Hệ Thống & Phân Quyền" />
@@ -345,22 +433,24 @@ export default function SettingsIndex({
                                 <table className="w-full text-left text-sm text-slate-600">
                                     <thead className="bg-slate-50/75 text-xs uppercase font-semibold text-slate-500 border-b border-slate-100">
                                         <tr>
-                                            <th className="px-6 py-3.5">Họ & Tên</th>
-                                            <th className="px-6 py-3.5">Email Đăng Nhập</th>
-                                            <th className="px-6 py-3.5">Vai Trò (Role)</th>
-                                            <th className="px-6 py-3.5">Phạm Vi Quyền Hạn</th>
-                                            <th className="px-6 py-3.5 text-center">Thao Tác</th>
+                                            <th className="px-5 py-3.5">Họ & Tên</th>
+                                            <th className="px-5 py-3.5">Email & SĐT</th>
+                                            <th className="px-5 py-3.5 text-center">Trạng Thái</th>
+                                            <th className="px-5 py-3.5">Vai Trò (Role)</th>
+                                            <th className="px-5 py-3.5">Phạm Vi Quyền Hạn</th>
+                                            <th className="px-5 py-3.5 text-center">Thao Tác</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {users.map((user) => {
                                             const role = user.roles[0] || 'Staff';
+                                            const isActive = user.is_active ?? true;
                                             return (
                                                 <tr key={user.id} className="hover:bg-slate-50/70 transition-colors">
-                                                    <td className="px-6 py-4">
+                                                    <td className="px-5 py-4">
                                                         <div className="flex items-center gap-3">
                                                             <div className="w-9 h-9 rounded-full bg-primary-100 text-primary-700 font-bold flex items-center justify-center shrink-0">
-                                                                {user.name.charAt(0)}
+                                                                {user.name.charAt(0).toUpperCase()}
                                                             </div>
                                                             <div>
                                                                 <div className="font-bold text-slate-900">
@@ -372,10 +462,27 @@ export default function SettingsIndex({
                                                             </div>
                                                         </div>
                                                     </td>
-                                                    <td className="px-6 py-4 font-mono text-xs text-slate-700">
-                                                        {user.email}
+                                                    <td className="px-5 py-4">
+                                                        <div className="font-mono text-xs text-slate-700 font-medium">
+                                                            {user.email}
+                                                        </div>
+                                                        <div className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                                                            <Phone className="h-3 w-3 text-slate-400 shrink-0" />
+                                                            <span>{user.phone || 'Chưa cập nhật SĐT'}</span>
+                                                        </div>
                                                     </td>
-                                                    <td className="px-6 py-4">
+                                                    <td className="px-5 py-4 text-center">
+                                                        {isActive ? (
+                                                            <Badge variant="success" size="sm">
+                                                                Hoạt Động
+                                                            </Badge>
+                                                        ) : (
+                                                            <Badge variant="danger" size="sm">
+                                                                Đã Khóa
+                                                            </Badge>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-5 py-4">
                                                         {role === 'Admin' && (
                                                             <Badge variant="danger" size="sm">
                                                                 Quản Trị Viên (Admin)
@@ -392,7 +499,7 @@ export default function SettingsIndex({
                                                             </Badge>
                                                         )}
                                                     </td>
-                                                    <td className="px-6 py-4 text-xs text-slate-500 max-w-md">
+                                                    <td className="px-5 py-4 text-xs text-slate-500 max-w-xs">
                                                         {role === 'Admin' && (
                                                             <span className="text-rose-700 font-medium">
                                                                 Toàn quyền hệ thống: Cấu hình, phân quyền, duyệt ngân sách, xóa chiến dịch.
@@ -409,14 +516,33 @@ export default function SettingsIndex({
                                                             </span>
                                                         )}
                                                     </td>
-                                                    <td className="px-6 py-4 text-center">
-                                                        <Button
-                                                            variant="outline"
-                                                            size="sm"
-                                                            onClick={() => openEditRoleModal(user)}
-                                                        >
-                                                            Đổi Vai Trò
-                                                        </Button>
+                                                    <td className="px-5 py-4 text-center">
+                                                        <div className="flex items-center justify-center gap-1.5">
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                onClick={() => openEditUserModal(user)}
+                                                                title="Chỉnh sửa thông tin nhân sự"
+                                                            >
+                                                                Sửa
+                                                            </Button>
+                                                            <Button
+                                                                variant="secondary"
+                                                                size="sm"
+                                                                onClick={() => openEditRoleModal(user)}
+                                                                title="Đổi vai trò phân quyền"
+                                                            >
+                                                                Vai Trò
+                                                            </Button>
+                                                            <Button
+                                                                variant="secondary"
+                                                                size="sm"
+                                                                onClick={() => openResetPasswordModal(user)}
+                                                                title="Đặt lại mật khẩu cho nhân sự"
+                                                            >
+                                                                Đổi MK
+                                                            </Button>
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             );
@@ -1428,6 +1554,218 @@ export default function SettingsIndex({
                                     loading={roleForm.processing}
                                 >
                                     Cập Nhật Vai Trò
+                                </Button>
+                            </div>
+                        </form>
+                    </div>
+                </Modal>
+
+                {/* MODAL: CHỈNH SỬA THÔNG TIN NHÂN SỰ */}
+                <Modal
+                    show={!!editingUser}
+                    onClose={() => setEditingUser(null)}
+                    maxWidth="md"
+                >
+                    <div className="p-6">
+                        <div className="flex items-center gap-2 mb-1">
+                            <Edit2 className="h-5 w-5 text-primary-600" />
+                            <h3 className="text-lg font-bold text-slate-900">
+                                Chỉnh Sửa Thông Tin Nhân Sự
+                            </h3>
+                        </div>
+                        <p className="text-xs text-slate-500 mb-4">
+                            Cập nhật thông tin định danh, số điện thoại và trạng thái hoạt động cho tài khoản nhân sự.
+                        </p>
+
+                        <form onSubmit={handleUpdateUser} className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                    Họ và tên nhân sự <span className="text-rose-500">*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={editUserForm.data.name}
+                                    onChange={(e) => editUserForm.setData('name', e.target.value)}
+                                    placeholder="Nguyễn Văn A"
+                                    className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500"
+                                />
+                                {editUserForm.errors.name && (
+                                    <p className="text-xs text-rose-600 mt-1">{editUserForm.errors.name}</p>
+                                )}
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                    Email đăng nhập <span className="text-rose-500">*</span>
+                                </label>
+                                <input
+                                    type="email"
+                                    required
+                                    value={editUserForm.data.email}
+                                    onChange={(e) => editUserForm.setData('email', e.target.value)}
+                                    placeholder="user@congty.com"
+                                    className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500"
+                                />
+                                {editUserForm.errors.email && (
+                                    <p className="text-xs text-rose-600 mt-1">{editUserForm.errors.email}</p>
+                                )}
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                    Số điện thoại di động / Zalo
+                                </label>
+                                <input
+                                    type="text"
+                                    value={editUserForm.data.phone}
+                                    onChange={(e) => editUserForm.setData('phone', e.target.value)}
+                                    placeholder="0912345678"
+                                    className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500"
+                                />
+                                {editUserForm.errors.phone && (
+                                    <p className="text-xs text-rose-600 mt-1">{editUserForm.errors.phone}</p>
+                                )}
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                    Trạng thái tài khoản <span className="text-rose-500">*</span>
+                                </label>
+                                <select
+                                    value={editUserForm.data.is_active ? '1' : '0'}
+                                    onChange={(e) => editUserForm.setData('is_active', e.target.value === '1')}
+                                    className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500 bg-white"
+                                >
+                                    <option value="1">Đang hoạt động (Cho phép đăng nhập)</option>
+                                    <option value="0">Tạm khóa (Vô hiệu hóa đăng nhập)</option>
+                                </select>
+                                {editUserForm.errors.is_active && (
+                                    <p className="text-xs text-rose-600 mt-1">{editUserForm.errors.is_active}</p>
+                                )}
+                            </div>
+
+                            <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-2">
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    onClick={() => setEditingUser(null)}
+                                >
+                                    Hủy
+                                </Button>
+                                <Button
+                                    type="submit"
+                                    variant="primary"
+                                    loading={editUserForm.processing}
+                                >
+                                    Lưu Thay Đổi
+                                </Button>
+                            </div>
+                        </form>
+                    </div>
+                </Modal>
+
+                {/* MODAL: ĐẶT LẠI MẬT KHẨU CHO NHÂN SỰ */}
+                <Modal
+                    show={!!resettingUserPassword}
+                    onClose={() => setResettingUserPassword(null)}
+                    maxWidth="md"
+                >
+                    <div className="p-6">
+                        <div className="flex items-center gap-2 mb-1">
+                            <KeyRound className="h-5 w-5 text-primary-600" />
+                            <h3 className="text-lg font-bold text-slate-900">
+                                Đặt Lại Mật Khẩu Cho Nhân Sự
+                            </h3>
+                        </div>
+                        <p className="text-xs text-slate-500 mb-4">
+                            Cấp lại mật khẩu mới cho nhân sự <strong>{resettingUserPassword?.name}</strong> ({resettingUserPassword?.email}).
+                        </p>
+
+                        {/* Nút hỗ trợ tạo mật khẩu ngẫu nhiên */}
+                        <div className="mb-4 rounded-xl border border-primary-100 bg-primary-50/60 p-3 flex items-center justify-between gap-3">
+                            <div>
+                                <p className="text-xs font-semibold text-primary-900">Cần mật khẩu an toàn tức thì?</p>
+                                <p className="text-[11px] text-primary-700">Tự động sinh chuỗi ký tự ngẫu nhiên đạt tiêu chuẩn bảo mật.</p>
+                            </div>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={generateRandomPassword}
+                                iconLeft={<RefreshCw className="h-3.5 w-3.5" />}
+                            >
+                                Sinh Ngẫu Nhiên
+                            </Button>
+                        </div>
+
+                        {generatedPassword && (
+                            <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 flex items-center justify-between gap-2">
+                                <div className="truncate">
+                                    <span className="text-[11px] text-emerald-700 block font-medium">Mật khẩu vừa tạo:</span>
+                                    <span className="font-mono text-sm font-bold text-emerald-900">{generatedPassword}</span>
+                                </div>
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={copyToClipboard}
+                                    iconLeft={<Copy className="h-3.5 w-3.5" />}
+                                >
+                                    {copiedPassword ? 'Đã sao chép!' : 'Sao Chép'}
+                                </Button>
+                            </div>
+                        )}
+
+                        <form onSubmit={handleResetPassword} className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                    Mật khẩu mới <span className="text-rose-500">*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={resetPasswordForm.data.password}
+                                    onChange={(e) => resetPasswordForm.setData('password', e.target.value)}
+                                    placeholder="Tối thiểu 8 ký tự"
+                                    className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500 font-mono"
+                                />
+                                {resetPasswordForm.errors.password && (
+                                    <p className="text-xs text-rose-600 mt-1">{resetPasswordForm.errors.password}</p>
+                                )}
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                    Xác nhận mật khẩu mới <span className="text-rose-500">*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={resetPasswordForm.data.password_confirmation}
+                                    onChange={(e) => resetPasswordForm.setData('password_confirmation', e.target.value)}
+                                    placeholder="Nhập lại mật khẩu mới"
+                                    className="w-full text-sm rounded-lg border-slate-300 focus:border-primary-500 focus:ring-primary-500 font-mono"
+                                />
+                                {resetPasswordForm.errors.password_confirmation && (
+                                    <p className="text-xs text-rose-600 mt-1">{resetPasswordForm.errors.password_confirmation}</p>
+                                )}
+                            </div>
+
+                            <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-2">
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    onClick={() => setResettingUserPassword(null)}
+                                >
+                                    Hủy
+                                </Button>
+                                <Button
+                                    type="submit"
+                                    variant="primary"
+                                    loading={resetPasswordForm.processing}
+                                >
+                                    Đặt Lại Mật Khẩu
                                 </Button>
                             </div>
                         </form>
